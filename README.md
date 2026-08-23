@@ -66,12 +66,14 @@ find      propose   freeze   check           write
 Query asks the compiler, not the text. `Query.calls(project)` yields call expressions. `Query.where(Query.resolvesTo(symbol))` keeps the ones whose callee resolves to a given symbol through any alias or re-export. Results are `Selection`s bound to one immutable snapshot of the project, so a stale node cannot leak into a later step.
 
 ```ts
-const calls = yield* Query.calls(project).pipe(
-  Query.where(Query.resolvesTo(target, { location: (call) => call.expression })),
-  Query.withArgCount(1),
-  Query.within("src/**/*.ts"),
-  Query.collect,
-)
+const calls =
+  yield *
+  Query.calls(project).pipe(
+    Query.where(Query.resolvesTo(target, { location: (call) => call.expression })),
+    Query.withArgCount(1),
+    Query.within("src/**/*.ts"),
+    Query.collect,
+  )
 ```
 
 ### Draft
@@ -79,12 +81,13 @@ const calls = yield* Query.calls(project).pipe(
 Draft collects proposed edits. The operations are small and textual (replace a node, add a named import, move a file and fix its importers), so comments and formatting survive. Each edit records a hash of the text it expects to replace.
 
 ```ts
-yield* Draft.replaceEach(calls, ({ value: call }) => ({
-  node: call.arguments[0]!,
-  text: `wrap(${call.arguments[0]!.getText()})`,
-}))
-yield* Draft.imports.addNamed(project, "src/index.ts", { module: "effect", name: "Option" })
-yield* Draft.files.move(project, "src/old.ts", "src/new.ts")
+yield *
+  Draft.replaceEach(calls, ({ value: call }) => ({
+    node: call.arguments[0]!,
+    text: `wrap(${call.arguments[0]!.getText()})`,
+  }))
+yield * Draft.imports.addNamed(project, "src/index.ts", { module: "effect", name: "Option" })
+yield * Draft.files.move(project, "src/old.ts", "src/new.ts")
 ```
 
 ### Plan
@@ -96,12 +99,12 @@ A finished Draft becomes a Plan. A Plan is a frozen, serializable list of edits 
 Verification is read-only. It re-checks each edit's hash, compiles the proposed result in memory, diffs compiler diagnostics against the baseline, and evaluates policies:
 
 ```ts
-Policy.noNewErrors()                // no diagnostics that weren't already there
+Policy.noNewErrors() // no diagnostics that weren't already there
 Policy.matches({ min: 1, max: 50 }) // bound the number of matches
 Policy.atMostFiles(10)
-Policy.fixesError(2345)             // must resolve a specific diagnostic
+Policy.fixesError(2345) // must resolve a specific diagnostic
 Policy.allowErrors({ code: 2345, max: 2 })
-Policy.idempotent()                 // re-running on the result proposes nothing
+Policy.idempotent() // re-running on the result proposes nothing
 ```
 
 Passing verification issues a `VerifiedPlan`. Only the Verification module can construct one.
@@ -116,8 +119,8 @@ Recipes are values, so they compose.
 
 ```ts
 Recipe.pipe(migrateLibrarySignature, updateCallSites) // in sequence
-Recipe.all([addImports, removeDeadCode])              // concurrently, merged; conflicting ranges fail
-Recipe.when(usesStrictMode, tightenTypes)             // conditionally
+Recipe.all([addImports, removeDeadCode]) // concurrently, merged; conflicting ranges fail
+Recipe.when(usesStrictMode, tightenTypes) // conditionally
 ```
 
 `Recipe.pipe` runs each later stage against an in-memory overlay of the earlier drafts. The second recipe sees the first one's edits through the type checker, and nothing has been written. The result is still one plan against the original snapshot.
@@ -131,7 +134,7 @@ const pattern = Pattern.callExpression({
   expression: Pattern.identifier({ resolvesTo: target }),
   arguments: Pattern.tuple([Pattern.bind("arg", Pattern.not(Pattern.objectLiteral()))]),
 })
-const matches = yield* Query.match(project, pattern).pipe(Query.collect)
+const matches = yield * Query.match(project, pattern).pipe(Query.collect)
 ```
 
 ## CLI
@@ -158,7 +161,7 @@ A recipe with a `schema` is already a tool. `recipeToAgentTool` wraps it in the 
 import { recipeToAgentTool } from "safemods/AgentTool"
 
 const tool = recipeToAgentTool(renameRecipe, "Rename a symbol across the project.")
-await tool.execute({ oldName: "foo", newName: "bar", fileName: "src/a.ts" })               // verify only
+await tool.execute({ oldName: "foo", newName: "bar", fileName: "src/a.ts" }) // verify only
 await tool.execute({ oldName: "foo", newName: "bar", fileName: "src/a.ts" }, { apply: true })
 ```
 
