@@ -54,11 +54,17 @@ safemods run rename-old-name.ts --apply    # verify, then write
 
 ## How it works
 
-Every recipe moves through the same stages. Each stage is its own module with its own authority, and a lower layer never imports a higher one.
+Every recipe runs inside a fresh Workspace Snapshot. Its body queries a checked project and returns a Draft. `Recipe.run` then freezes that Draft and the recorded source observations into a Plan. Verification checks the Plan against fresh compiler snapshots and issues a `VerifiedPlan`; only Application can use that value to write.
 
 ```
-Query  →  Draft  →  Plan  →  Verification  →  Application
-find      propose   freeze   check           write
+Workspace Snapshot
+       │
+       ▼
+Recipe body: Query/Pattern → Selection → Draft
+       │
+       ▼
+Recipe.run → Plan → Verification → VerifiedPlan → Application
+             freeze          check                    write
 ```
 
 ### Query
@@ -92,7 +98,7 @@ yield * Draft.files.move(project, "src/old.ts", "src/new.ts")
 
 ### Plan
 
-A finished Draft becomes a Plan. A Plan is a frozen, serializable list of edits plus a manifest of every file, directory, and config the recipe read. Its ID is a digest of that content, so the same plan gets the same ID on any machine. If any input in the manifest changes before the plan is used, the plan is stale and the pipeline rejects it. It never rebases the edits for you. That sounds strict, and it is, but a silently rebased codemod is how you end up with a half-applied migration on a Friday afternoon.
+A finished Draft becomes a Plan. A Plan is a frozen, serializable list of edits plus the source observations and fingerprints recorded while the recipe ran. Its ID is a digest of that content, so the same plan gets the same ID on any machine. If a recorded input changes before the plan is used, the plan is stale and the pipeline rejects it. It never rebases the edits for you. That sounds strict, and it is, but a silently rebased codemod is how you end up with a half-applied migration on a Friday afternoon.
 
 ### Verification
 
@@ -147,7 +153,7 @@ safemods tool <recipe.ts>
 
 `run` previews by default. `--verify` adds the diagnostic diff and policy results. `--apply` writes after a passing verification.
 
-`scan` runs only the query half and reports matches per file. `--fail-on-match` exits non-zero if anything matched, which turns a recipe into a lint you can run in CI.
+`scan` runs the recipe through planning, then reports its recorded matches per file without verifying or writing. `--fail-on-match` exits non-zero if anything matched, which turns a recipe into a check you can run in CI.
 
 `tool` prints the recipe as a JSON-schema tool definition for an agent host.
 

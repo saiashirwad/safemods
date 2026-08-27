@@ -115,7 +115,7 @@ Recipes are first-class, composable algebraic values:
 
 - **`Recipe.pipe(...recipes)`**: Runs recipes in sequence. Later stages query an Overlay of earlier Drafts; Overlay rebases each later Draft onto the original snapshot.
 - **`Recipe.all(recipes)`**: Evaluates independent recipes concurrently and merges drafts, failing deterministically if edit ranges conflict.
-- **`Recipe.branch(predicate, ifTrue, ifFalse)`**: Branches transformation logic based on compiler settings or file structure.
+- **`Recipe.branch(predicate, ifTrue, ifFalse)`**: Passes the active `WorkspaceSnapshot` service to a predicate, then runs one branch. The predicate can inspect compiler settings or project files through that snapshot.
 - **`schema: Schema.Schema<Input>`**: Enforces input validation using `Schema` from `effect` before recipe execution.
 
 ```ts
