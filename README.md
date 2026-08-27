@@ -4,8 +4,6 @@ Type-directed codemods for TypeScript 7 projects, built on [Effect](https://effe
 
 A codemod here is a recipe. A recipe queries a project through the TypeScript compiler, proposes edits, and hands them to a pipeline that previews, verifies, and only then writes. Nothing touches disk until a plan has passed the type checker and every policy you attached to it.
 
-Most codemod tools let you write the file the moment you have an edit. I think that is the wrong default. This one makes you earn the write.
-
 > Early and moving fast. The API will change.
 
 ## Install
