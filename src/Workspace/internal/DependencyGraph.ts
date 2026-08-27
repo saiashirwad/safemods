@@ -79,32 +79,28 @@ export const dependencyGraphNavigation = <E>(options: {
       }
     }
     for (const { fn, rel, sf } of projectFiles) {
-      if (sf.imports !== undefined && sf.imports.length > 0) {
+      if (sf.imports.length > 0) {
         const symbols = yield* nativeRequest("getSymbolAtLocation", () =>
           nativeProject.checker.getSymbolAtLocation(sf.imports),
         )
         for (const symbol of Array.isArray(symbols) ? symbols : [symbols]) {
           if (symbol === undefined) continue
-          const declarations = [symbol.valueDeclaration, ...(symbol.declarations ?? [])].filter(
+          const declarations = [symbol.valueDeclaration, ...symbol.declarations].filter(
             (declaration): declaration is NonNullable<typeof declaration> =>
               declaration !== undefined,
           )
           for (const declaration of declarations) {
-            if (declaration.path !== undefined) {
-              addEdge(rel, canonicalMap.get(runtime.resolvePath(declaration.path).toLowerCase()))
-            }
+            addEdge(rel, canonicalMap.get(runtime.resolvePath(declaration.path).toLowerCase()))
           }
         }
       }
-      for (const reference of sf.referencedFiles ?? []) {
-        if (reference.fileName !== undefined) {
-          addEdge(
-            rel,
-            canonicalMap.get(
-              runtime.resolvePath(runtime.dirname(fn), reference.fileName).toLowerCase(),
-            ),
-          )
-        }
+      for (const reference of sf.referencedFiles) {
+        addEdge(
+          rel,
+          canonicalMap.get(
+            runtime.resolvePath(runtime.dirname(fn), reference.fileName).toLowerCase(),
+          ),
+        )
       }
     }
 

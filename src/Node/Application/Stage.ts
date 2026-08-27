@@ -133,7 +133,7 @@ export const stagePreviewFiles = (
         }
         temporary = `${target}.safemods-${randomUUID()}.tmp`
         staged.push({ file, target, temporary })
-        yield* fs.writeFileString(temporary, file.after.text ?? "", { flag: "wx" })
+        yield* fs.writeFileString(temporary, file.after.text, { flag: "wx" })
       } else {
         staged.push({ file, target })
       }

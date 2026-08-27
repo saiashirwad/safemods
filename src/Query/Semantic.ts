@@ -50,7 +50,7 @@ export const resolvesTo = <A extends Node>(
             })
             const fileName = project.resolveFileName(group[0]!.selection.fileName)
             const symbols = yield* project.symbolsAt(fileName, positions)
-            const declarationFile = symbol.valueDeclaration?.path ?? symbol.declarations?.[0]?.path
+            const declarationFile = symbol.valueDeclaration?.path ?? symbol.declarations[0]?.path
             const declarationPath =
               declarationFile === undefined
                 ? "unknown"

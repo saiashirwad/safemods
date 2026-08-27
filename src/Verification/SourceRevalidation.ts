@@ -25,10 +25,11 @@ const sameIdentities = (
   actual: ReadonlyArray<{ readonly id: string; readonly config: string }>,
 ): boolean =>
   expected.length === actual.length &&
-  expected.every(
-    (project, index) =>
-      project.id === actual[index]?.id && project.config === actual[index]?.config,
-  )
+  expected.every((project, index) => {
+    const counterpart = actual[index]
+    if (counterpart === undefined) return false
+    return project.id === counterpart.id && project.config === counterpart.config
+  })
 
 export const requireMatchingProjectIdentity = (
   plan: TransformationPlan,

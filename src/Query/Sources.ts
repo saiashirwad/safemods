@@ -22,7 +22,7 @@ import {
   type ProjectSnapshot,
   type ProjectSnapshotError,
 } from "../Workspace/index.ts"
-import type { Pattern, SyntaxKindFilter } from "../Pattern/index.ts"
+import { syntaxKindName, type Pattern, type SyntaxKindFilter } from "../Pattern/index.ts"
 import type { ProjectScope, Query, Selection, TargetFileScope } from "./Query.ts"
 
 const isProjectFileArray = (value: ProjectScope): value is ReadonlyArray<ProjectFile> =>
@@ -104,7 +104,7 @@ const collectNodes = <A extends Node>(
         evidence: [
           {
             criterion: "syntax-kind",
-            facts: { kind: SyntaxKind[node.kind] ?? node.kind },
+            facts: { kind: syntaxKindName(node.kind) },
           },
         ],
       })
@@ -176,8 +176,8 @@ export const match = <Out>(
                         criterion: pattern.kind ?? "pattern-match",
                         facts:
                           result.facts === undefined
-                            ? { kind: SyntaxKind[node.kind] ?? node.kind }
-                            : { kind: SyntaxKind[node.kind] ?? node.kind, ...result.facts },
+                            ? { kind: syntaxKindName(node.kind) }
+                            : { kind: syntaxKindName(node.kind), ...result.facts },
                       },
                     ],
                   }

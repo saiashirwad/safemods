@@ -35,6 +35,7 @@ import {
   type AnyPattern,
   type Pattern,
 } from "./Pattern.ts"
+import { syntaxKindName } from "./SyntaxKindName.ts"
 
 export const identifier = (options?: {
   readonly name?: string | RegExp
@@ -89,10 +90,7 @@ export const callExpression = <EOut = Node, AOut = ReadonlyArray<Node>>(options?
     match: (node, project) =>
       Effect.gen(function* () {
         if (!isCallExpression(node)) return matchFailure
-        const facts = { kind: SyntaxKind[node.kind] ?? node.kind } satisfies Record<
-          string,
-          EvidenceFact
-        >
+        const facts = { kind: syntaxKindName(node.kind) } satisfies Record<string, EvidenceFact>
         // SAFETY: the caller's expression pattern constrains this output type.
         let expression = node.expression as EOut
         if (options?.expression !== undefined) {
@@ -215,6 +213,6 @@ export const awaitExpression = (
         !(yield* options.expression.match(node.expression, project)).matched
       )
         return matchFailure
-      return matchSuccess(node, { kind: SyntaxKind[node.kind] ?? node.kind })
+      return matchSuccess(node, { kind: syntaxKindName(node.kind) })
     }),
 })

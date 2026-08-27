@@ -86,6 +86,7 @@ const specifierModuleFile = (specifierParent: Node, importerFile: string): strin
  */
 const owningModuleDeclaration = (node: Node): ImportDeclaration | ExportDeclaration | undefined => {
   let current: Node | undefined = node.parent
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- Node.parent is typed non-optional yet is undefined above the SourceFile root; this check ends the walk.
   while (current !== undefined) {
     if (isImportDeclaration(current) || isExportDeclaration(current)) return current
     current = current.parent
@@ -163,7 +164,7 @@ export const renameSymbol = (
   newName: string,
 ): Effect.Effect<Draft, ProjectSnapshotError | QueryContractError | DraftEvidenceConflict> =>
   Effect.gen(function* () {
-    const declarationPath = symbol.valueDeclaration?.path ?? symbol.declarations?.[0]?.path
+    const declarationPath = symbol.valueDeclaration?.path ?? symbol.declarations[0]?.path
     const references = yield* Query.collect(Query.referencesTo(project, symbol))
     const context: RenameContext = {
       newName,

@@ -71,7 +71,7 @@ export const computeUnifiedDiff = (
       lines.push(colorize(`  ${item.text}`, ANSI.gray, useColor))
     } else if (item.type === "add") {
       lines.push(colorize(`+ ${item.text}`, ANSI.green, useColor))
-    } else if (item.type === "remove") {
+    } else {
       lines.push(colorize(`- ${item.text}`, ANSI.red, useColor))
     }
   }

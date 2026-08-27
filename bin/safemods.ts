@@ -68,12 +68,11 @@ function failArg(message: string): never {
 let command: string | undefined = undefined
 let recipeArg: string | undefined = undefined
 const flags = new Set<string>()
-const optionsMap: Record<string, string> = {}
+const optionsMap: Record<string, string | undefined> = {}
 
 let i = 0
 while (i < args.length) {
   const arg = args[i]
-  if (arg === undefined) break
   const optionWithInlineValue = [...optionsWithValues].find((option) =>
     arg.startsWith(`${option}=`),
   )
@@ -88,6 +87,7 @@ while (i < args.length) {
   }
   if (optionsWithValues.has(arg)) {
     const value = args[i + 1]
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- Indexed argv access is unproven by the type system past bounds.
     if (value === undefined || knownFlags.has(value) || commands.has(value)) {
       failArg(`Missing value for ${arg}`)
     }

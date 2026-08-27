@@ -1,6 +1,6 @@
 /** AST ancestry, containment, and sibling relations. */
 import { Effect, Predicate } from "effect"
-import { SyntaxKind, type Node } from "typescript/unstable/ast"
+import type { Node } from "typescript/unstable/ast"
 import {
   isArrowFunction,
   isClassDeclaration,
@@ -21,7 +21,7 @@ import {
 } from "typescript/unstable/ast/is"
 import type { EvidenceFact } from "../Evidence/Evidence.ts"
 import type { ProjectRelativePath } from "../ProjectPath/index.ts"
-import type { NodeCriterion } from "../Pattern/index.ts"
+import { syntaxKindName, type NodeCriterion } from "../Pattern/index.ts"
 import type { ProjectSnapshot, ProjectSnapshotError } from "../Workspace/index.ts"
 import type { Criterion, Query, QueryContractError, Selection } from "./Query.ts"
 import { where } from "./Operators.ts"
@@ -72,7 +72,7 @@ const evaluateMatcher = <Out, E, R>(
       matched
         ? {
             matched: true,
-            facts: { kind: SyntaxKind[node.kind] ?? String(node.kind) },
+            facts: { kind: syntaxKindName(node.kind) },
           }
         : { matched: false },
     )
@@ -124,6 +124,7 @@ const isBoundaryNode = (node: Node): boolean =>
 const getSiblingsAndIndex = (
   node: Node,
 ): { readonly siblings: ReadonlyArray<Node>; readonly index: number } | undefined => {
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- Node.parent is typed non-optional yet is undefined above the SourceFile root; this check ends the walk.
   if (node.parent === undefined) return undefined
 
   const parent = node.parent
@@ -133,6 +134,7 @@ const getSiblingsAndIndex = (
     return undefined
   })
 
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- Same AST typing lie: the statement-level parent can be a SourceFile with no further parent.
   if (children.length === 1 && isExpressionStatement(parent) && parent.parent !== undefined) {
     const statementParent = parent.parent
     const statementChildren: Array<Node> = []
@@ -210,6 +212,7 @@ const criterionInside = <A extends Node, Out = unknown, E = never, R = never>(
         let current: Node | undefined = selection.value.parent
         let matchedFacts: Readonly<Record<string, EvidenceFact>> | undefined
 
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- Ancestor walk relies on runtime parent chains, not the non-optional .parent typing.
         while (current !== undefined) {
           const outcome = yield* evaluateMatcher(
             matcher,
@@ -218,7 +221,7 @@ const criterionInside = <A extends Node, Out = unknown, E = never, R = never>(
             selection.fileName,
           )
           if (outcome.matched) {
-            const ancestorKind = SyntaxKind[current.kind] ?? String(current.kind)
+            const ancestorKind = syntaxKindName(current.kind)
             matchedFacts = {
               ancestorKind,
               ...outcome.facts,
@@ -267,7 +270,7 @@ const criterionHas = <A extends Node, Out = unknown, E = never, R = never>(
                 selection.fileName,
               )
               if (outcome.matched) {
-                const descendantKind = SyntaxKind[child.kind] ?? String(child.kind)
+                const descendantKind = syntaxKindName(child.kind)
                 matchedFacts = {
                   descendantKind,
                   ...outcome.facts,
@@ -327,7 +330,7 @@ const criterionSibling = <A extends Node, Out = unknown, E = never, R = never>(
             )
             if (outcome.matched) {
               matchedFacts = {
-                siblingKind: SyntaxKind[outcome.node.kind] ?? String(outcome.node.kind),
+                siblingKind: syntaxKindName(outcome.node.kind),
                 ...outcome.facts,
               }
             }
@@ -343,7 +346,7 @@ const criterionSibling = <A extends Node, Out = unknown, E = never, R = never>(
             )
             if (outcome.matched) {
               matchedFacts = {
-                siblingKind: SyntaxKind[outcome.node.kind] ?? String(outcome.node.kind),
+                siblingKind: syntaxKindName(outcome.node.kind),
                 ...outcome.facts,
               }
               break

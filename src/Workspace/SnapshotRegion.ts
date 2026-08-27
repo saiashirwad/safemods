@@ -54,7 +54,7 @@ export interface OpenSnapshotRegionOptions {
   readonly resolvedById: ReadonlyMap<string, string>
   readonly openProjects: ReadonlyArray<string> | undefined
   readonly transition: SnapshotTransition
-  readonly onOpened: () => void
+  readonly onOpened?: (() => void) | undefined
   readonly runtime: WorkspaceRuntimeService
 }
 
@@ -75,7 +75,11 @@ export const openSnapshotRegion = <A, E, R>(
       }
       const nativeSnapshot = yield* options.regionCompiler
         .openSnapshot(params)
-        .pipe(Effect.tap(() => Effect.sync(options.onOpened)))
+        .pipe(
+          Effect.tap(() =>
+            options.onOpened !== undefined ? Effect.sync(options.onOpened) : Effect.void,
+          ),
+        )
 
       const active = { current: true }
       const ensureActive = Effect.suspend((): Effect.Effect<void, SnapshotExpired> =>

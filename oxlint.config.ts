@@ -131,11 +131,14 @@ export default defineConfig({
     "max-statements": "off",
     "no-alert": "error",
     "no-console": "off",
+    // Flags dead fallbacks (`?? x` on non-nullish operands) and impossible
+    // conditions; requires typeAware.
+    "typescript/no-unnecessary-condition": "error",
     "no-continue": "off",
     "no-duplicate-imports": "error",
     "no-else-return": "off",
     "no-empty": "off",
-    "no-empty-function": "off",
+    "no-empty-function": "error",
     "no-implicit-coercion": "off",
     "no-inline-comments": "off",
     "no-magic-numbers": "off",
@@ -327,6 +330,9 @@ export default defineConfig({
         "unicorn/import-style": "off",
         "unicorn/no-await-expression-member": "off",
         "eslint/prefer-named-capture-group": "off",
+        // Untyped JS: indexed accesses (process.argv, plain records) cannot be
+        // proven nullable, yet they legitimately are at runtime.
+        "typescript/no-unnecessary-condition": "off",
       },
     },
     {

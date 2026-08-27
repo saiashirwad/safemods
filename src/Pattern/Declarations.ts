@@ -14,6 +14,7 @@ import {
   isVariableStatement,
 } from "typescript/unstable/ast/is"
 import { matchFailure, matchSuccess, matchesName, type Pattern } from "./Pattern.ts"
+import { syntaxKindName } from "./SyntaxKindName.ts"
 
 export interface FunctionDeclarationPatternOptions {
   readonly name?: string | RegExp
@@ -48,8 +49,8 @@ export const functionDeclaration = (
       return matchSuccess(
         node,
         node.name === undefined
-          ? { kind: SyntaxKind[node.kind] ?? node.kind }
-          : { kind: SyntaxKind[node.kind] ?? node.kind, name: node.name.text },
+          ? { kind: syntaxKindName(node.kind) }
+          : { kind: syntaxKindName(node.kind), name: node.name.text },
       )
     }),
 })
@@ -81,8 +82,8 @@ export const classDeclaration = (
       return matchSuccess(
         node,
         node.name === undefined
-          ? { kind: SyntaxKind[node.kind] ?? node.kind }
-          : { kind: SyntaxKind[node.kind] ?? node.kind, name: node.name.text },
+          ? { kind: syntaxKindName(node.kind) }
+          : { kind: syntaxKindName(node.kind), name: node.name.text },
       )
     }),
 })
@@ -113,7 +114,7 @@ export const variableStatement = (
         )
       )
         return matchFailure
-      return matchSuccess(node, { kind: SyntaxKind[node.kind] ?? node.kind })
+      return matchSuccess(node, { kind: syntaxKindName(node.kind) })
     }),
 })
 
@@ -137,8 +138,8 @@ export const variableDeclaration = (
       return matchSuccess(
         node,
         isIdentifier(node.name)
-          ? { kind: SyntaxKind[node.kind] ?? node.kind, name: node.name.text }
-          : { kind: SyntaxKind[node.kind] ?? node.kind },
+          ? { kind: syntaxKindName(node.kind), name: node.name.text }
+          : { kind: syntaxKindName(node.kind) },
       )
     }),
 })

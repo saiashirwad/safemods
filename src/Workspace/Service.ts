@@ -147,7 +147,6 @@ export const make = (
             resolvedById,
             openProjects: [...resolvedById.values()],
             transition: isolated.transition,
-            onOpened: () => {},
             runtime,
           },
           program,

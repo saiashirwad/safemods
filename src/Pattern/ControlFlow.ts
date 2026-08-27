@@ -22,6 +22,7 @@ import {
   isWhileStatement,
 } from "typescript/unstable/ast/is"
 import { matchFailure, matchSuccess, predicate, type Pattern } from "./Pattern.ts"
+import { syntaxKindName } from "./SyntaxKindName.ts"
 
 export interface TryStatementPatternOptions {
   readonly hasCatch?: boolean
@@ -44,7 +45,7 @@ export const tryStatement = (
       )
         return matchFailure
       return matchSuccess(node, {
-        kind: SyntaxKind[node.kind] ?? node.kind,
+        kind: syntaxKindName(node.kind),
         hasCatch: node.catchClause !== undefined,
         hasFinally: node.finallyBlock !== undefined,
       })
@@ -88,7 +89,7 @@ export const loop = (options?: LoopPatternOptions): Pattern<LoopStatement, LoopS
         !isDoStatement(node)
       )
         return matchFailure
-      return matchSuccess(node, { loopKind: SyntaxKind[node.kind] ?? node.kind })
+      return matchSuccess(node, { loopKind: syntaxKindName(node.kind) })
     }),
 })
 export const forStatement = (): Pattern<ForStatement, ForStatement> =>
@@ -117,7 +118,7 @@ export const ifStatement = (
       (options?.hasElse !== undefined && (node.elseStatement !== undefined) !== options.hasElse)
         ? matchFailure
         : matchSuccess(node, {
-            kind: SyntaxKind[node.kind] ?? node.kind,
+            kind: syntaxKindName(node.kind),
             hasElse: node.elseStatement !== undefined,
           }),
     ),
@@ -140,6 +141,6 @@ export const returnStatement = <EOut = Node>(
           !(yield* options.expression.match(node.expression, project)).matched)
       )
         return matchFailure
-      return matchSuccess(node, { kind: SyntaxKind[node.kind] ?? node.kind })
+      return matchSuccess(node, { kind: syntaxKindName(node.kind) })
     }),
 })
