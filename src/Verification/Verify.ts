@@ -18,6 +18,7 @@ import {
   allowedErrorsFromRules,
   computeDiagnosticDiff,
   type DiagnosticDiff,
+  type DiagnosticRecord,
   type PolicyEvaluationContext,
 } from "../Policy/index.ts"
 import { resolvePlanFilePath, unsafePlanFilePathMessage } from "../ProjectPath/index.ts"
@@ -35,13 +36,8 @@ import {
   VerificationFailure,
 } from "./Errors.ts"
 import { of, type PlanPreview } from "./Preview.ts"
-import {
-  evaluateBuiltInPolicies,
-  evaluateCustomRules,
-  failureFromPolicyResults,
-  type PolicyFailure,
-} from "./PolicyEvaluation.ts"
-import type { VerificationObservation, VerificationReceipt } from "./VerificationReceipt.ts"
+import { evaluateBuiltInPolicies, evaluateCustomRules } from "./PolicyEvaluation.ts"
+import type { VerificationReceipt } from "./VerificationReceipt.ts"
 import { requireMatchingProjectIdentity } from "./SourceRevalidation.ts"
 import { issueVerifiedPlan, type VerifiedPlan } from "./VerifiedPlan.ts"
 
@@ -142,74 +138,8 @@ const absoluteTarget = (
     return resolved.fileName
   })
 
-const verificationFailure = (planId: string, failure: PolicyFailure): VerificationFailure =>
-  failure.diagnostics === undefined
-    ? new VerificationFailure({
-        planId,
-        policy: failure.policy,
-        detail: failure.detail,
-      })
-    : new VerificationFailure({
-        planId,
-        policy: failure.policy,
-        detail: failure.detail,
-        diagnostics: failure.diagnostics,
-      })
-
-const issueVerifiedPreview = (
-  plan: TransformationPlan,
-  preview: PlanPreview,
-  observation: VerificationObservation,
-): Effect.Effect<
-  VerifiedPlan & { readonly diagnosticDiff: DiagnosticDiff },
-  VerificationFailure | PlanDecodeError
-> =>
-  Effect.gen(function* () {
-    const reportedFailure = failureFromPolicyResults(
-      observation.policyResults,
-      observation.diagnosticDiff,
-    )
-    if (reportedFailure !== undefined) {
-      return yield* verificationFailure(plan.planId, reportedFailure)
-    }
-    const receipt: VerificationReceipt = {
-      planId: plan.planId,
-      snapshotHash: plan.snapshotHash,
-      affectedFiles: preview.files.length,
-      actualMatches: observation.actualMatches,
-      baselineErrorCount: observation.baselineErrorCount,
-      proposedErrorCount: observation.proposedErrorCount,
-      diagnosticDelta: observation.proposedErrorCount - observation.baselineErrorCount,
-      idempotenceChecked: plan.policies.idempotence === "required",
-      policyResults: observation.policyResults ?? [],
-    }
-    const validated = yield* validatePlan(plan)
-    return issueVerifiedPlan(validated, preview, receipt, observation.diagnosticDiff)
-  })
-
-export const verifyPreview = (
-  plan: TransformationPlan,
-  preview: PlanPreview,
-  observation: VerificationObservation,
-): Effect.Effect<
-  VerifiedPlan & { readonly diagnosticDiff: DiagnosticDiff },
-  VerificationFailure | PlanDecodeError
-> => {
-  const builtIn = evaluateBuiltInPolicies({
-    policies: plan.policies,
-    actualMatches: observation.actualMatches,
-    affectedFiles: preview.files.length,
-    baselineErrorCount: observation.baselineErrorCount,
-    proposedErrorCount: observation.proposedErrorCount,
-    diagnosticDiff: observation.diagnosticDiff,
-    secondPlanChangeCount: observation.secondPlanChangeCount,
-    allowedErrors: observation.allowedErrors,
-  })
-  if (builtIn.failure !== undefined) {
-    return Effect.fail(verificationFailure(plan.planId, builtIn.failure))
-  }
-  return issueVerifiedPreview(plan, preview, observation)
-}
+const errorCount = (diagnostics: ReadonlyArray<DiagnosticRecord>): number =>
+  diagnostics.filter((d) => d.category === "error").length
 
 export interface VerifyOptions {
   readonly preview?: PlanPreview | undefined
@@ -292,66 +222,35 @@ export const verify = <Input, E, R>(
     const diagnosticDiff = computeDiagnosticDiff(baselineDiagnostics, proposedRun.diagnostics)
     const allowedErrors = allowedErrorsFromRules(recipe.rules)
     const matches = validatedPlan.measurements?.matches
-    const baselineErrorCount = baselineDiagnostics.filter((d) => d.category === "error").length
-    const proposedErrorCount = proposedRun.diagnostics.filter((d) => d.category === "error").length
+    const affectedFiles = proposed.files.length
     const builtIn = evaluateBuiltInPolicies({
       policies: validatedPlan.policies,
       actualMatches: matches,
-      affectedFiles: proposed.files.length,
-      baselineErrorCount,
-      proposedErrorCount,
+      affectedFiles,
       diagnosticDiff,
       secondPlanChangeCount: proposedRun.replayChanges,
       allowedErrors,
     })
-    if (builtIn.missingMatchMeasurement) {
-      return yield* new VerificationFailure({
-        planId: validatedPlan.planId,
-        policy: "matches",
-        detail: builtIn.failure!.detail,
-      })
-    }
     if (builtIn.failure !== undefined) {
-      return yield* verificationFailure(validatedPlan.planId, builtIn.failure)
+      return yield* new VerificationFailure({ planId: validatedPlan.planId, ...builtIn.failure })
     }
 
     const context: PolicyEvaluationContext = {
       actualMatches: matches ?? 0,
-      affectedFiles: proposed.files.length,
+      affectedFiles,
       diagnosticDiff,
       replayEdits: proposedRun.replayChanges,
       allowedErrors,
     }
     const custom = evaluateCustomRules(recipe.rules, context)
-    const policyResults = [...builtIn.results, ...custom.results]
     if (custom.failure !== undefined) {
-      return yield* new VerificationFailure({
-        planId: validatedPlan.planId,
-        policy: custom.failure.policy,
-        detail: custom.failure.detail,
-        diagnostics: custom.failure.diagnostics,
-      })
+      return yield* new VerificationFailure({ planId: validatedPlan.planId, ...custom.failure })
     }
 
-    const observation: VerificationObservation =
-      proposedRun.replayChanges === undefined
-        ? {
-            actualMatches: matches ?? 0,
-            baselineErrorCount,
-            proposedErrorCount,
-            diagnosticDiff,
-            policyResults,
-            allowedErrors,
-          }
-        : {
-            actualMatches: matches ?? 0,
-            baselineErrorCount,
-            proposedErrorCount,
-            diagnosticDiff,
-            policyResults,
-            secondPlanChangeCount: proposedRun.replayChanges,
-            allowedErrors,
-          }
-
-    return yield* issueVerifiedPreview(validatedPlan, proposed, observation)
+    const receipt: VerificationReceipt = {
+      diagnosticDelta: errorCount(diagnosticDiff.introduced) - errorCount(diagnosticDiff.resolved),
+      idempotenceChecked: validatedPlan.policies.idempotence === "required",
+      policyResults: [...builtIn.results, ...custom.results],
+    }
+    return issueVerifiedPlan(validatedPlan, proposed, receipt, diagnosticDiff)
   })

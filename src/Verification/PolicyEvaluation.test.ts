@@ -19,8 +19,6 @@ describe("policy evaluation", () => {
       },
       actualMatches: 1,
       affectedFiles: 1,
-      baselineErrorCount: 0,
-      proposedErrorCount: 0,
       diagnosticDiff: emptyDiagnosticDiff,
       secondPlanChangeCount: 0,
     })
@@ -48,8 +46,6 @@ describe("policy evaluation", () => {
       },
       actualMatches: 1,
       affectedFiles: 1,
-      baselineErrorCount: 0,
-      proposedErrorCount: 1,
       diagnosticDiff,
       secondPlanChangeCount: 1,
     })
@@ -65,8 +61,6 @@ describe("policy evaluation", () => {
         idempotence: "not-promised",
       },
       affectedFiles: 1,
-      baselineErrorCount: 0,
-      proposedErrorCount: 1,
       diagnosticDiff: {
         ...emptyDiagnosticDiff,
         introduced: [{ code: 2322, message: "Type mismatch", category: "error" }],
