@@ -1,4 +1,3 @@
-/** Collapse two sequential Drafts into one Draft against the original snapshot. */
 import { Effect } from "effect"
 import type { Draft as DraftModel } from "../Draft/index.ts"
 import {
@@ -38,7 +37,6 @@ export const requireDraftProjects = (
     }
   })
 
-/** Collapse two sequential Drafts into one Draft against the original snapshot. */
 export const rebaseDrafts = (
   snapshot: WorkspaceSnapshotService,
   accumulated: DraftModel,
@@ -182,8 +180,6 @@ export const rebaseDrafts = (
                 initialHash: producer.initialHash,
                 evidenceIds,
               }
-              // The destination never remains, so only importer rewrites
-              // produced by this move must disappear.
               const obsoleteEvidenceIds = new Set(
                 accumulated.evidence
                   .filter(

@@ -1,7 +1,6 @@
 import { Data } from "effect"
 import { sha256 } from "./Hash.ts"
 
-/** The canonical durable, guarded, half-open source range replacement. */
 export interface TextEdit {
   readonly projectId: string
   readonly fileName: string

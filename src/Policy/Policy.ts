@@ -1,11 +1,3 @@
-/**
- * Policy domain — durable policies and runtime verification rules.
- *
- * Policies are plain values: explicit, inspectable conditions a particular
- * Transformation Plan must satisfy to verify or apply. They compose by
- * merging; unset dimensions fall back to the system defaults (no new error
- * diagnostics, unbounded cardinality, idempotence not promised).
- */
 import type { PlanPolicies } from "../Plan/index.ts"
 
 export interface DiagnosticRecord {
@@ -17,7 +9,6 @@ export interface DiagnosticRecord {
   readonly length?: number | undefined
 }
 
-/** Stable identity for comparing compiler diagnostics across snapshots. */
 export const diagnosticIdentity = (diagnostic: DiagnosticRecord): string =>
   JSON.stringify([
     diagnostic.category,
@@ -44,14 +35,12 @@ export interface PolicyEvaluationContext {
   readonly affectedFiles: number
   readonly diagnosticDiff: DiagnosticDiff
   readonly replayEdits?: number | undefined
-  /** Codes `allowErrors()` has permitted through the default no-new-errors gate. */
   readonly allowedErrors?: ReadonlyArray<AllowedError> | undefined
 }
 
 export interface VerificationRule {
   readonly name: string
   readonly evaluate: (context: PolicyEvaluationContext) => boolean | string
-  /** When set, this rule also exempts the listed code from no-new-errors. */
   readonly allowedError?: AllowedError | undefined
 }
 
@@ -74,9 +63,6 @@ export const computeDiagnosticDiff = (
   baseline: ReadonlyArray<DiagnosticRecord>,
   proposed: ReadonlyArray<DiagnosticRecord>,
 ): DiagnosticDiff => {
-  // Category and the complete location are part of diagnostic identity. In
-  // particular, a warning becoming an error must be treated as an introduced
-  // error even when its code and message stay the same.
   const group = (diagnostics: ReadonlyArray<DiagnosticRecord>) => {
     const grouped = new Map<string, Array<DiagnosticRecord>>()
     for (const diagnostic of diagnostics) {
@@ -110,16 +96,11 @@ export const computeDiagnosticDiff = (
 
 const diagnosticCodeKey = (code: number | string): string => String(code).replace(/^TS/, "")
 
-/** Collect `allowErrors()` exemptions recorded on compiled verification rules. */
 export const allowedErrorsFromRules = (
   rules: ReadonlyArray<VerificationRule>,
 ): ReadonlyArray<AllowedError> =>
   rules.flatMap((rule) => (rule.allowedError === undefined ? [] : [rule.allowedError]))
 
-/**
- * New error diagnostics that are not covered by `allowErrors()`. Each listed
- * code may consume up to its `max` (unbounded when omitted).
- */
 export const unpermittedIntroducedErrors = (
   diff: DiagnosticDiff,
   allowed: ReadonlyArray<AllowedError> = [],
@@ -142,23 +123,18 @@ export const unpermittedIntroducedErrors = (
   return unpermitted
 }
 
-/** Require the primary-run match count to fall within the given bounds. */
 export const matches = (bounds: { readonly min?: number; readonly max?: number }): Policy => ({
   matchCount: bounds,
 })
 
-/** Require exactly `count` primary-run matches. */
 export const exactly = (count: number): Policy => ({ matchCount: { min: count, max: count } })
 
-/** Cap the number of files a plan may touch. */
 export const atMostFiles = (count: number): Policy => ({ maxAffectedFiles: count })
 
-/** Reject the plan if verification finds any new error diagnostic. This is the default. */
 export const noNewErrors = (): Policy => ({
   diagnostics: "no-new-errors",
 })
 
-/** Require that this transformation actively resolves specific compiler error diagnostic(s). */
 export const fixesError = (code: number | string): Policy => ({
   rules: [
     {
@@ -176,7 +152,6 @@ export const fixesError = (code: number | string): Policy => ({
   ],
 })
 
-/** Allow specific error codes up to a given count. */
 export const allowErrors = (options: {
   readonly code: number | string
   readonly max?: number
@@ -199,7 +174,6 @@ export const allowErrors = (options: {
   ],
 })
 
-/** Custom policy rule evaluating the complete diagnostic diff. */
 export const diagnosticDiff = (
   name: string,
   predicate: (diff: DiagnosticDiff) => boolean | string,
@@ -212,7 +186,6 @@ export const diagnosticDiff = (
   ],
 })
 
-/** Declare that re-running the recipe against the proposed state must produce zero edits. */
 export const idempotent = (): Policy => ({ idempotence: "required" })
 
 interface MatchCountBounds {
@@ -220,7 +193,6 @@ interface MatchCountBounds {
   max?: number
 }
 
-/** Merge policies into the complete durable policy set, filling system defaults. */
 export const all = (policies: ReadonlyArray<Policy>): CompiledPolicy => {
   const matchCount: MatchCountBounds = {}
   let maxAffectedFiles: number | undefined

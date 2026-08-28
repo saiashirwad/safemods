@@ -1,4 +1,3 @@
-/** Evidence identity, merging, and completion for draft operations. */
 import { Data, Effect } from "effect"
 import type { EvidenceRecord } from "./Evidence.ts"
 import { canonicalJson } from "./Canonical.ts"
@@ -10,7 +9,6 @@ export class DraftEvidenceConflict extends Data.TaggedError("DraftEvidenceConfli
 const evidenceIdentity = (record: EvidenceRecord): string =>
   `${record.kind}\0${canonicalJson(record.facts)}`
 
-/** Keep identical records; reject the same ID with different kind or facts. */
 export const mergeEvidence = (
   records: ReadonlyArray<EvidenceRecord>,
 ): ReadonlyArray<EvidenceRecord> => {
@@ -28,7 +26,6 @@ export const mergeEvidence = (
   return [...evidence.values()]
 }
 
-/** Effect form of `mergeEvidence` for typed recipe failures. */
 export const mergeEvidenceEffect = (
   records: ReadonlyArray<EvidenceRecord>,
 ): Effect.Effect<ReadonlyArray<EvidenceRecord>, DraftEvidenceConflict> =>
@@ -55,7 +52,6 @@ export interface MissingEvidence {
   readonly facts?: EvidenceRecord["facts"] | undefined
 }
 
-/** Merge declared evidence and synthesize records for every referenced ID. */
 export const finalizeDraftEvidence = <A extends DraftEvidenceTarget>(
   draft: A,
   missing: MissingEvidence = {},
@@ -76,7 +72,6 @@ export const finalizeDraftEvidence = <A extends DraftEvidenceTarget>(
   return { ...draft, evidence: [...evidence.values()] }
 }
 
-/** Effect form of `finalizeDraftEvidence` for typed recipe failures. */
 export const finalizeDraftEvidenceEffect = <A extends DraftEvidenceTarget>(
   draft: A,
   missing: MissingEvidence = {},

@@ -1,4 +1,3 @@
-/** Public Query API and Criterion namespace. Implementations live in focused modules. */
 import { CriterionBase, type Criterion as CriterionModel } from "./Query.ts"
 import { RelationCriterion } from "./Relations.ts"
 

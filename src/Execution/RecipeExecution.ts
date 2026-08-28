@@ -1,4 +1,3 @@
-/** Shared recipe execution from planning through optional application. */
 import { Effect, type FileSystem, type Path } from "effect"
 import { applyVerifiedPlan, type ApplicationReceipt } from "../Application/index.ts"
 import type { ApplicationFailure, ApplicationIndeterminate } from "../Application/Application.ts"

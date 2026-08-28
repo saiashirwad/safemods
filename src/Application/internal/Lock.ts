@@ -6,7 +6,6 @@ const APPLY_LOCK_NAME = ".safemods-apply.lock"
 
 const processExists = (pid: number): boolean => {
   try {
-    // Signal 0 does not kill; it reports whether the lock owner is alive.
     process.kill(pid, 0)
     return true
   } catch {

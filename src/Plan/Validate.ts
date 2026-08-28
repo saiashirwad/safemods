@@ -1,4 +1,3 @@
-/** Structural and semantic Plan validation. */
 import { Effect, Predicate, Schema } from "effect"
 import { editsConflict } from "../Edit/index.ts"
 import { virtualFileKey } from "../VirtualFs/index.ts"

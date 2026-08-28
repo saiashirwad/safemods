@@ -1,4 +1,3 @@
-/** Authoritative runtime structure for schema-version 1 transformation plans. */
 import { Schema } from "effect"
 
 const RecipeSchema = Schema.Struct({
@@ -109,7 +108,6 @@ const planContentFields = {
 
 export const PlanInputSchema = Schema.Struct(planContentFields)
 
-/** Complete durable-plan structure. Semantic and canonical checks follow decoding. */
 export const TransformationPlanSchema = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   planId: Schema.String,
@@ -117,5 +115,4 @@ export const TransformationPlanSchema = Schema.Struct({
   snapshotHash: Schema.String,
 })
 
-/** All plan structs are closed so every boundary rejects fields it cannot address. */
 export const strictPlanParseOptions = { onExcessProperty: "error" } as const

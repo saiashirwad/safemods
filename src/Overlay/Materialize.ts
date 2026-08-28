@@ -14,7 +14,6 @@ import {
   type WorkspaceSnapshotService,
 } from "../Workspace/index.ts"
 
-/** Materialize changes against one coherent virtual filesystem. */
 export const materialize = (
   snapshot: WorkspaceSnapshotService,
   edits: ReadonlyArray<TextEdit>,
@@ -52,8 +51,6 @@ export const materialize = (
     const projectForPath = (projectId: string): ProjectSnapshot => {
       const project = snapshots.get(projectId)
       if (project === undefined) {
-        // Every path is resolved after its project is loaded by the canonical
-        // engine; this is an invariant violation if it ever occurs.
         throw new Error(`Project ${projectId} was not loaded before path resolution`)
       }
       return project

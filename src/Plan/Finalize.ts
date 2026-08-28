@@ -1,4 +1,3 @@
-/** Normalize Plan input and assign its content-addressed identifiers. */
 import { Effect } from "effect"
 import { editsConflict } from "../Edit/index.ts"
 import { canonicalizeContent, planHashOf, snapshotHashOf } from "./Codec.ts"

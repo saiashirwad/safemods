@@ -1,4 +1,3 @@
-/** Strict canonicalization, serialization, and decoding for content-addressed plans. */
 import { Effect, Schema } from "effect"
 import { compareEdits, sha256 } from "../Edit/index.ts"
 import { canonicalJson } from "../Evidence/Canonical.ts"
@@ -48,7 +47,6 @@ const compareFileOperations = (left: PlannedFileOperation, right: PlannedFileOpe
   left.path.localeCompare(right.path) ||
   left.kind.localeCompare(right.kind)
 
-/** Normalize and order every field that contributes to a plan's durable content. */
 export const canonicalizeContent = (input: PlanInput): PlanInput => {
   const projects = input.projects
     .map((project) => ({
@@ -149,7 +147,6 @@ const validateContentAddressedPlan = (
     return plan as ValidatedPlan
   })
 
-/** Reject a plan that is not structurally exact, canonical, and content-addressed. */
 export const validatePlan = (
   plan: TransformationPlan,
 ): Effect.Effect<ValidatedPlan, PlanDecodeError> =>

@@ -1,10 +1,7 @@
-/** Portable project-relative path identity for durable values. */
 import { Data } from "effect"
 
-/** A canonical path which is safe to resolve below a project root. */
 export type ProjectRelativePath = string & { readonly __projectRelativePath: unique symbol }
 
-/** Minimal host-path operations needed for project containment. */
 export interface ProjectPathOperations {
   readonly resolve: (...paths: ReadonlyArray<string>) => string
   readonly dirname: (path: string) => string
@@ -36,7 +33,6 @@ export class InvalidProjectRelativePath extends Data.TaggedError("InvalidProject
 
 const canonicalPath = (value: string): string | undefined => {
   if (value.length === 0 || value.includes("\0")) return undefined
-  // Durable plans are portable, so reject POSIX and Windows absolute spellings.
   if (value.startsWith("/") || value.startsWith("\\") || /^[A-Za-z]:[\\/]/.test(value))
     return undefined
   const parts = value.replaceAll("\\", "/").split("/")
@@ -48,21 +44,18 @@ const canonicalPath = (value: string): string | undefined => {
       result.pop()
       continue
     }
-    // A colon is a drive or device spelling on Windows. It is not portable.
     if (part.includes(":")) return undefined
     result.push(part)
   }
   return result.length === 0 ? undefined : result.join("/")
 }
 
-/** Convert a host path to slash-separated form relative to a project root. */
 export const projectRelative = (
   path: ProjectPathOperations,
   root: string,
   absolute: string,
 ): string => path.relative(path.resolve(root), path.resolve(absolute)).split(path.sep).join("/")
 
-/** Parse and normalize a portable project-relative path. */
 export const parseProjectRelativePath = (value: string): ProjectRelativePath | undefined => {
   const normalized = canonicalPath(value)
   // SAFETY: canonicalPath returns only normalized project-relative paths.
@@ -78,7 +71,6 @@ export const requireProjectRelativePath = (value: string): ProjectRelativePath =
   return parsed
 }
 
-/** True when `candidate` is below `root`, with explicit host comparison semantics. */
 export const isPathContained = (
   path: ProjectPathOperations,
   root: string,
@@ -100,7 +92,6 @@ export const isPathContained = (
   )
 }
 
-/** Resolve a relative path, or an already-absolute path, below a project root. */
 export const resolveContainedProjectPath = (
   path: ProjectPathOperations,
   projectRoot: string,
@@ -119,7 +110,6 @@ export const resolveContainedProjectPath = (
     : undefined
 }
 
-/** Resolve one durable plan path below its configured project and workspace roots. */
 export const resolvePlanFilePath = (
   path: ProjectPathOperations,
   plan: PlanProjectPaths,
@@ -144,6 +134,5 @@ export const resolvePlanFilePath = (
   return { projectRoot, fileName: target }
 }
 
-/** Stable diagnostic for an invalid or unknown path in a durable plan. */
 export const unsafePlanFilePathMessage = (projectId: string, fileName: string): string =>
   `Unsafe or unknown project path: ${projectId}:${fileName}`

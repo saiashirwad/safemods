@@ -1,4 +1,3 @@
-/** Application domain values. */
 import { Data } from "effect"
 
 export class ApplicationFailure extends Data.TaggedError("ApplicationFailure")<{

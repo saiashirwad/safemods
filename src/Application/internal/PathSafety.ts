@@ -8,12 +8,6 @@ import {
 import type { TransformationPlan } from "../../Plan/index.ts"
 import { toApplicationFailure } from "./Failure.ts"
 
-/**
- * Resolve a durable project-relative path and enforce both lexical and real
- * filesystem containment. The nearest existing parent check prevents a
- * symlinked directory from redirecting a valid-looking path outside the
- * project between plan decoding and application.
- */
 export const safeTarget = (
   plan: TransformationPlan,
   workspaceRoot: string,

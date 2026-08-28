@@ -42,7 +42,6 @@ const rollbackAppliedFiles = (
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
     for (const item of [...applied].reverse()) {
-      // Containment is enforced again for every inverse transition.
       const target = yield* safeTarget(plan, workspaceRoot, item.file.projectId, item.file.fileName)
       if (!item.file.before.exists) {
         yield* fs.remove(target, { force: true })
@@ -73,9 +72,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     workspaceRoot,
     plan.planId,
     Effect.gen(function* () {
-      // Recover leftover temps and partial commits before reading sources.
       yield* recoverUnfinishedApplication(workspaceRoot, plan.planId)
-      // Rematerialize from the issued plan. Caller preview text is not used.
       const preview = yield* previewValidatedPlan(plan, workspaceRoot).pipe(
         Effect.mapError(preserveStalePlanError(plan.planId)),
       )
@@ -102,8 +99,6 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
         const fs = yield* FileSystem.FileSystem
         const path = yield* Path.Path
 
-        // Stage every resulting file before changing any target. Missing
-        // parent directories are tracked so a failed transaction removes them.
         const stageExit = yield* stagePreviewFiles(
           plan,
           workspaceRoot,
@@ -123,8 +118,6 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
         }
         yield* persistJournal(journalPath, journal)
 
-        // Re-check each precondition immediately before its filesystem state
-        // transition. This closes the create-target race after verification.
         const commitExit = yield* Effect.gen(function* () {
           for (const item of staged) {
             yield* checkExpectedState(plan, workspaceRoot, item.file)
@@ -132,8 +125,6 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
               yield* fs.remove(item.target)
               applied.push(item)
             } else {
-              // Creates use no-clobber link. Existing files refuse to
-              // rename-over live bytes that no longer match the plan.
               yield* item.file.before.exists
                 ? installExistingFile(plan, item.file, item.temporary!, item.target)
                 : fs.link(item.temporary!, item.target)

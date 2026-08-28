@@ -1,4 +1,3 @@
-/** Application is the sole stage that writes project files. */
 export type {
   ApplicationFailure,
   ApplicationIndeterminate,

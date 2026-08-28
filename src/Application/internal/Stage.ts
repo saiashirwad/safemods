@@ -53,8 +53,6 @@ export const checkExpectedState = (
     }
     return target
   })
-
-/** Install over an existing file without rename-over of the live name. */
 export const installExistingFile = (
   plan: TransformationPlan,
   file: FilePreview,
@@ -69,9 +67,6 @@ export const installExistingFile = (
       fileName: file.fileName,
     })
     const fail = (cause: unknown) => toApplicationFailure(plan.planId, cause)
-    // Vacate the live name by moving its bytes aside, then no-replace link
-    // the staged inode. Never rename the staged file onto the live name —
-    // that would replace a write that landed after the last hash check.
     const backup = `${target}.safemods-swap-${randomUUID()}.tmp`
     yield* fs.rename(target, backup).pipe(Effect.mapError(fail))
     const linked = yield* fs.link(temporary, target).pipe(Effect.result)
@@ -115,8 +110,6 @@ export const stagePreviewFiles = (
           current = path.dirname(current)
         }
         for (const directory of missing.reverse()) {
-          // Non-recursive creation fails if another process wins the
-          // race, so cleanup never claims a directory it did not make.
           yield* fs.makeDirectory(directory)
           if (!createdDirectories.includes(directory)) createdDirectories.push(directory)
         }

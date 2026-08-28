@@ -1,9 +1,3 @@
-/**
- * AgentTool domain — bridge recipes into LLM-callable tools.
- *
- * Turns any `Recipe` into a typed, validated agent tool conforming
- * to standard LLM function-calling protocols (OpenAI / MCP / Anthropic).
- */
 import { Data, Effect, type JsonSchema, Predicate, Schema, SchemaIssue } from "effect"
 import type { Json } from "../Evidence/index.ts"
 import { executeRecipe } from "../Execution/index.ts"
@@ -90,8 +84,6 @@ const isJsonObject = (value: unknown): value is AgentToolInputSchema["properties
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- JSON protocol boundary delegated to isJsonObject.
 const asJsonObject = (value: unknown): AgentToolInputSchema["properties"] | undefined =>
   isJsonObject(value) ? value : undefined
-
-/** LLM tool protocols expect an object `inputSchema` with `type` and `properties`. */
 const protocolInputSchema = (
   generated: JsonSchema.Document<"draft-2020-12">,
 ): AgentToolInputSchema => {
@@ -112,8 +104,6 @@ const protocolInputSchema = (
     properties: asJsonObject(schema.properties) ?? {},
   }
 }
-
-/** Convert a recipe into a structured Agent Tool. */
 export const recipeToAgentTool = <Input = undefined, E = never, R = never>(
   recipe: RecipeModel<Input, E, R>,
   description = `Transform codebase using ${recipe.name}`,

@@ -1,4 +1,3 @@
-/** Node implementation of Workspace's synchronous compiler-host runtime. */
 import * as Fs from "node:fs"
 import * as Path from "node:path"
 import { Layer } from "effect"
@@ -56,6 +55,5 @@ export const workspaceRuntimeLayer = Layer.sync(WorkspaceRuntime, () =>
   }),
 )
 
-/** Ready Node-backed Workspace layer for normal application composition. */
 export const workspaceLayerNode = (definition: WorkspaceDefinition, options: APIOptions = {}) =>
   workspaceLayer(definition, options).pipe(Layer.provide(workspaceRuntimeLayer))
