@@ -1,18 +1,19 @@
 /**
  * Safemods CLI — read-only search and audit reporting.
  */
-import { Data, Effect, Predicate } from "effect"
+import { Data, Effect, Option, Schema } from "effect"
 import type { Json } from "../Evidence/index.ts"
 import type { TransformationPlan } from "../Plan/index.ts"
 import { virtualFileKey } from "../VirtualFs/index.ts"
 import type {
-  FileNotFound,
   ProjectNotInSnapshot,
   ProjectSnapshot,
   ProjectSnapshotError,
   WorkspaceSnapshotService,
 } from "../Workspace/index.ts"
-import { ANSI, colorize } from "./Ansi.ts"
+import { colorize } from "./Ansi.ts"
+
+const boldCyan = ["bold", "cyan"] as const
 
 export interface AuditCriterionRecord {
   readonly criterion: string
@@ -43,104 +44,81 @@ export interface AuditReport {
   readonly findings: ReadonlyArray<AuditFinding>
 }
 
-export interface SourceLocation {
-  readonly line: number
-  readonly column: number
-}
-
 export class CliMatchFoundError extends Data.TaggedError("CliMatchFoundError")<{
   readonly matches: number
   readonly files: number
 }> {}
 
-/** Compute 1-based line number and 1-based character column from 0-based character offset. */
-export const computeLineAndColumn = (text: string, pos: number): SourceLocation => {
-  const clampedPos = Math.max(0, Math.min(pos, text.length))
-  let line = 1
-  let lastLineStart = 0
-  for (let i = 0; i < clampedPos; i++) {
-    if (text.charCodeAt(i) === 10 /* \n */) {
-      line++
-      lastLineStart = i + 1
-    }
-  }
-  const column = clampedPos - lastLineStart + 1
-  return { line, column }
-}
+const AuditCriterionSchema = Schema.Struct({
+  criterion: Schema.String,
+  facts: Schema.Record(Schema.String, Schema.Json),
+})
+const OffsetSchema = Schema.Finite.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+
+const SelectionEvidenceSchema = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literal("selection"),
+  facts: Schema.Struct({
+    projectId: Schema.String,
+    fileName: Schema.String,
+    start: OffsetSchema,
+    end: OffsetSchema,
+    criteria: Schema.Array(AuditCriterionSchema),
+  }),
+})
+
+const decodeSelectionEvidence = Schema.decodeUnknownOption(SelectionEvidenceSchema)
 
 /** Build structured AuditReport from a transformation plan and workspace snapshot. */
 export const buildAuditReport = (
   plan: TransformationPlan,
   snapshot: WorkspaceSnapshotService,
-): Effect.Effect<AuditReport, ProjectSnapshotError | ProjectNotInSnapshot | FileNotFound> =>
+): Effect.Effect<AuditReport, ProjectSnapshotError | ProjectNotInSnapshot> =>
   Effect.gen(function* () {
     const findings: Array<AuditFinding> = []
     const projectCache = new Map<string, ProjectSnapshot>()
 
     for (const record of plan.evidence) {
-      if (record.kind === "selection" && Predicate.isObject(record.facts)) {
-        const facts = record.facts
-        const projectId = Predicate.isString(facts.projectId)
-          ? facts.projectId
-          : (plan.projects[0]?.id ?? "app")
-        const fileName = Predicate.isString(facts.fileName) ? facts.fileName : ""
-        const start = Predicate.isNumber(facts.start) ? facts.start : 0
-        const end = Predicate.isNumber(facts.end) ? facts.end : start
+      const decoded = decodeSelectionEvidence(record)
+      if (Option.isNone(decoded)) continue
 
-        let project = projectCache.get(projectId)
-        if (!project) {
-          const config = snapshot.projects.find((p) => p.id === projectId)
-          if (config) {
-            project = yield* snapshot.project(config)
-            projectCache.set(projectId, project)
-          }
+      const { id, facts } = decoded.value
+      const { projectId, fileName, start, end } = facts
+
+      let project = projectCache.get(projectId)
+      if (!project) {
+        const config = snapshot.projects.find((candidate) => candidate.id === projectId)
+        if (config) {
+          project = yield* snapshot.project(config)
+          projectCache.set(projectId, project)
         }
-
-        let sourceText = ""
-        if (project && fileName) {
-          sourceText = yield* project
-            .sourceText(fileName)
-            .pipe(Effect.catchTag("FileNotFound", () => Effect.succeed("")))
-        }
-
-        const startLoc = computeLineAndColumn(sourceText, start)
-        const endLoc = computeLineAndColumn(sourceText, end)
-        const snippet = sourceText !== "" ? sourceText.slice(start, end) : undefined
-
-        const rawCriteria = Array.isArray(facts.criteria) ? facts.criteria : []
-        const criteria: Array<AuditCriterionRecord> = []
-        for (const item of rawCriteria) {
-          if (
-            Predicate.isObject(item) &&
-            "criterion" in item &&
-            Predicate.isString(item.criterion)
-          ) {
-            // SAFETY: item.facts is treated as a JSON dictionary if present.
-            const itemFacts = (Predicate.isObject(item.facts) ? item.facts : {}) as Record<
-              string,
-              Json
-            >
-            criteria.push({
-              criterion: item.criterion,
-              facts: itemFacts,
-            })
-          }
-        }
-
-        findings.push({
-          id: record.id,
-          projectId,
-          fileName,
-          start,
-          end,
-          startLine: startLoc.line,
-          startColumn: startLoc.column,
-          endLine: endLoc.line,
-          endColumn: endLoc.column,
-          snippet,
-          criteria,
-        })
       }
+
+      const sourceFile = project ? yield* project.sourceFile(fileName) : undefined
+      const sourceText = sourceFile?.text ?? ""
+      const position = (offset: number) => {
+        if (sourceFile === undefined) return { line: 1, column: 1 }
+        const clamped = Math.max(0, Math.min(offset, sourceText.length))
+        const location = sourceFile.getLineAndCharacterOfPosition(clamped)
+        return { line: location.line + 1, column: location.character + 1 }
+      }
+      const startLoc = position(start)
+      const endLoc = position(end)
+      const snippet = sourceFile === undefined ? undefined : sourceText.slice(start, end)
+
+      findings.push({
+        id,
+        projectId,
+        fileName,
+        start,
+        end,
+        startLine: startLoc.line,
+        startColumn: startLoc.column,
+        endLine: endLoc.line,
+        endColumn: endLoc.column,
+        snippet,
+        criteria: facts.criteria,
+      })
     }
 
     findings.sort((a, b) => {
@@ -177,23 +155,19 @@ export const renderAuditText = (
   const lines: Array<string> = []
 
   lines.push(
-    colorize(
-      `Audit Report: ${report.recipe.name} [v${report.recipe.version}]`,
-      ANSI.bold,
-      useColor,
-    ),
+    colorize(`Audit Report: ${report.recipe.name} [v${report.recipe.version}]`, "bold", useColor),
   )
   lines.push(
     colorize(
       `Found ${report.totalMatches} match(es) across ${report.totalFiles} file(s)`,
-      ANSI.dim,
+      "dim",
       useColor,
     ),
   )
   lines.push("")
 
   if (report.findings.length === 0) {
-    lines.push(colorize("✔ No matches found.", ANSI.green, useColor))
+    lines.push(colorize("✔ No matches found.", "green", useColor))
     return lines.join("\n")
   }
 
@@ -209,12 +183,12 @@ export const renderAuditText = (
   }
 
   for (const [fileKey, fileFindings] of grouped) {
-    lines.push(colorize(`📄 ${fileKey}`, ANSI.bold + ANSI.cyan, useColor))
+    lines.push(colorize(`📄 ${fileKey}`, boldCyan, useColor))
     for (const f of fileFindings) {
-      const location = colorize(`  line ${f.startLine}:${f.startColumn}`, ANSI.yellow, useColor)
+      const location = colorize(`  line ${f.startLine}:${f.startColumn}`, "yellow", useColor)
       const criteriaStr =
         f.criteria.length > 0
-          ? colorize(` [${f.criteria.map((c) => c.criterion).join(", ")}]`, ANSI.dim, useColor)
+          ? colorize(` [${f.criteria.map((c) => c.criterion).join(", ")}]`, "dim", useColor)
           : ""
       lines.push(`${location}${criteriaStr}`)
       if (f.snippet) {
@@ -223,7 +197,7 @@ export const renderAuditText = (
           .slice(0, 3)
           .map((l) => `    ${l.trim()}`)
           .join("\n")
-        lines.push(colorize(truncated, ANSI.gray, useColor))
+        lines.push(colorize(truncated, "gray", useColor))
       }
     }
     lines.push("")

@@ -1,4 +1,4 @@
-export { any, bind, not, predicate, syntaxKindName, tuple } from "./Pattern.ts"
+export { any, bind, predicate, syntaxKindName, tuple } from "./Pattern.ts"
 export type {
   AnyPattern,
   NodeCriterion,

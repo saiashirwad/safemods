@@ -100,7 +100,7 @@ describe("recipe policy and concurrent composition", () => {
         policies: [
           Policy.atMostFiles(10),
           Policy.matches({ min: 1, max: 20 }),
-          { diagnostics: "exact-delta" },
+          { diagnostics: "allow-new-errors" },
         ],
         run: () => Effect.succeed(Draft.empty),
       })
@@ -167,7 +167,7 @@ describe("recipe policy and concurrent composition", () => {
                   libraryFile,
                   Pattern.functionDeclaration({ exported: true }),
                 ).pipe(Query.collect)
-                return Draft.audit(decls)
+                return yield* Draft.audit(decls)
               }),
           })
 

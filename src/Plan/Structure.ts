@@ -22,14 +22,7 @@ const SourceFingerprintSchema = Schema.Struct({
   projectId: Schema.String,
   fileName: Schema.String,
   hash: Schema.String,
-  kind: Schema.optional(
-    Schema.Union([
-      Schema.Literal("file"),
-      Schema.Literal("missing"),
-      Schema.Literal("directory"),
-      Schema.Literal("realpath"),
-    ]),
-  ),
+  kind: Schema.optional(Schema.Union([Schema.Literal("file"), Schema.Literal("missing")])),
 })
 
 const NonNegativeInt = Schema.Finite.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
@@ -42,7 +35,12 @@ const TextEditSchema = Schema.Struct({
   expectedTextHash: Schema.String,
   newText: Schema.String,
   evidenceIds: Schema.Array(Schema.String),
-})
+}).check(
+  Schema.makeFilter(
+    (edit: { readonly start: number; readonly end: number }) => edit.start <= edit.end,
+    { expected: "edit.start <= edit.end" },
+  ),
+)
 
 const FileOperationSchema = Schema.Union([
   Schema.Struct({
@@ -88,7 +86,7 @@ const PoliciesSchema = Schema.Struct({
     ),
   ),
   maxAffectedFiles: Schema.optional(NonNegativeInt),
-  diagnostics: Schema.Union([Schema.Literal("no-new-errors"), Schema.Literal("exact-delta")]),
+  diagnostics: Schema.Union([Schema.Literal("no-new-errors"), Schema.Literal("allow-new-errors")]),
   idempotence: Schema.Union([Schema.Literal("required"), Schema.Literal("not-promised")]),
 })
 

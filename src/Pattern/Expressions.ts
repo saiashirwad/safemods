@@ -4,15 +4,8 @@ import {
   type CallExpression,
   type Identifier,
   type Node,
-  type ObjectLiteralExpression,
 } from "typescript/unstable/ast"
-import {
-  isCallExpression,
-  isIdentifier,
-  isObjectLiteralExpression,
-  isPropertyAssignment,
-  isStringLiteral,
-} from "typescript/unstable/ast/is"
+import { isCallExpression, isIdentifier } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol } from "typescript/unstable/async"
 import type { EvidenceFact } from "../Evidence/Evidence.ts"
 import {
@@ -100,26 +93,3 @@ export const callExpression = <EOut = Node, AOut = ReadonlyArray<Node>>(options?
       }),
   }
 }
-
-export const objectLiteral = (options?: {
-  readonly hasProperties?: ReadonlyArray<string>
-}): Pattern<ObjectLiteralExpression, ObjectLiteralExpression> => ({
-  mode: "node",
-  kind: "objectLiteral",
-  syntaxKind: SyntaxKind.ObjectLiteralExpression,
-  match: (node) =>
-    Effect.sync(() => {
-      if (!isObjectLiteralExpression(node)) return matchFailure
-      if (options?.hasProperties !== undefined) {
-        const names = new Set(
-          node.properties
-            .filter(isPropertyAssignment)
-            .map((p) => (isIdentifier(p.name) || isStringLiteral(p.name) ? p.name.text : "")),
-        )
-        if (!options.hasProperties.every((name) => names.has(name))) {
-          return matchFailure
-        }
-      }
-      return matchSuccess(node, { propertyCount: node.properties.length })
-    }),
-})

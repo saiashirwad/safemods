@@ -1,23 +1,24 @@
 import { Effect, Schema } from "effect"
-import { compareEdits, sha256 } from "../Edit/index.ts"
+import { sha256 } from "../Edit/Hash.ts"
+import { compareEdits } from "../Edit/index.ts"
 import { canonicalJson } from "../Evidence/Canonical.ts"
 import type { Json } from "../Evidence/Evidence.ts"
-import {
-  PlanDecodeError,
-  type PlanInput,
-  type PlannedFileOperation,
-  type SourceFingerprint,
-  type TransformationPlan,
-} from "./TransformationPlan.ts"
+import { PlanDecodeError, type PlanInput, type TransformationPlan } from "./TransformationPlan.ts"
 import { strictPlanParseOptions, TransformationPlanSchema } from "./Structure.ts"
-import { normalizedPath, validateDecodedPlan } from "./Validate.ts"
+import {
+  compareFileOperations,
+  compareIds,
+  compareSourceFingerprints,
+  normalizedPath,
+  validateDecodedPlan,
+} from "./Validate.ts"
 
 declare const ValidatedPlanTypeId: unique symbol
 export type ValidatedPlan = TransformationPlan & {
   readonly [ValidatedPlanTypeId]: true
 }
 
-export { canonicalJson }
+export { canonicalJson, compareSourceFingerprints }
 
 const asEncodedJson = (
   value:
@@ -30,22 +31,6 @@ const asEncodedJson = (
 ): Json =>
   // SAFETY: plan schemas contain only JSON values.
   value as Json
-
-const compareIds = (left: { readonly id: string }, right: { readonly id: string }): number =>
-  left.id.localeCompare(right.id)
-
-export const compareSourceFingerprints = (
-  left: SourceFingerprint,
-  right: SourceFingerprint,
-): number =>
-  left.projectId.localeCompare(right.projectId) ||
-  left.fileName.localeCompare(right.fileName) ||
-  (left.kind ?? "file").localeCompare(right.kind ?? "file")
-
-const compareFileOperations = (left: PlannedFileOperation, right: PlannedFileOperation): number =>
-  left.projectId.localeCompare(right.projectId) ||
-  left.path.localeCompare(right.path) ||
-  left.kind.localeCompare(right.kind)
 
 export const canonicalizeContent = (input: PlanInput): PlanInput => {
   const projects = input.projects
@@ -119,17 +104,11 @@ const decodePlan = (decoded: unknown): Effect.Effect<TransformationPlan, PlanDec
     ),
   )
 
-const validateCanonicalContent = (
-  plan: TransformationPlan,
-): Effect.Effect<void, PlanDecodeError> => {
+const validateSnapshotHash = (plan: TransformationPlan): Effect.Effect<void, PlanDecodeError> => {
   const { schemaVersion: _, planId: __, snapshotHash: ___, ...content } = plan
-  if (JSON.stringify(content) !== JSON.stringify(canonicalizeContent(content))) {
-    return Effect.fail(new PlanDecodeError({ reason: "schema" }))
-  }
-  if (snapshotHashOf(content) !== plan.snapshotHash) {
-    return Effect.fail(new PlanDecodeError({ reason: "schema" }))
-  }
-  return Effect.void
+  return snapshotHashOf(content) === plan.snapshotHash
+    ? Effect.void
+    : Effect.fail(new PlanDecodeError({ reason: "schema" }))
 }
 
 const validateContentAddressedPlan = (
@@ -139,7 +118,7 @@ const validateContentAddressedPlan = (
     yield* validateDecodedPlan(plan).pipe(
       Effect.mapError(() => new PlanDecodeError({ reason: "schema" })),
     )
-    yield* validateCanonicalContent(plan)
+    yield* validateSnapshotHash(plan)
     if (planHashOf(plan) !== plan.planId) {
       return yield* new PlanDecodeError({ reason: "hash" })
     }

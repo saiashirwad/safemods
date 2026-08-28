@@ -2,6 +2,7 @@
  * Module specifier rewriting for file moves.
  */
 import { posix as PathPosix } from "node:path"
+import { applyTextReplacements } from "../../Edit/index.ts"
 import { SyntaxKind, type Node, type SourceFile, type StringLiteral } from "typescript/unstable/ast"
 import {
   isCallExpression,
@@ -184,11 +185,4 @@ export const specifierReplacements = (
 export const applySpecifierReplacements = (
   source: string,
   replacements: Array<SpecifierReplacement>,
-): string => {
-  const ordered = [...replacements].sort((left, right) => right.start - left.start)
-  let next = source
-  for (const replacement of ordered) {
-    next = `${next.slice(0, replacement.start)}${replacement.newText}${next.slice(replacement.end)}`
-  }
-  return next
-}
+): string => applyTextReplacements(source, replacements)

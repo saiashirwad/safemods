@@ -49,13 +49,11 @@ describe("recipe project-file composition", () => {
                   },
                 )
 
-                return Draft.concat(importDraft, replaceDraft)
+                return yield* Draft.concat(importDraft, replaceDraft)
               }),
           })
 
-          yield* executeRecipe(fileRecipe, undefined, { mode: "apply" }).pipe(
-            Effect.provide(nodeLayer),
-          )
+          yield* executeRecipe(fileRecipe, undefined).pipe(Effect.provide(nodeLayer))
 
           const consumerContent = yield* Effect.tryPromise(() =>
             Fs.readFile(Path.join(root, "src/consumer.ts"), "utf8"),

@@ -1,7 +1,7 @@
 import { path as Path, nodeFsPromises as Fs } from "../platform/node.ts"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import { sha256 } from "../Edit/index.ts"
+import { sha256 } from "../Edit/Hash.ts"
 import * as Draft from "../Draft/index.ts"
 import * as Overlay from "../Overlay/index.ts"
 import { Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"

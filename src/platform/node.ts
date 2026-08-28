@@ -14,8 +14,5 @@ import { Layer } from "effect"
 /** Production Node implementations of Effect's filesystem and path services. */
 export const layer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
-/** Provided separately when a caller needs only the path service. */
-export const pathLayer = NodePath.layer
-
 /** Direct Node APIs are restricted to process bootstrap and test-fixture setup. */
 export { nodeFsPromises, path }

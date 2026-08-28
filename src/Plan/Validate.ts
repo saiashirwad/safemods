@@ -1,5 +1,5 @@
-import { Effect, Predicate, Schema } from "effect"
-import { editsConflict } from "../Edit/index.ts"
+import { Effect, Schema } from "effect"
+import { compareEdits, editsConflict } from "../Edit/index.ts"
 import { virtualFileKey } from "../VirtualFs/index.ts"
 import { parseProjectRelativePath, type ProjectRelativePath } from "../ProjectPath/index.ts"
 import {
@@ -17,10 +17,6 @@ const fail = (
   detail: string,
 ): Effect.Effect<never, PlanBuildError> => Effect.fail(new PlanBuildError({ reason, detail }))
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- numeric I/O guard before Schema decode.
-const isFiniteNonnegativeInteger = (value: unknown): value is number =>
-  Predicate.isNumber(value) && Number.isFinite(value) && Number.isInteger(value) && value >= 0
-
 const decodePlanInput = Schema.decodeUnknownEffect(PlanInputSchema, strictPlanParseOptions)
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Plan finalize I/O boundary; Schema is the parser.
@@ -34,6 +30,37 @@ const validateInputStructure = (input: unknown): Effect.Effect<void, PlanBuildEr
 
 export const normalizedPath = (value: string): ProjectRelativePath | undefined =>
   parseProjectRelativePath(value)
+
+export const compareStrings = (left: string, right: string): number => left.localeCompare(right)
+
+export const compareIds = (left: { readonly id: string }, right: { readonly id: string }): number =>
+  left.id.localeCompare(right.id)
+
+export const compareSourceFingerprints = (
+  left: SourceFingerprint,
+  right: SourceFingerprint,
+): number =>
+  left.projectId.localeCompare(right.projectId) ||
+  left.fileName.localeCompare(right.fileName) ||
+  (left.kind ?? "file").localeCompare(right.kind ?? "file")
+
+export const compareFileOperations = (
+  left: PlannedFileOperation,
+  right: PlannedFileOperation,
+): number =>
+  left.projectId.localeCompare(right.projectId) ||
+  left.path.localeCompare(right.path) ||
+  left.kind.localeCompare(right.kind)
+
+const hasCanonicalOrder = <A>(
+  values: ReadonlyArray<A>,
+  compare: (left: A, right: A) => number,
+): boolean => {
+  for (let index = 1; index < values.length; index++) {
+    if (compare(values[index - 1]!, values[index]!) > 0) return false
+  }
+  return true
+}
 
 const operationKeys = (operation: PlannedFileOperation): Array<string> => {
   const keys = [virtualFileKey(operation.projectId, operation.path)]
@@ -68,8 +95,22 @@ const validateOperation = (
   return undefined
 }
 
-const validateInputSemantics = (input: PlanInput): Effect.Effect<void, PlanBuildError> =>
+const validateInputSemantics = (
+  input: PlanInput,
+  requireCanonicalOrder: boolean,
+): Effect.Effect<void, PlanBuildError> =>
   Effect.gen(function* () {
+    if (
+      requireCanonicalOrder &&
+      (!hasCanonicalOrder(input.projects, compareIds) ||
+        !hasCanonicalOrder(input.sources, compareSourceFingerprints) ||
+        !hasCanonicalOrder(input.edits, compareEdits) ||
+        !hasCanonicalOrder(input.evidence, compareIds) ||
+        (input.fileOperations !== undefined &&
+          !hasCanonicalOrder(input.fileOperations, compareFileOperations)))
+    ) {
+      return yield* fail("invalid-plan", "Plan content is not in canonical order")
+    }
     const projectIds = new Set<string>()
     for (const project of input.projects) {
       if (project.id.length === 0 || projectIds.has(project.id)) {
@@ -78,7 +119,11 @@ const validateInputSemantics = (input: PlanInput): Effect.Effect<void, PlanBuild
           `Invalid project ${project.id}`,
         )
       }
-      if (normalizedPath(project.configFileName) === undefined) {
+      const configFileName = normalizedPath(project.configFileName)
+      if (
+        configFileName === undefined ||
+        (requireCanonicalOrder && configFileName !== project.configFileName)
+      ) {
         return yield* fail("invalid-path", project.configFileName)
       }
       projectIds.add(project.id)
@@ -87,7 +132,9 @@ const validateInputSemantics = (input: PlanInput): Effect.Effect<void, PlanBuild
     const seenSources = new Set<string>()
     for (const source of input.sources) {
       const path = normalizedPath(source.fileName)
-      if (path === undefined) return yield* fail("invalid-path", source.fileName)
+      if (path === undefined || (requireCanonicalOrder && path !== source.fileName)) {
+        return yield* fail("invalid-path", source.fileName)
+      }
       if (!projectIds.has(source.projectId)) return yield* fail("missing-source", source.fileName)
       const kind = source.kind ?? "file"
       const unique = `${source.projectId}\0${kind}\0${path}`
@@ -104,16 +151,20 @@ const validateInputSemantics = (input: PlanInput): Effect.Effect<void, PlanBuild
       }
       evidenceIds.add(item.id)
     }
-    for (const edit of input.edits) {
-      if (
-        !isFiniteNonnegativeInteger(edit.start) ||
-        !isFiniteNonnegativeInteger(edit.end) ||
-        edit.end < edit.start
-      ) {
-        return yield* fail("invalid-edit", `${edit.fileName}:${edit.start}`)
+    const orderedEdits = requireCanonicalOrder ? input.edits : [...input.edits].sort(compareEdits)
+    for (let index = 1; index < orderedEdits.length; index++) {
+      if (editsConflict(orderedEdits[index - 1]!, orderedEdits[index]!)) {
+        return yield* fail("edit-conflict", "Overlapping edits")
       }
+    }
+    for (const edit of input.edits) {
       const fileName = normalizedPath(edit.fileName)
-      if (fileName === undefined) return yield* fail("invalid-path", edit.fileName)
+      if (fileName === undefined || (requireCanonicalOrder && fileName !== edit.fileName)) {
+        return yield* fail("invalid-path", edit.fileName)
+      }
+      if (requireCanonicalOrder && !hasCanonicalOrder(edit.evidenceIds, compareStrings)) {
+        return yield* fail("invalid-plan", "Edit evidence IDs are not in canonical order")
+      }
       if (
         !projectIds.has(edit.projectId) ||
         !sourceMap.has(virtualFileKey(edit.projectId, fileName))
@@ -127,12 +178,28 @@ const validateInputSemantics = (input: PlanInput): Effect.Effect<void, PlanBuild
       const occupied = new Set<string>()
       for (const operation of input.fileOperations) {
         const path = normalizedPath(operation.path)
-        if (path === undefined) return yield* fail("invalid-path", operation.path)
+        if (path === undefined || (requireCanonicalOrder && path !== operation.path)) {
+          return yield* fail("invalid-path", operation.path)
+        }
+        if (
+          requireCanonicalOrder &&
+          operation.kind === "move" &&
+          normalizedPath(operation.toPath) !== operation.toPath
+        ) {
+          return yield* fail("invalid-path", operation.toPath)
+        }
         const normalized =
           operation.kind === "move" && normalizedPath(operation.toPath) !== undefined
             ? { ...operation, path, toPath: normalizedPath(operation.toPath)! }
             : { ...operation, path }
         const error = validateOperation(normalized, projectIds, sourceMap, evidenceIds)
+        if (
+          requireCanonicalOrder &&
+          normalized.evidenceIds !== undefined &&
+          !hasCanonicalOrder(normalized.evidenceIds, compareStrings)
+        ) {
+          return yield* fail("invalid-plan", "File operation evidence IDs are not canonical")
+        }
         if (error !== undefined) return yield* fail("invalid-file-operation", error)
         for (const key of operationKeys(normalized)) {
           if (occupied.has(key))
@@ -141,37 +208,17 @@ const validateInputSemantics = (input: PlanInput): Effect.Effect<void, PlanBuild
         }
       }
     }
-    const { min, max } = input.policies.matchCount
-    if (
-      (min !== undefined && !isFiniteNonnegativeInteger(min)) ||
-      (max !== undefined && !isFiniteNonnegativeInteger(max)) ||
-      (min !== undefined && max !== undefined && min > max) ||
-      (input.policies.maxAffectedFiles !== undefined &&
-        !isFiniteNonnegativeInteger(input.policies.maxAffectedFiles)) ||
-      (input.measurements?.matches !== undefined &&
-        !isFiniteNonnegativeInteger(input.measurements.matches))
-    ) {
-      return yield* fail(
-        "invalid-policy",
-        "Policy counts must be finite nonnegative integers with min <= max",
-      )
-    }
   })
 
 export const validateInput = (input: PlanInput): Effect.Effect<void, PlanBuildError> =>
   Effect.gen(function* () {
     yield* validateInputStructure(input)
-    yield* validateInputSemantics(input)
+    yield* validateInputSemantics(input, false)
   })
 
 export const validateDecodedPlan = (
   plan: TransformationPlan,
-): Effect.Effect<void, PlanBuildError> =>
-  Effect.gen(function* () {
-    const { schemaVersion: _, planId: __, snapshotHash: ___, ...input } = plan
-    yield* validateInputSemantics(input)
-    for (let index = 1; index < plan.edits.length; index++) {
-      if (editsConflict(plan.edits[index - 1]!, plan.edits[index]!))
-        return yield* fail("edit-conflict", "Overlapping edits")
-    }
-  })
+): Effect.Effect<void, PlanBuildError> => {
+  const { schemaVersion: _, planId: __, snapshotHash: ___, ...input } = plan
+  return validateInputSemantics(input, true)
+}

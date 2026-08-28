@@ -3,7 +3,6 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../Draft/index.ts"
 import { applyFileEdits } from "../Edit/index.ts"
-import * as Evidence from "../Evidence/index.ts"
 import { requireProjectRelativePath } from "../ProjectPath/index.ts"
 import * as Query from "../Query/index.ts"
 import { Workspace } from "../Workspace/index.ts"
@@ -69,8 +68,8 @@ describe("Draft helper contracts", () => {
                 expect(draft.edits).toHaveLength(1)
                 expectCompleteEvidence(draft)
               }
-              expectCompleteEvidence(Draft.concat(...drafts))
-              expectCompleteEvidence(Draft.concat({ ...drafts[0]!, evidence: [] }))
+              expectCompleteEvidence(yield* Draft.concat(...drafts))
+              expectCompleteEvidence(yield* Draft.concat({ ...drafts[0]!, evidence: [] }))
 
               const emptyEach = yield* Draft.replaceEach(calls.slice(0, 1), () => Draft.empty)
               expect(emptyEach.edits).toEqual([])
@@ -98,36 +97,39 @@ describe("Draft helper contracts", () => {
                 ],
                 matches: 1,
               })
-              const mergedProjects = Draft.concat(createEvidence("app"), createEvidence("lib"))
+              const mergedProjects = yield* Draft.concat(
+                createEvidence("app"),
+                createEvidence("lib"),
+              )
               expect(mergedProjects.evidence.map((record) => record.id).sort()).toEqual([
                 "file:create:app:src/a.ts",
                 "file:create:lib:src/a.ts",
               ])
-              const sameTwice = Draft.concat(createEvidence("app"), createEvidence("app"))
+              const sameTwice = yield* Draft.concat(createEvidence("app"), createEvidence("app"))
               expect(sameTwice.evidence).toHaveLength(1)
-              expect(() =>
-                Draft.concat(createEvidence("app"), {
-                  ...createEvidence("app"),
-                  evidence: [
-                    {
-                      id: "file:create:app:src/a.ts",
-                      kind: "file-operation",
-                      facts: { kind: "delete", projectId: "app", path: "src/a.ts" },
-                    },
-                  ],
-                }),
-              ).toThrow(Evidence.DraftEvidenceConflict)
+              const conflictingConcat = yield* Draft.concat(createEvidence("app"), {
+                ...createEvidence("app"),
+                evidence: [
+                  {
+                    id: "file:create:app:src/a.ts",
+                    kind: "file-operation",
+                    facts: { kind: "delete", projectId: "app", path: "src/a.ts" },
+                  },
+                ],
+              }).pipe(Effect.flip)
+              expect(conflictingConcat._tag).toBe("DraftEvidenceConflict")
 
               const sameRange = calls[0]!
-              const firstAudit = Draft.audit([sameRange])
+              const firstAudit = yield* Draft.audit([sameRange])
               const secondSelection = {
                 ...sameRange,
                 evidence: [{ criterion: "other", facts: { extra: true } }],
               }
-              expect(() => Draft.audit([sameRange, secondSelection])).toThrow(
-                Evidence.DraftEvidenceConflict,
+              const conflictingAudit = yield* Draft.audit([sameRange, secondSelection]).pipe(
+                Effect.flip,
               )
-              const sameAudit = Draft.audit([sameRange, sameRange])
+              expect(conflictingAudit._tag).toBe("DraftEvidenceConflict")
+              const sameAudit = yield* Draft.audit([sameRange, sameRange])
               expect(sameAudit.matches).toBe(1)
               expect(sameAudit.evidence).toHaveLength(1)
               expect(firstAudit.evidence[0]?.id).toBe(sameAudit.evidence[0]?.id)

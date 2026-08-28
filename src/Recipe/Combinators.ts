@@ -2,7 +2,8 @@
 import { Effect } from "effect"
 import * as Draft from "../Draft/index.ts"
 import type { DraftEvidenceConflict } from "../Evidence/index.ts"
-import { sha256, type EditConflict, type InvalidEdit } from "../Edit/index.ts"
+import type { EditConflict, InvalidEdit } from "../Edit/index.ts"
+import { sha256 } from "../Edit/Hash.ts"
 import type { PlanPolicies } from "../Plan/index.ts"
 import { composeDraft } from "../Overlay/index.ts"
 import * as Policy from "../Policy/index.ts"
@@ -109,7 +110,7 @@ export function all<Input, E, R>(
     compiled,
     (input: Input) =>
       Effect.forEach(recipes, (recipe) => recipe.run(input), { concurrency: "unbounded" }).pipe(
-        Effect.flatMap((drafts) => Draft.concatEffect(...drafts)),
+        Effect.flatMap((drafts) => Draft.concat(...drafts)),
       ),
     {
       schema: composedSchema(recipes),
@@ -233,7 +234,7 @@ const compileChildren = (
       recipes.length === 0 ||
       recipes.some((recipe) => recipe.policies.diagnostics === "no-new-errors")
         ? "no-new-errors"
-        : "exact-delta"
+        : "allow-new-errors"
     return maxAffectedFiles === undefined
       ? { matchCount, diagnostics, idempotence }
       : { matchCount, maxAffectedFiles, diagnostics, idempotence }

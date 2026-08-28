@@ -66,18 +66,12 @@ describe("candidate public API (@effect/vitest)", () => {
             property: "value",
           }
 
-          const { plan, preview, receipt, verified } = yield* executeRecipe(
-            wrapTargetInput,
-            input,
-            { mode: "apply" },
-          )
+          const { plan, receipt, verified } = yield* executeRecipe(wrapTargetInput, input)
 
           expect(plan.recipe.name).toBe("wrap-target-input")
           expect(plan.measurements?.matches).toBe(2)
-          expect(preview.files).toHaveLength(2)
-          expect(verified.receipt.diagnosticDelta).toBe(0)
-          expect(verified.receipt.idempotenceChecked).toBe(true)
-          expect(verified.receipt.policyResults.length).toBeGreaterThan(0)
+          expect(verified.preview.files).toHaveLength(2)
+          expect(verified.diagnosticDiff.introduced).toHaveLength(0)
           expect(receipt.outputs).toHaveLength(2)
 
           const consumer = yield* Effect.tryPromise(() =>
@@ -138,9 +132,7 @@ describe("candidate public API (@effect/vitest)", () => {
               to: "./replacement.js",
             }
 
-            const { plan, receipt } = yield* executeRecipe(migrateImportSource, input, {
-              mode: "apply",
-            })
+            const { plan, receipt } = yield* executeRecipe(migrateImportSource, input)
 
             expect(plan.edits).toHaveLength(1)
             expect(receipt.outputs).toHaveLength(1)

@@ -61,7 +61,7 @@ Legacy codemods relied on deeply nested `if` statements, manual AST node type ca
    ```ts
    const targetPattern = Pattern.callExpression({
      expression: Pattern.identifier({ resolvesTo: canonicalSymbol }),
-     arguments: Pattern.tuple([Pattern.bind("firstArg", Pattern.not(Pattern.objectLiteral()))]),
+     arguments: Pattern.tuple([Pattern.bind("firstArg", Pattern.any)]),
    })
 
    const matches = yield * Query.match(project, targetPattern).pipe(Query.collect)

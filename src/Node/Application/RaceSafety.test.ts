@@ -60,7 +60,7 @@ describe("Node application race and filesystem safety", () => {
         )
         const recipe = Recipe.define("empty-file-lifecycle", {
           version: "1.0.0",
-          policies: [{ diagnostics: "exact-delta" }],
+          policies: [{ diagnostics: "allow-new-errors" }],
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
@@ -71,11 +71,11 @@ describe("Node application race and filesystem safety", () => {
                 "src/moved-empty.ts",
               )
               const remove = yield* Draft.files.delete(project, "src/delete-empty.ts")
-              return Draft.concat(create, move, remove)
+              return yield* Draft.concat(create, move, remove)
             }),
         })
 
-        yield* executeRecipe(recipe, undefined, { mode: "apply" }).pipe(Effect.provide(nodeLayer))
+        yield* executeRecipe(recipe, undefined).pipe(Effect.provide(nodeLayer))
 
         expect(yield* exists(Path.join(root, "src/created-empty.ts"))).toBe(true)
         expect(

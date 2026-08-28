@@ -22,7 +22,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
 
             const addUnusedRecipe = Recipe.define("add-unused-import", {
               version: "1.0.0",
-              policies: [{ diagnostics: "exact-delta" }],
+              policies: [{ diagnostics: "allow-new-errors" }],
               run: () =>
                 Effect.gen(function* () {
                   const project = yield* fixtureProject(app)
@@ -33,13 +33,11 @@ describe("declarative transformations API (@effect/vitest)", () => {
                 }),
             })
 
-            yield* executeRecipe(addUnusedRecipe, undefined, { mode: "apply" }).pipe(
-              Effect.provide(mainLayer),
-            )
+            yield* executeRecipe(addUnusedRecipe, undefined).pipe(Effect.provide(mainLayer))
 
             const cleanRecipe = Recipe.define("clean-unused-recipe", {
               version: "1.0.0",
-              policies: [{ diagnostics: "exact-delta" }],
+              policies: [{ diagnostics: "allow-new-errors" }],
               run: () =>
                 Effect.gen(function* () {
                   const project = yield* fixtureProject(app)
@@ -49,9 +47,9 @@ describe("declarative transformations API (@effect/vitest)", () => {
 
             const cleanWorkspaceLayer = workspaceLayerNode({ projects: [app] }, { cwd: root })
             const cleanMainLayer = nodeLayer.pipe(Layer.provideMerge(cleanWorkspaceLayer))
-            const cleanExecution = yield* executeRecipe(cleanRecipe, undefined, {
-              mode: "apply",
-            }).pipe(Effect.provide(cleanMainLayer))
+            const cleanExecution = yield* executeRecipe(cleanRecipe, undefined).pipe(
+              Effect.provide(cleanMainLayer),
+            )
             expect(cleanExecution.plan.edits.length).toBeGreaterThanOrEqual(1)
 
             const consumerContent = yield* Effect.tryPromise(() =>

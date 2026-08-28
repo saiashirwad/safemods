@@ -136,7 +136,7 @@ For structural matches, `Pattern` describes the shape and binds the parts you wa
 ```ts
 const pattern = Pattern.callExpression({
   expression: Pattern.identifier({ resolvesTo: target }),
-  arguments: Pattern.tuple([Pattern.bind("arg", Pattern.not(Pattern.objectLiteral()))]),
+  arguments: Pattern.tuple([Pattern.bind("arg", Pattern.any)]),
 })
 const matches = yield * Query.match(project, pattern).pipe(Query.collect)
 ```

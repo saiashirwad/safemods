@@ -1,4 +1,5 @@
 /** Generic query stream operators. */
+import { matchesGlob } from "node:path"
 import { Effect, Function, Predicate, Stream } from "effect"
 import type { CallExpression, Node } from "typescript/unstable/ast"
 import { isProjectFile, type ProjectFile } from "../Workspace/index.ts"
@@ -103,37 +104,8 @@ export const collect = <A, E, R>(
     ),
   )
 
-const escapeGlobRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-
-/**
- * Match a project-relative path against a documented `*` / `**` glob.
- * Exported for testing and for callers that need glob semantics directly.
- */
-export const matchesPathGlob = (fileName: string, glob: string): boolean => {
-  const path = fileName.replaceAll("\\", "/")
-  const pattern = glob.replaceAll("\\", "/")
-  let source = "^"
-  for (let index = 0; index < pattern.length;) {
-    if (pattern[index] === "*" && pattern[index + 1] === "*") {
-      index += 2
-      if (pattern[index] === "/") {
-        index += 1
-        source += "(?:.*/)?"
-      } else {
-        source += ".*"
-      }
-      continue
-    }
-    if (pattern[index] === "*") {
-      source += "[^/]*"
-      index += 1
-      continue
-    }
-    source += escapeGlobRegExp(pattern[index]!)
-    index += 1
-  }
-  return new RegExp(`${source}$`).test(path)
-}
+const matchesPathGlob = (fileName: string, glob: string): boolean =>
+  matchesGlob(fileName.replaceAll("\\", "/"), glob.replaceAll("\\", "/"))
 
 /**
  * Filter selections by project-relative file name. A string containing `*`

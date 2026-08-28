@@ -83,21 +83,32 @@ describe("Query semantic criteria", () => {
   effect(
     "referencesTo finds canonical occurrences of a resolved symbol",
     () =>
-      withProject({ "src/sem.ts": SEM_SOURCE }, (project) =>
-        Effect.gen(function* () {
-          const symbolOption = yield* project.findSymbolNamed("oldThing", {
-            within: "src/sem.ts",
-          })
-          if (Option.isNone(symbolOption)) return expect.unreachable("symbol not found")
+      withProject(
+        {
+          "src/sem.ts": SEM_SOURCE,
+          "src/sem-consumer.ts": ['import { oldThing } from "./sem.js"', "oldThing(2)", ""].join(
+            "\n",
+          ),
+        },
+        (project) =>
+          Effect.gen(function* () {
+            const symbolOption = yield* project.findSymbolNamed("oldThing", {
+              within: "src/sem.ts",
+            })
+            if (Option.isNone(symbolOption)) return expect.unreachable("symbol not found")
 
-          const references = yield* Query.referencesTo(project, symbolOption.value).pipe(
-            Query.collect,
-          )
-          expect(references.map((selection) => selection.value.text)).toEqual([
-            "oldThing",
-            "oldThing",
-          ])
-        }),
+            const references = yield* Query.referencesTo(project, symbolOption.value).pipe(
+              Query.collect,
+            )
+            expect(
+              references.map((selection) => `${selection.fileName}:${selection.value.text}`),
+            ).toEqual([
+              "src/sem-consumer.ts:oldThing",
+              "src/sem-consumer.ts:oldThing",
+              "src/sem.ts:oldThing",
+              "src/sem.ts:oldThing",
+            ])
+          }),
       ),
     60_000,
   )

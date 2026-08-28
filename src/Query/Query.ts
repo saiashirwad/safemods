@@ -1,5 +1,4 @@
 import { Data, Effect, type Stream } from "effect"
-import type { SyntaxKind } from "typescript/unstable/ast"
 import type { EvidenceFact, QueryEvidence } from "../Evidence/Evidence.ts"
 import type { ProjectRelativePath } from "../ProjectPath/index.ts"
 import type { ProjectFile, ProjectSnapshot } from "../Workspace/index.ts"
@@ -31,7 +30,6 @@ export class QueryContractError extends Data.TaggedError("QueryContractError")<{
 export interface Criterion<A, E = never, R = never> {
   readonly mode: "selection"
   readonly id: string
-  readonly syntaxKind?: SyntaxKind | ReadonlyArray<SyntaxKind>
   readonly batchSize?: number
   readonly select: (
     selections: ReadonlyArray<Selection<A>>,
@@ -41,7 +39,6 @@ export interface Criterion<A, E = never, R = never> {
 const criterionMake = <A, E = never, R = never>(options: {
   readonly id: string
   readonly batchSize?: number
-  readonly syntaxKind?: SyntaxKind | ReadonlyArray<SyntaxKind>
   readonly select: (
     selections: ReadonlyArray<Selection<A>>,
   ) => Effect.Effect<ReadonlyArray<Readonly<Record<string, EvidenceFact>> | undefined>, E, R>

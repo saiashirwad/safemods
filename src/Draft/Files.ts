@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import type { QueryContractError } from "../Query/index.ts"
+import type { DraftEvidenceConflict } from "../Evidence/index.ts"
 import {
   InvalidProjectRelativePath,
   parseProjectRelativePath,
@@ -93,7 +93,7 @@ export const files = {
     toPath: string,
   ): Effect.Effect<
     Draft,
-    ProjectSnapshotError | FileNotFound | QueryContractError | InvalidProjectRelativePath
+    ProjectSnapshotError | FileNotFound | InvalidProjectRelativePath | DraftEvidenceConflict
   > =>
     Effect.gen(function* () {
       const sourcePath = yield* checkedPath(fromPath)
@@ -186,7 +186,7 @@ export const files = {
         ),
         matches: importEdits.length,
       }
-      return concat(movedDraft, importDraft)
+      return yield* concat(movedDraft, importDraft)
     }),
 }
 
