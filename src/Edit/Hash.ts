@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto"
 import type { TextEdit } from "./TextEdit.ts"
 
-export const textHash = (text: string): string => createHash("sha256").update(text).digest("hex")
+export const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex")
+
+export const hashDirectoryListing = (names: ReadonlyArray<string>): string =>
+  sha256(JSON.stringify([...names].sort()))
 
 export const makeTextEdit = (options: {
   readonly projectId: string
@@ -10,13 +13,13 @@ export const makeTextEdit = (options: {
   readonly start: number
   readonly end: number
   readonly newText: string
-  readonly evidenceIds?: ReadonlyArray<string>
+  readonly evidenceIds?: ReadonlyArray<string> | undefined
 }): TextEdit => ({
   projectId: options.projectId,
   fileName: options.fileName,
   start: options.start,
   end: options.end,
   newText: options.newText,
-  expectedTextHash: textHash(options.sourceText.slice(options.start, options.end)),
+  expectedTextHash: sha256(options.sourceText.slice(options.start, options.end)),
   evidenceIds: options.evidenceIds ?? [],
 })

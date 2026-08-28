@@ -8,7 +8,7 @@ const TYPESCRIPT_TEST = /\.test\.(?:[cm]?ts|tsx)$/
 export const architectureLayers = [
   ["Edit", "Evidence", "Plan", "Policy", "ProjectPath", "VirtualFs", "generated"],
   ["Pattern", "Query", "Workspace"],
-  ["Draft", "Overlay", "Precondition"],
+  ["Draft", "Overlay"],
   ["Application", "Execution", "Recipe", "Verification"],
   ["Node", "platform"],
   ["AgentTool", "Cli", "bin"],
@@ -27,7 +27,7 @@ const rootFacadeDependencies = new Set([
   "Pattern",
   "Plan",
   "Policy",
-  "Precondition",
+  "ProjectPath",
   "Query",
   "Recipe",
   "Verification",
@@ -41,16 +41,10 @@ const rootFacadeDependencies = new Set([
  */
 export const temporaryAdapterImports = new Map()
 
-/**
- * Historical public façades may retain one documented adapter re-export.
- * This is deliberately file-scoped so other files in the owner stay strict.
- */
-const compatibilityFacadeImports = new Map([["src/Workspace/ProjectPath.ts", new Set(["Node"])]])
-
 const exactDependencies = new Map([
   ["Pattern", new Set(["Evidence", "Workspace"])],
   ["Query", new Set(["Evidence", "Pattern", "ProjectPath", "Workspace"])],
-  ["Workspace", new Set(["ProjectPath", "VirtualFs"])],
+  ["Workspace", new Set(["Edit", "ProjectPath", "VirtualFs"])],
   [
     "Recipe",
     new Set([
@@ -79,10 +73,19 @@ const exactDependencies = new Map([
       "Workspace",
     ]),
   ],
-  ["Application", new Set(["Verification"])],
+  ["Application", new Set(["Edit", "Plan", "ProjectPath", "Verification", "Workspace"])],
   [
     "Execution",
-    new Set(["Application", "Draft", "Plan", "Policy", "Recipe", "Verification", "Workspace"]),
+    new Set([
+      "Application",
+      "Draft",
+      "Evidence",
+      "Plan",
+      "Policy",
+      "Recipe",
+      "Verification",
+      "Workspace",
+    ]),
   ],
   ["bin", new Set(["Cli"])],
 ])
@@ -158,11 +161,6 @@ export const dependencyFailure = (owner, targetOwner) => {
   return targetLayer <= ownerLayer ? undefined : `${owner} imports higher layer ${targetOwner}`
 }
 
-const fileDependencyFailure = (displayFile, owner, targetOwner) =>
-  compatibilityFacadeImports.get(displayFile)?.has(targetOwner) === true
-    ? undefined
-    : dependencyFailure(owner, targetOwner)
-
 export const checkArchitectureBoundaries = async (repositoryRoot) => {
   const failures = []
   const sourceFiles = [
@@ -196,7 +194,7 @@ export const checkArchitectureBoundaries = async (repositoryRoot) => {
         failures.push(`${displayFile}: imports private ${specifier}`)
         continue
       }
-      const failure = fileDependencyFailure(displayFile, owner, target.owner)
+      const failure = dependencyFailure(owner, target.owner)
       if (failure !== undefined) failures.push(`${displayFile}: ${failure} (${specifier})`)
     }
   }

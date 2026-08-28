@@ -2,7 +2,7 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Exit } from "effect"
 import { asJson, finalizePlan, parsePlan, serializePlan, validatePlan } from "./index.ts"
 import {
-  digest,
+  hashJson,
   encodeUnknown,
   exactStructureMutations,
   finalizeUnknown,
@@ -82,7 +82,7 @@ describe("plan structural and semantic validation", () => {
         rehashPlan({
           ...plan,
           sources,
-          snapshotHash: digest(asJson({ projects: plan.projects, sources })),
+          snapshotHash: hashJson(asJson({ projects: plan.projects, sources })),
         }),
       ]
 

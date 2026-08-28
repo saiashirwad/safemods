@@ -1,5 +1,4 @@
 /** Canonical JSON and hashing for content-addressed plans. */
-import { createHash } from "node:crypto"
 import { canonicalJson } from "../Evidence/Canonical.ts"
 import type { Json } from "../Evidence/Evidence.ts"
 import type {
@@ -7,8 +6,6 @@ import type {
   SourceFingerprint,
   TransformationPlan,
 } from "./TransformationPlan.ts"
-
-export const digest = (text: string): string => createHash("sha256").update(text).digest("hex")
 
 export { canonicalJson }
 

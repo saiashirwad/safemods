@@ -13,13 +13,6 @@ export {
   replaceEach,
   replaceWith,
 } from "./Draft.ts"
-export {
-  DraftEvidenceConflict,
-  finalizeDraftEvidence,
-  finalizeDraftEvidenceEffect,
-  mergeEvidence,
-  mergeEvidenceEffect,
-} from "../Evidence/index.ts"
 export type { Draft, EditRangeOptions, ProposedEdit, Replacement } from "./Draft.ts"
 export * from "./Files.ts"
 export * from "./Imports.ts"

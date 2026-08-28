@@ -2,7 +2,6 @@ import { Layer } from "effect"
 import { layer as platformLayer } from "../platform/node.ts"
 import { workspaceRuntimeLayer } from "./WorkspaceRuntime.ts"
 
-export { applicationLayerNode, makeApplicationLayerNode } from "./Application/Layer.ts"
 export {
   isWithinProject,
   projectRelativePath,

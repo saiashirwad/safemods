@@ -1,14 +1,14 @@
-import { createHash } from "node:crypto"
+import { sha256 } from "../Edit/index.ts"
 import type { Json } from "../Evidence/index.ts"
 import {
   asJson,
   canonicalJson,
   finalizePlan,
-  requireProjectRelativePath,
   validatePlan,
   type PlanInput,
   type TransformationPlan,
 } from "../Plan/index.ts"
+import { requireProjectRelativePath } from "../ProjectPath/index.ts"
 
 export const richInput = {
   recipe: {
@@ -333,10 +333,9 @@ export const encodeUnknown = (candidate: unknown): string =>
   // SAFETY: exact-structure mutations in this test remain JSON values.
   canonicalJson(candidate as Json)
 
-export const digest = (value: Json): string =>
-  createHash("sha256").update(canonicalJson(value)).digest("hex")
+export const hashJson = (value: Json): string => sha256(canonicalJson(value))
 
 export const rehashPlan = (plan: TransformationPlan): TransformationPlan => {
   const { planId: _, ...payload } = plan
-  return { ...plan, planId: digest(asJson(payload)) }
+  return { ...plan, planId: hashJson(asJson(payload)) }
 }

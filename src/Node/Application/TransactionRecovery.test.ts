@@ -10,10 +10,9 @@ import * as Application from "../../Application/index.ts"
 import * as Draft from "../../Draft/index.ts"
 import * as Recipe from "../../Recipe/index.ts"
 import * as Verification from "../../Verification/index.ts"
-import { WorkspaceSnapshot } from "../../Workspace/index.ts"
 import { withFixture } from "../../test/declarative-fixture.ts"
+import { fixtureProject } from "../../test/project-fixture.ts"
 import { wrapTargetInput, type WrapTargetInput } from "../../test/wrap-target-input.ts"
-import { applicationLayer, makeApplicationLayerNode } from "./Layer.ts"
 
 const exists = (fileName: string): Effect.Effect<boolean> =>
   Effect.promise(() =>
@@ -32,8 +31,7 @@ describe("Node application transaction recovery", () => {
           policies: [{ diagnostics: "exact-delta" }],
           run: () =>
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
                 module: "./library.js",
                 name: "TargetInput",
@@ -64,13 +62,9 @@ describe("Node application transaction recovery", () => {
               return yield* realFs.rename(from, to)
             }),
         })
-        const testLayer = Layer.mergeAll(
-          applicationLayer(root),
-          Layer.succeed(FileSystem.FileSystem, racingFs),
-          pathLayer,
-        )
+        const testLayer = Layer.mergeAll(Layer.succeed(FileSystem.FileSystem, racingFs), pathLayer)
 
-        const result = yield* Application.apply(verified).pipe(
+        const result = yield* Application.applyVerifiedPlan(verified).pipe(
           Effect.provide(testLayer),
           Effect.result,
         )
@@ -105,14 +99,8 @@ describe("Node application transaction recovery", () => {
 
         const results = yield* Effect.all(
           [
-            Application.apply(verified).pipe(
-              Effect.provide(makeApplicationLayerNode(root)),
-              Effect.result,
-            ),
-            Application.apply(verified).pipe(
-              Effect.provide(makeApplicationLayerNode(root)),
-              Effect.result,
-            ),
+            Application.applyVerifiedPlan(verified).pipe(Effect.provide(nodeLayer), Effect.result),
+            Application.applyVerifiedPlan(verified).pipe(Effect.provide(nodeLayer), Effect.result),
           ],
           { concurrency: "unbounded" },
         )
@@ -147,8 +135,7 @@ describe("Node application transaction recovery", () => {
           policies: [{ diagnostics: "exact-delta" }],
           run: () =>
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               return yield* Draft.files.create(project, "src/created.ts", contents)
             }),
         })
@@ -181,8 +168,8 @@ describe("Node application transaction recovery", () => {
           ]),
         )
 
-        const receipt = yield* Application.apply(verified).pipe(
-          Effect.provide(makeApplicationLayerNode(root)),
+        const receipt = yield* Application.applyVerifiedPlan(verified).pipe(
+          Effect.provide(nodeLayer),
         )
         expect(receipt.planId).toBe(plan.planId)
         expect(yield* exists(leftover)).toBe(false)

@@ -1,7 +1,8 @@
 /** Snapshot-region lifetime and service provisioning. */
 import { Context, Effect } from "effect"
 import type { FileChanges } from "typescript/unstable/proto"
-import type { NativeCompiler, WorkspaceCompilerError } from "./internal/NativeCompiler.ts"
+import type { NativeCompiler } from "./internal/NativeCompiler.ts"
+import type { WorkspaceCompilerError } from "./NativeRequest.ts"
 import {
   type ConfiguredProject,
   ProjectNotInSnapshot,

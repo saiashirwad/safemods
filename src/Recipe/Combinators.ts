@@ -1,9 +1,8 @@
 /** Recipe composition and conditional execution. */
-import { createHash } from "node:crypto"
 import { Effect, type Schema } from "effect"
 import * as Draft from "../Draft/index.ts"
-import type { DraftEvidenceConflict } from "../Draft/index.ts"
-import type { EditConflict, InvalidEdit } from "../Edit/index.ts"
+import type { DraftEvidenceConflict } from "../Evidence/index.ts"
+import { sha256, type EditConflict, type InvalidEdit } from "../Edit/index.ts"
 import { composeDraft } from "../Overlay/index.ts"
 import * as Policy from "../Policy/index.ts"
 import type { VirtualFsError } from "../VirtualFs/index.ts"
@@ -35,72 +34,9 @@ const composedIdentity = (
   version: string,
   recipes: ReadonlyArray<Recipe<any, any, any>>,
 ): string =>
-  createHash("sha256")
-    .update(`${name}@${version}:${recipes.map((recipe) => recipe.implementationHash).join(",")}`)
-    .digest("hex")
+  sha256(`${name}@${version}:${recipes.map((recipe) => recipe.implementationHash).join(",")}`)
 
-/** Sequentially compose recipes through in-memory snapshot overlays. */
-export function pipe<Input, E1, R1, E2, R2>(
-  r1: Recipe<Input, E1, R1>,
-  r2: Recipe<Input, E2, R2>,
-): Recipe<
-  Input,
-  | E1
-  | E2
-  | EditConflict
-  | InvalidEdit
-  | FileNotFound
-  | WorkspaceCompilerError
-  | ProjectNotInSnapshot
-  | VirtualFsError
-  | SnapshotExpired
-  | DraftEvidenceConflict,
-  R1 | R2
->
-export function pipe<Input, E1, R1, E2, R2, E3, R3>(
-  r1: Recipe<Input, E1, R1>,
-  r2: Recipe<Input, E2, R2>,
-  r3: Recipe<Input, E3, R3>,
-): Recipe<
-  Input,
-  | E1
-  | E2
-  | E3
-  | EditConflict
-  | InvalidEdit
-  | FileNotFound
-  | WorkspaceCompilerError
-  | ProjectNotInSnapshot
-  | VirtualFsError
-  | SnapshotExpired
-  | DraftEvidenceConflict,
-  R1 | R2 | R3
->
-export function pipe<Input, E1, R1, E2, R2, E3, R3, E4, R4>(
-  r1: Recipe<Input, E1, R1>,
-  r2: Recipe<Input, E2, R2>,
-  r3: Recipe<Input, E3, R3>,
-  r4: Recipe<Input, E4, R4>,
-): Recipe<
-  Input,
-  | E1
-  | E2
-  | E3
-  | E4
-  | EditConflict
-  | InvalidEdit
-  | FileNotFound
-  | WorkspaceCompilerError
-  | ProjectNotInSnapshot
-  | VirtualFsError
-  | SnapshotExpired
-  | DraftEvidenceConflict,
-  R1 | R2 | R3 | R4
->
-export function pipe<Input, E, R>(
-  ...recipes: ReadonlyArray<Recipe<Input, E, R>>
-): Recipe<
-  Input,
+type RecipeCompositionError<E> =
   | E
   | EditConflict
   | InvalidEdit
@@ -109,9 +45,27 @@ export function pipe<Input, E, R>(
   | ProjectNotInSnapshot
   | VirtualFsError
   | SnapshotExpired
-  | DraftEvidenceConflict,
-  R
-> {
+  | DraftEvidenceConflict
+
+/** Sequentially compose recipes through in-memory snapshot overlays. */
+export function pipe<Input, E1, R1, E2, R2>(
+  r1: Recipe<Input, E1, R1>,
+  r2: Recipe<Input, E2, R2>,
+): Recipe<Input, RecipeCompositionError<E1 | E2>, R1 | R2>
+export function pipe<Input, E1, R1, E2, R2, E3, R3>(
+  r1: Recipe<Input, E1, R1>,
+  r2: Recipe<Input, E2, R2>,
+  r3: Recipe<Input, E3, R3>,
+): Recipe<Input, RecipeCompositionError<E1 | E2 | E3>, R1 | R2 | R3>
+export function pipe<Input, E1, R1, E2, R2, E3, R3, E4, R4>(
+  r1: Recipe<Input, E1, R1>,
+  r2: Recipe<Input, E2, R2>,
+  r3: Recipe<Input, E3, R3>,
+  r4: Recipe<Input, E4, R4>,
+): Recipe<Input, RecipeCompositionError<E1 | E2 | E3 | E4>, R1 | R2 | R3 | R4>
+export function pipe<Input, E, R>(
+  ...recipes: ReadonlyArray<Recipe<Input, E, R>>
+): Recipe<Input, RecipeCompositionError<E>, R> {
   const name = recipes.map((recipe) => recipe.name).join(" >> ")
   const version = recipes.map((recipe) => recipe.version).join("+")
   const compiled = compileChildren(recipes)
@@ -138,52 +92,13 @@ export function pipe<Input, E, R>(
 /** Run recipes concurrently over one snapshot and merge their Drafts. */
 export function all<Input, E1, R1, E2, R2>(
   recipes: readonly [Recipe<Input, E1, R1>, Recipe<Input, E2, R2>],
-): Recipe<
-  Input,
-  | E1
-  | E2
-  | EditConflict
-  | InvalidEdit
-  | FileNotFound
-  | WorkspaceCompilerError
-  | ProjectNotInSnapshot
-  | VirtualFsError
-  | SnapshotExpired
-  | DraftEvidenceConflict,
-  R1 | R2
->
+): Recipe<Input, RecipeCompositionError<E1 | E2>, R1 | R2>
 export function all<Input, E1, R1, E2, R2, E3, R3>(
   recipes: readonly [Recipe<Input, E1, R1>, Recipe<Input, E2, R2>, Recipe<Input, E3, R3>],
-): Recipe<
-  Input,
-  | E1
-  | E2
-  | E3
-  | EditConflict
-  | InvalidEdit
-  | FileNotFound
-  | WorkspaceCompilerError
-  | ProjectNotInSnapshot
-  | VirtualFsError
-  | SnapshotExpired
-  | DraftEvidenceConflict,
-  R1 | R2 | R3
->
+): Recipe<Input, RecipeCompositionError<E1 | E2 | E3>, R1 | R2 | R3>
 export function all<Input, E, R>(
   recipes: ReadonlyArray<Recipe<Input, E, R>>,
-): Recipe<
-  Input,
-  | E
-  | EditConflict
-  | InvalidEdit
-  | FileNotFound
-  | WorkspaceCompilerError
-  | ProjectNotInSnapshot
-  | VirtualFsError
-  | SnapshotExpired
-  | DraftEvidenceConflict,
-  R
-> {
+): Recipe<Input, RecipeCompositionError<E>, R> {
   const name = `all(${recipes.map((recipe) => recipe.name).join(", ")})`
   const version = recipes.map((recipe) => recipe.version).join("+")
   const compiled = compileChildren(recipes)
@@ -251,9 +166,7 @@ export const when = <Input = undefined, E = never, R = never>(
       () => Effect.succeed(Draft.empty),
       {
         schema: recipe.schema,
-        implementationHash: createHash("sha256")
-          .update(`${recipe.implementationHash}:noop`)
-          .digest("hex"),
+        implementationHash: sha256(`${recipe.implementationHash}:noop`),
       },
     ),
   )

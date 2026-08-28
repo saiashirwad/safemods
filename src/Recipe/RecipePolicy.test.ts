@@ -1,83 +1,14 @@
-import { path as Path, nodeFsPromises as Fs } from "../platform/node.ts"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import * as Application from "../Application/index.ts"
 import * as Draft from "../Draft/index.ts"
-import { applicationLayerNode } from "../Node/index.ts"
 import * as Pattern from "../Pattern/index.ts"
 import * as Policy from "../Policy/index.ts"
-import * as Precondition from "../Precondition/index.ts"
 import * as Query from "../Query/index.ts"
 import * as Recipe from "../Recipe/index.ts"
-import * as Verification from "../Verification/index.ts"
-import { WorkspaceSnapshot } from "../Workspace/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("recipe policy and concurrent composition", () => {
-  effect(
-    "Preconditions respect Recipe.pipe overlays when evaluating chained transformations",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          const step1 = Recipe.define("step1-add-barrel-import", {
-            version: "1.0.0",
-            run: () =>
-              Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
-                return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
-                  module: "./barrel.js",
-                  name: "publicTarget",
-                })
-              }),
-          })
-
-          const step2 = Recipe.define("step2-transform-matching", {
-            version: "1.0.0",
-            run: () =>
-              Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
-
-                const barrelFiles = yield* Precondition.filesMatching(
-                  project,
-                  Precondition.hasImport("./barrel.js"),
-                )
-                expect(barrelFiles.map((f) => f.path)).toEqual([
-                  "src/consumer.ts",
-                  "src/reexport-consumer.ts",
-                ])
-
-                const libraryFile = yield* project.file("src/library.ts")
-                const targetSymbol = yield* libraryFile.symbolNamed("target")
-
-                const targetCalls = yield* Query.calls(barrelFiles).pipe(
-                  Query.where(Query.resolvesTo(targetSymbol, { location: (c) => c.expression })),
-                  Query.collect,
-                )
-
-                return yield* Draft.replaceEach(targetCalls, ({ value: call }) => {
-                  const arg = call.arguments[0]!
-                  return { node: arg, text: `publicTarget(${arg.getText()})` }
-                })
-              }),
-          })
-
-          const pipeline = Recipe.pipe(step1, step2)
-          const plan = yield* Recipe.run(pipeline, undefined)
-          const verified = yield* Verification.verify(plan, pipeline, undefined)
-          yield* Application.apply(verified).pipe(Effect.provide(applicationLayerNode))
-
-          const consumerContent = yield* Effect.tryPromise(() =>
-            Fs.readFile(Path.join(root, "src/consumer.ts"), "utf8"),
-          )
-          expect(consumerContent).toContain("publicTarget")
-          expect(consumerContent).toContain("renamed(/* keep this comment */ publicTarget(1))")
-        }),
-      ),
-    60_000,
-  )
-
   effect(
     "composes concurrent recipes with Recipe.all and executes conditionally with Recipe.branch",
     () =>
@@ -87,8 +18,7 @@ describe("recipe policy and concurrent composition", () => {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
                   module: "effect",
                   name: "Chunk",
@@ -100,8 +30,7 @@ describe("recipe policy and concurrent composition", () => {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.imports.addNamed(project, "src/reexport-consumer.ts", {
                   module: "effect",
                   name: "HashSet",
@@ -200,8 +129,7 @@ describe("recipe policy and concurrent composition", () => {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
                   module: "./library.js",
                   name: "TargetInput",
@@ -212,8 +140,7 @@ describe("recipe policy and concurrent composition", () => {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const libraryFile = yield* project.file("src/library.ts")
                 const decls = yield* Query.match(
                   libraryFile,
@@ -256,8 +183,7 @@ describe("recipe policy and concurrent composition", () => {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const calls = yield* Query.calls(project).pipe(
                   Query.within("src/consumer.ts"),
                   Query.withArgCount(1),
@@ -274,8 +200,7 @@ describe("recipe policy and concurrent composition", () => {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const calls = yield* Query.calls(project).pipe(
                   Query.within("src/consumer.ts"),
                   Query.withArgCount(1),

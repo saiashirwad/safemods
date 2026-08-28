@@ -92,7 +92,6 @@ const forbidden = [
   [Root.Plan, "parse"],
   [Root.Plan, "serialize"],
   [Root.Policy, "Policy"],
-  [Root.Precondition, "Precondition"],
   [Root.Query, "Query"],
   [Root.Query, "preceding"],
   [Root.Query, "following"],

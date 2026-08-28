@@ -14,6 +14,7 @@ import {
   isVariableStatement,
 } from "typescript/unstable/ast/is"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("declarative transformations API (@effect/vitest)", () => {
   describe("relational AST combinators", () => {
@@ -26,8 +27,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const consumerFile = yield* project.sourceFile("src/consumer.ts")
                 expect(consumerFile).toBeDefined()
 
@@ -109,8 +109,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const consumerFile = yield* project.sourceFile("src/consumer.ts")
                 expect(consumerFile).toBeDefined()
                 const code = `
@@ -198,8 +197,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const consumerFile = yield* project.sourceFile("src/consumer.ts")
                 expect(consumerFile).toBeDefined()
 
@@ -295,8 +293,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const consumerFile = yield* project.sourceFile("src/consumer.ts")
                 expect(consumerFile).toBeDefined()
 
@@ -380,8 +377,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const consumerFile = yield* project.sourceFile("src/consumer.ts")
                 expect(consumerFile).toBeDefined()
 
@@ -494,8 +490,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const calls = Query.calls(project)
 
                 const dataFirstWhere = yield* Query.collect(

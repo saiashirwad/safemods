@@ -20,8 +20,9 @@ import {
   type DiagnosticDiff,
   type PolicyEvaluationContext,
 } from "../Policy/index.ts"
-import { isProjectRelativePath } from "../ProjectPath/index.ts"
+import { resolvePlanFilePath, unsafePlanFilePathMessage } from "../ProjectPath/index.ts"
 import { TOOLCHAIN, type Recipe } from "../Recipe/index.ts"
+import { decodeRecipeInput, encodeRecipeInput } from "../Recipe/Input.ts"
 import type { VirtualFsSnapshot } from "../VirtualFs/index.ts"
 import { collectDiagnostics } from "./Diagnostics.ts"
 import {
@@ -55,19 +56,8 @@ const canonicalInput = <Input, E, R>(
   Effect.gen(function* () {
     let validated = input
     if (recipe.schema !== undefined) {
-      // SAFETY: recipe.schema is the declared boundary contract for Input.
-      const decode = Schema.decodeUnknownEffect(recipe.schema) as (
-        value: Input,
-      ) => Effect.Effect<Input, Schema.SchemaError>
-      validated = yield* decode(input)
-      // Encode after decoding. This mirrors Recipe.run's validation and gives
-      // schemas with transforms/defaults the same canonical representation used
-      // in plan.recipe.options.
-      // SAFETY: recipe schemas encode to the JSON representation stored in plans.
-      const encode = Schema.encodeUnknownEffect(recipe.schema) as (
-        value: Input,
-      ) => Effect.Effect<Json, Schema.SchemaError>
-      const encoded = yield* encode(validated)
+      validated = yield* decodeRecipeInput(recipe.schema, input)
+      const encoded = yield* encodeRecipeInput(recipe.schema, validated)
       const json = encoded ?? null
       return { value: validated, json }
     }
@@ -141,19 +131,15 @@ const absoluteTarget = (
 ): Effect.Effect<string, VerificationFailure, Path.Path> =>
   Effect.gen(function* () {
     const path = yield* Path.Path
-    const project = plan.projects.find((candidate) => candidate.id === projectId)
-    if (
-      project === undefined ||
-      !isProjectRelativePath(fileName) ||
-      !isProjectRelativePath(project.configFileName)
-    ) {
+    const resolved = resolvePlanFilePath(path, plan, workspaceRoot, projectId, fileName)
+    if (resolved === undefined) {
       return yield* new VerificationFailure({
         planId: plan.planId,
         policy: "edits",
-        detail: `Unsafe or unknown project path: ${projectId}:${fileName}`,
+        detail: unsafePlanFilePathMessage(projectId, fileName),
       })
     }
-    return path.resolve(workspaceRoot, path.dirname(project.configFileName), fileName)
+    return resolved.fileName
   })
 
 const verificationFailure = (planId: string, failure: PolicyFailure): VerificationFailure =>
@@ -170,7 +156,7 @@ const verificationFailure = (planId: string, failure: PolicyFailure): Verificati
         diagnostics: failure.diagnostics,
       })
 
-export const verifyPreview = (
+const issueVerifiedPreview = (
   plan: TransformationPlan,
   preview: PlanPreview,
   observation: VerificationObservation,
@@ -179,22 +165,6 @@ export const verifyPreview = (
   VerificationFailure | PlanDecodeError
 > =>
   Effect.gen(function* () {
-    const builtIn = evaluateBuiltInPolicies({
-      policies: plan.policies,
-      actualMatches: observation.actualMatches,
-      affectedFiles: preview.files.length,
-      baselineErrorCount: observation.baselineErrorCount,
-      proposedErrorCount: observation.proposedErrorCount,
-      diagnosticDiff: observation.diagnosticDiff,
-      secondPlanChangeCount: observation.secondPlanChangeCount,
-      allowedErrors: observation.allowedErrors,
-    })
-    if (builtIn.failure !== undefined) {
-      return yield* verificationFailure(plan.planId, builtIn.failure)
-    }
-
-    // Do not mint a VerifiedPlan containing a failed policy result when a
-    // caller constructs an observation outside the complete verify flow.
     const reportedFailure = failureFromPolicyResults(
       observation.policyResults,
       observation.diagnosticDiff,
@@ -202,7 +172,6 @@ export const verifyPreview = (
     if (reportedFailure !== undefined) {
       return yield* verificationFailure(plan.planId, reportedFailure)
     }
-
     const receipt: VerificationReceipt = {
       planId: plan.planId,
       snapshotHash: plan.snapshotHash,
@@ -217,6 +186,30 @@ export const verifyPreview = (
     const validated = yield* validatePlan(plan)
     return issueVerifiedPlan(validated, preview, receipt, observation.diagnosticDiff)
   })
+
+export const verifyPreview = (
+  plan: TransformationPlan,
+  preview: PlanPreview,
+  observation: VerificationObservation,
+): Effect.Effect<
+  VerifiedPlan & { readonly diagnosticDiff: DiagnosticDiff },
+  VerificationFailure | PlanDecodeError
+> => {
+  const builtIn = evaluateBuiltInPolicies({
+    policies: plan.policies,
+    actualMatches: observation.actualMatches,
+    affectedFiles: preview.files.length,
+    baselineErrorCount: observation.baselineErrorCount,
+    proposedErrorCount: observation.proposedErrorCount,
+    diagnosticDiff: observation.diagnosticDiff,
+    secondPlanChangeCount: observation.secondPlanChangeCount,
+    allowedErrors: observation.allowedErrors,
+  })
+  if (builtIn.failure !== undefined) {
+    return Effect.fail(verificationFailure(plan.planId, builtIn.failure))
+  }
+  return issueVerifiedPreview(plan, preview, observation)
+}
 
 export interface VerifyOptions {
   readonly preview?: PlanPreview | undefined
@@ -318,6 +311,9 @@ export const verify = <Input, E, R>(
         detail: builtIn.failure!.detail,
       })
     }
+    if (builtIn.failure !== undefined) {
+      return yield* verificationFailure(validatedPlan.planId, builtIn.failure)
+    }
 
     const context: PolicyEvaluationContext = {
       actualMatches: matches ?? 0,
@@ -357,5 +353,5 @@ export const verify = <Input, E, R>(
             allowedErrors,
           }
 
-    return yield* verifyPreview(validatedPlan, proposed, observation)
+    return yield* issueVerifiedPreview(validatedPlan, proposed, observation)
   })

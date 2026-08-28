@@ -1,15 +1,14 @@
 /** Durable workspace input fingerprinting. */
 import { Effect, FileSystem, Path, Predicate } from "effect"
-import { textHash } from "../Edit/index.ts"
+import { hashDirectoryListing, sha256 } from "../Edit/Hash.ts"
 import type { Json } from "../Evidence/index.ts"
 import type { SourceFingerprint } from "../Plan/index.ts"
 import { parseProjectRelativePath, type ProjectRelativePath } from "../ProjectPath/index.ts"
-import {
-  hashDirectoryListing,
-  type ProjectNotInSnapshot,
-  type SnapshotExpired,
-  type WorkspaceCompilerError,
-  type WorkspaceSnapshotService,
+import type {
+  ProjectNotInSnapshot,
+  SnapshotExpired,
+  WorkspaceCompilerError,
+  WorkspaceSnapshotService,
 } from "../Workspace/index.ts"
 
 const relativePath = (
@@ -172,7 +171,7 @@ export const fingerprintWorkspace = (
           addFingerprint(sources, {
             projectId: configured.id,
             fileName: relative,
-            hash: textHash(content),
+            hash: sha256(content),
           })
           const directory = path.dirname(absolute)
           if ((yield* observationRelativePath(fs, path, project.root, directory)) !== undefined) {
@@ -183,7 +182,7 @@ export const fingerprintWorkspace = (
             addFingerprint(sources, {
               projectId: configured.id,
               fileName: relative,
-              hash: textHash(resolvedRelative),
+              hash: sha256(resolvedRelative),
               kind: "realpath",
             })
           }

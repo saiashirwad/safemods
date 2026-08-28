@@ -16,10 +16,3 @@ export type {
   TransformationPlan,
 } from "./TransformationPlan.ts"
 export { TransformationPlanSchema } from "./Structure.ts"
-export {
-  isProjectRelativePath,
-  parseProjectRelativePath,
-  requireProjectRelativePath,
-  InvalidProjectRelativePath,
-} from "../ProjectPath/index.ts"
-export type { ProjectRelativePath } from "../ProjectPath/index.ts"

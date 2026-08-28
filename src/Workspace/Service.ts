@@ -1,12 +1,13 @@
 /** Workspace service orchestration and layer construction. */
 import { Context, Effect, Layer, Semaphore } from "effect"
 import type { APIOptions } from "typescript/unstable/async"
+import { layer as nativeCompilerLayer, NativeCompiler } from "./internal/NativeCompiler.ts"
+import type { WorkspaceCompilerError } from "./NativeRequest.ts"
 import {
-  layer as nativeCompilerLayer,
-  NativeCompiler,
-  type WorkspaceCompilerError,
-} from "./internal/NativeCompiler.ts"
-import { InvalidProjectRelativePath, parseProjectRelativePath } from "../ProjectPath/index.ts"
+  InvalidProjectRelativePath,
+  isPathContained,
+  parseProjectRelativePath,
+} from "../ProjectPath/index.ts"
 import type { VirtualFsSnapshot } from "../VirtualFs/index.ts"
 import {
   DuplicateConfiguredProject,
@@ -21,17 +22,7 @@ import {
   inputObserverOf,
   type CompilerObservation,
 } from "./internal/ObservedInputs.ts"
-import { WorkspaceRuntime, type WorkspaceRuntimeService } from "./Runtime.ts"
-
-const isWithinProject = (runtime: WorkspaceRuntimeService, root: string, candidate: string) => {
-  const relative = runtime.relativePath(root, candidate)
-  return (
-    relative !== "" &&
-    relative !== ".." &&
-    !relative.startsWith(`..${runtime.pathSeparator}`) &&
-    !runtime.isAbsolutePath(relative)
-  )
-}
+import { WorkspaceRuntime } from "./Runtime.ts"
 
 export interface WorkspaceService {
   readonly definition: WorkspaceDefinition
@@ -61,23 +52,7 @@ export class Workspace extends Context.Service<Workspace, WorkspaceService>()(
   // oxlint-disable-next-line effecttsgo/deterministic-keys -- Stable public service identifier.
   "@safemods/Workspace",
 ) {
-  static readonly layerWithoutDependencies = (
-    definition: WorkspaceDefinition,
-    options: APIOptions = {},
-  ): Layer.Layer<
-    Workspace,
-    DuplicateConfiguredProject | InvalidProjectRelativePath,
-    NativeCompiler | WorkspaceRuntime
-  > => layerWithoutDependencies(definition, options)
-
-  static readonly layer = (
-    definition: WorkspaceDefinition,
-    options: APIOptions = {},
-  ): Layer.Layer<
-    Workspace,
-    DuplicateConfiguredProject | InvalidProjectRelativePath,
-    WorkspaceRuntime
-  > => layer(definition, options)
+  // The Node adapter owns public layer construction.
 }
 
 export const make = (
@@ -91,6 +66,13 @@ export const make = (
   Effect.gen(function* () {
     const compiler = yield* NativeCompiler
     const runtime = yield* WorkspaceRuntime
+    const projectPaths = {
+      resolve: runtime.resolvePath,
+      dirname: runtime.dirname,
+      relative: runtime.relativePath,
+      isAbsolute: runtime.isAbsolutePath,
+      sep: runtime.pathSeparator,
+    }
     const transitionLock = yield* Semaphore.make(1)
     const root = runtime.resolvePath(apiOptions.cwd ?? ".")
     const inputObserver = inputObserverOf(apiOptions.fs)
@@ -102,7 +84,9 @@ export const make = (
       const candidate =
         relativeConfig === undefined ? undefined : runtime.resolvePath(root, relativeConfig)
       const configFileName =
-        candidate !== undefined && isWithinProject(runtime, root, candidate) ? candidate : undefined
+        candidate !== undefined && isPathContained(projectPaths, root, candidate)
+          ? candidate
+          : undefined
       if (configFileName === undefined) {
         return yield* new InvalidProjectRelativePath({ path: project.config })
       }
@@ -163,7 +147,7 @@ export const make = (
     })
   })
 
-export const layerWithoutDependencies = (
+const layerWithoutDependencies = (
   definition: WorkspaceDefinition,
   options: APIOptions = {},
 ): Layer.Layer<

@@ -1,3 +1,4 @@
+import { fixtureProject } from "../test/project-fixture.ts"
 import { nodeFsPromises as Fs } from "../platform/node.ts"
 import { fileURLToPath } from "node:url"
 import { execFile } from "node:child_process"
@@ -75,8 +76,7 @@ describe("safemods scan & audit reporting (@effect/vitest)", () => {
         yield* workspace.withSnapshot(
           {},
           Effect.gen(function* () {
-            const snapshot = yield* WorkspaceSnapshot
-            const project = yield* snapshot.project(app)
+            const project = yield* fixtureProject(app)
             const libraryFile = yield* project.file("src/library.ts")
             const targetSymbol = yield* libraryFile.symbolNamed("target")
 
@@ -109,8 +109,7 @@ describe("safemods scan & audit reporting (@effect/vitest)", () => {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const libraryFile = yield* project.file("src/library.ts")
                 const targetSymbol = yield* libraryFile.symbolNamed("target")
 

@@ -18,7 +18,8 @@ import {
 } from "../Evidence/index.ts"
 import type { PlannedFileOperation } from "../Plan/index.ts"
 import type { Node } from "typescript/unstable/ast"
-import { textHash } from "../Edit/Hash.ts"
+// oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports -- Pure TextEdit value constructor.
+import { makeTextEdit } from "../Edit/Hash.ts"
 import type { TextEdit } from "../Edit/TextEdit.ts"
 import type { Selection } from "../Query/index.ts"
 import type { ProjectSnapshot, ProjectSnapshotError, SnapshotExpired } from "../Workspace/index.ts"
@@ -56,7 +57,7 @@ export const concatEffect = (
 export const concat = (...drafts: ReadonlyArray<Draft>): Draft =>
   finalizeDraftEvidence(mergeDrafts(...drafts), { facts: { source: "concat" } })
 
-type DraftEdit = Omit<ProposedEdit, "evidenceIds">
+type DraftEdit = Omit<TextEdit, "evidenceIds">
 
 /** Build one syntax edit with deterministic, self-contained operation evidence. */
 export const draftForEdit = (
@@ -101,15 +102,15 @@ const editForNode = (
       const start =
         options?.includeLeadingTrivia === true ? node.getFullStart() : node.getStart(sourceFile)
       const end = node.getEnd()
-      return {
+      return makeTextEdit({
         projectId: project.project.id,
         fileName: project.relativeFileName(sourceFile.fileName),
+        sourceText: sourceFile.text,
         start,
         end,
-        expectedTextHash: textHash(sourceFile.text.slice(start, end)),
         newText,
-        evidenceIds: options?.evidenceIds ?? [],
-      }
+        evidenceIds: options?.evidenceIds,
+      })
     }),
   )
 
@@ -156,14 +157,14 @@ const insertAtNode = (
       const sourceFile = node.getSourceFile()
       const position = side === "before" ? node.getStart(sourceFile) : node.getEnd()
       return draftForEdit(
-        {
+        makeTextEdit({
           projectId: project.project.id,
           fileName: project.relativeFileName(sourceFile.fileName),
+          sourceText: sourceFile.text,
           start: position,
           end: position,
-          expectedTextHash: textHash(""),
           newText: text,
-        },
+        }),
         `node:insert-${side}`,
       )
     }),

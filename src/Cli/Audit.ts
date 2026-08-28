@@ -4,6 +4,7 @@
 import { Data, Effect, Predicate } from "effect"
 import type { Json } from "../Evidence/index.ts"
 import type { TransformationPlan } from "../Plan/index.ts"
+import { virtualFileKey } from "../VirtualFs/index.ts"
 import type {
   FileNotFound,
   ProjectNotInSnapshot,
@@ -152,7 +153,9 @@ export const buildAuditReport = (
       return a.id.localeCompare(b.id)
     })
 
-    const uniqueFiles = new Set(findings.map((f) => `${f.projectId}\0${f.fileName}`))
+    const uniqueFiles = new Set(
+      findings.map((finding) => virtualFileKey(finding.projectId, finding.fileName)),
+    )
 
     return {
       recipe: {

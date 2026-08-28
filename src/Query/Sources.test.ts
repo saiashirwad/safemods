@@ -1,7 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import { Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"
+import { Workspace } from "../Workspace/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 import * as Query from "./index.ts"
 
 const looksLikeDefaultLibrary = (fileName: string): boolean =>
@@ -17,8 +18,7 @@ describe("project-owned query sources", () => {
           yield* workspace.withSnapshot(
             {},
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               const files = yield* project.files
               const ownedPaths = new Set(files.map((file) => file.path))
               const fromProject = yield* Query.collect(Query.identifiers(project))
@@ -48,8 +48,7 @@ describe("project-owned query sources", () => {
           yield* workspace.withSnapshot(
             {},
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               const all = yield* Query.collect(Query.identifiers(project))
               const nested = yield* Query.collect(
                 Query.identifiers(project).pipe(Query.within("src/**/*.ts")),

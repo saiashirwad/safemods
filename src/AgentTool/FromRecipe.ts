@@ -6,8 +6,9 @@
  */
 import { Data, Effect, Predicate, Schema, SchemaIssue } from "effect"
 import { executeRecipe } from "../Execution/index.ts"
-import { applicationLayerNode, layer as nodeLayer } from "../Node/index.ts"
+import { layer as nodeLayer } from "../Node/index.ts"
 import { type Recipe as RecipeModel, RecipeInputError } from "../Recipe/index.ts"
+import { decodeRecipeInput } from "../Recipe/Input.ts"
 import { StalePlanError, VerificationFailure, type PolicyResult } from "../Verification/index.ts"
 import type { DiagnosticDiff, DiagnosticRecord } from "../Policy/index.ts"
 import type { Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"
@@ -149,7 +150,7 @@ export const recipeToAgentTool = <Input = undefined, E = never, R = never>(
         const execution =
           options.apply === true
             ? yield* executeRecipe(recipe, typedInput, { mode: "apply" }).pipe(
-                Effect.provide(applicationLayerNode),
+                Effect.provide(nodeLayer),
                 Effect.mapError((cause) => makeToolExecutionError(recipe.name, cause)),
               )
             : yield* executeRecipe(recipe, typedInput, { mode: "verify" }).pipe(
@@ -184,11 +185,7 @@ const decodeToolInput = <Input, E, R>(
     // SAFETY: recipes without schemas accept the caller-provided input contract
     return Effect.succeed(rawInput as Input)
   }
-  // SAFETY: recipe schemas are pure and fail only with SchemaError.
-  const decode = Schema.decodeUnknownEffect(recipe.schema) as (
-    value: JsonValue,
-  ) => Effect.Effect<Input, Schema.SchemaError>
-  return decode(rawInput).pipe(
+  return decodeRecipeInput(recipe.schema, rawInput).pipe(
     Effect.mapError((cause) => makeToolExecutionError(recipe.name, cause)),
   )
 }

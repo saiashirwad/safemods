@@ -1,24 +1,8 @@
 /** Scoped native TypeScript compiler lifecycle and snapshot manager. */
-import { Context, Data, Effect, Layer, type Scope } from "effect"
+import { Context, Effect, Layer, type Scope } from "effect"
 import { API, type APIOptions, type Snapshot, type TimingInfo } from "typescript/unstable/async"
 import type { UpdateSnapshotParams } from "typescript/unstable/proto"
-
-export class WorkspaceCompilerError extends Data.TaggedError("WorkspaceCompilerError")<{
-  readonly operation: string
-  readonly cause: unknown
-}> {}
-
-export type NativeCompilerError = WorkspaceCompilerError
-export const NativeCompilerError = WorkspaceCompilerError
-
-export const nativeRequest = <A>(
-  operation: string,
-  evaluate: () => PromiseLike<A>,
-): Effect.Effect<A, WorkspaceCompilerError> =>
-  Effect.tryPromise({
-    try: evaluate,
-    catch: (cause) => new WorkspaceCompilerError({ operation, cause }),
-  })
+import { nativeRequest, type WorkspaceCompilerError } from "../NativeRequest.ts"
 
 export interface NativeCompilerService {
   readonly openSnapshot: (

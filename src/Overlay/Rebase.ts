@@ -3,13 +3,16 @@ import { Effect } from "effect"
 import type { Draft as DraftModel } from "../Draft/index.ts"
 import {
   applyFileEdits,
-  textHash,
+  sha256,
   type EditConflict,
   type InvalidEdit,
   type TextEdit,
 } from "../Edit/index.ts"
+// oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports -- Pure TextEdit value constructor.
+import { makeTextEdit } from "../Edit/Hash.ts"
 import { mergeEvidenceEffect, type DraftEvidenceConflict } from "../Evidence/index.ts"
 import type { PlannedFileOperation } from "../Plan/index.ts"
+import { virtualFileKey } from "../VirtualFs/index.ts"
 import {
   ProjectNotInSnapshot,
   type FileNotFound,
@@ -70,8 +73,12 @@ export const rebaseDrafts = (
     if (!accumulatedChanged) return { ...next, ...retained }
     if (!nextChanged) return { ...accumulated, ...retained }
 
-    const accumulatedByFile = Map.groupBy(accumulated.edits, (e) => `${e.projectId}\0${e.fileName}`)
-    const nextByFile = Map.groupBy(next.edits, (e) => `${e.projectId}\0${e.fileName}`)
+    const accumulatedByFile = Map.groupBy(accumulated.edits, (edit) =>
+      virtualFileKey(edit.projectId, edit.fileName),
+    )
+    const nextByFile = Map.groupBy(next.edits, (edit) =>
+      virtualFileKey(edit.projectId, edit.fileName),
+    )
     const allKeys = new Set([...accumulatedByFile.keys(), ...nextByFile.keys()])
     const combinedEdits: Array<TextEdit> = []
 
@@ -104,20 +111,22 @@ export const rebaseDrafts = (
           end2--
         }
 
-        combinedEdits.push({
-          projectId,
-          fileName,
-          start,
-          end: end0,
-          expectedTextHash: textHash(t0.slice(start, end0)),
-          newText: t2.slice(start, end2),
-          evidenceIds: [
-            ...new Set([
-              ...accEdits.flatMap((edit) => edit.evidenceIds),
-              ...nxtEdits.flatMap((edit) => edit.evidenceIds),
-            ]),
-          ],
-        })
+        combinedEdits.push(
+          makeTextEdit({
+            projectId,
+            fileName,
+            sourceText: t0,
+            start,
+            end: end0,
+            newText: t2.slice(start, end2),
+            evidenceIds: [
+              ...new Set([
+                ...accEdits.flatMap((edit) => edit.evidenceIds),
+                ...nxtEdits.flatMap((edit) => edit.evidenceIds),
+              ]),
+            ],
+          }),
+        )
       }
     }
 
@@ -125,15 +134,17 @@ export const rebaseDrafts = (
     const consumed = new Set<string>()
     const normalizedOperations: Array<PlannedFileOperation> = []
     for (const operation of fileOperations) {
-      const sourceKey = `${operation.projectId}\0${operation.path}`
+      const sourceKey = virtualFileKey(operation.projectId, operation.path)
       const targetKey =
-        operation.kind === "move" ? `${operation.projectId}\0${operation.toPath}` : undefined
+        operation.kind === "move"
+          ? virtualFileKey(operation.projectId, operation.toPath)
+          : undefined
       const operationEditKey = operation.kind === "move" ? targetKey : sourceKey
       const operationEdits =
         operationEditKey === undefined
           ? undefined
           : combinedEdits.filter(
-              (edit) => `${edit.projectId}\0${edit.fileName}` === operationEditKey,
+              (edit) => virtualFileKey(edit.projectId, edit.fileName) === operationEditKey,
             )
       let normalized = operation
       if (operationEdits !== undefined && operationEdits.length > 0) {
@@ -170,9 +181,9 @@ export const rebaseDrafts = (
               }
               // The destination never remains, so specifier rewrites that
               // retargeted it must not stay as Text Edits.
-              consumed.add(`${producer.projectId}\0${producer.toPath}`)
+              consumed.add(virtualFileKey(producer.projectId, producer.toPath))
               for (const edit of accumulated.edits) {
-                consumed.add(`${edit.projectId}\0${edit.fileName}`)
+                consumed.add(virtualFileKey(edit.projectId, edit.fileName))
               }
             }
           } else if (producer.kind === "create") {
@@ -209,14 +220,16 @@ export const rebaseDrafts = (
         const configuredProjectForOperation = yield* configuredProject(normalized.projectId)
         const project = yield* snapshot.project(configuredProjectForOperation)
         const original = yield* project.sourceText(normalized.path)
-        normalized = { ...normalized, initialHash: textHash(original) }
+        normalized = { ...normalized, initialHash: sha256(original) }
       }
       if (operation.kind === "delete" || operation.kind === "move") consumed.add(sourceKey)
       normalizedOperations.push(normalized)
     }
 
     return {
-      edits: combinedEdits.filter((edit) => !consumed.has(`${edit.projectId}\0${edit.fileName}`)),
+      edits: combinedEdits.filter(
+        (edit) => !consumed.has(virtualFileKey(edit.projectId, edit.fileName)),
+      ),
       fileOperations: normalizedOperations,
       evidence: yield* mergeEvidenceEffect([...accumulated.evidence, ...next.evidence]),
       matches: accumulated.matches + next.matches,

@@ -1,8 +1,8 @@
 /** Shared recipe execution from planning through optional application. */
 import { Effect, type FileSystem, type Path } from "effect"
-import { apply, type ApplicationReceipt, type PlanApplication } from "../Application/index.ts"
+import { applyVerifiedPlan, type ApplicationReceipt } from "../Application/index.ts"
 import type { ApplicationFailure, ApplicationIndeterminate } from "../Application/Application.ts"
-import type { DraftEvidenceConflict } from "../Draft/index.ts"
+import type { DraftEvidenceConflict } from "../Evidence/index.ts"
 import type { PlanBuildError, PlanDecodeError, TransformationPlan } from "../Plan/index.ts"
 import type { DiagnosticDiff } from "../Policy/index.ts"
 import { run, type Recipe, type RecipeInputError } from "../Recipe/index.ts"
@@ -126,7 +126,7 @@ type RecipeRequirements<R> =
   | Path.Path
   | Exclude<R, WorkspaceSnapshot>
 type VerificationRequirements<R> = RecipeRequirements<R>
-type ApplyRequirements<R> = VerificationRequirements<R> | PlanApplication
+type ApplyRequirements<R> = VerificationRequirements<R>
 
 export function executeRecipe<Input, E, R>(
   recipe: Recipe<Input, E, R>,
@@ -152,7 +152,7 @@ export function executeRecipe<Input, E, R>(
   recipe: Recipe<Input, E, R>,
   input: Input,
   options: RecipeExecutionOptions,
-) {
+): Effect.Effect<RecipeExecutionResult, RecipeApplicationError<E>, ApplyRequirements<R>> {
   return Effect.gen(function* () {
     const plan = yield* run(recipe, input)
     if (options.mode === "plan") return { mode: "plan" as const, plan }
@@ -171,7 +171,7 @@ export function executeRecipe<Input, E, R>(
       return { mode: "verify" as const, plan, preview, verified }
     }
 
-    const receipt = yield* apply(verified)
+    const receipt = yield* applyVerifiedPlan(verified)
     return { mode: "apply" as const, plan, preview, verified, receipt }
   })
 }

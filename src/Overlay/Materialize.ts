@@ -14,18 +14,13 @@ import {
   type WorkspaceSnapshotService,
 } from "../Workspace/index.ts"
 
-/**
- * Materialize changes against one coherent virtual filesystem.
- *
- * The return value is a VirtualFsSnapshot. Absolute-path indexing is retained
- * as a compatibility view for callers of the pre-Phase-1 Overlay API.
- */
+/** Materialize changes against one coherent virtual filesystem. */
 export const materialize = (
   snapshot: WorkspaceSnapshotService,
   edits: ReadonlyArray<TextEdit>,
   fileOperations: ReadonlyArray<PlannedFileOperation> = [],
 ): Effect.Effect<
-  VirtualFsSnapshot & Readonly<Record<string, string>>,
+  VirtualFsSnapshot,
   | ProjectSnapshotError
   | ProjectNotInSnapshot
   | FileNotFound
@@ -75,7 +70,5 @@ export const materialize = (
       resolvePath: (projectId, fileName) => projectForPath(projectId).resolveFileName(fileName),
     })
 
-    // A non-symbol compatibility view keeps older Overlay.materialize users
-    // working without making lifecycle state implicit again.
-    return Object.assign(Object.fromEntries(result.files), result)
+    return result
   })

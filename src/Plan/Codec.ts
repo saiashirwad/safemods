@@ -1,6 +1,7 @@
 /** Strict serialization and decoding for content-addressed plans. */
 import { Effect, Schema } from "effect"
-import { asJson, canonicalJson, digest, withoutPlanId } from "./Canonical.ts"
+import { sha256 } from "../Edit/index.ts"
+import { asJson, canonicalJson, withoutPlanId } from "./Canonical.ts"
 import { PlanDecodeError, type TransformationPlan } from "./TransformationPlan.ts"
 import { strictPlanParseOptions, TransformationPlanSchema } from "./Structure.ts"
 import { validateDecodedPlan } from "./Validate.ts"
@@ -29,7 +30,7 @@ const validateContentAddressedPlan = (
     yield* validateDecodedPlan(plan).pipe(
       Effect.mapError(() => new PlanDecodeError({ reason: "schema" })),
     )
-    if (digest(canonicalJson(withoutPlanId(plan))) !== plan.planId) {
+    if (sha256(canonicalJson(withoutPlanId(plan))) !== plan.planId) {
       return yield* new PlanDecodeError({ reason: "hash" })
     }
     return plan

@@ -1,25 +1,14 @@
 /** Node host-path resolution and project containment. */
 import { path as Path } from "../platform/node.ts"
-import { parseProjectRelativePath } from "../ProjectPath/index.ts"
-
-/**
- * Platform-aware containment. Preserve case so distinct paths on a
- * case-sensitive filesystem do not become one path.
- */
-const isContained = (root: string, candidate: string): boolean => {
-  const relative = Path.relative(root, candidate)
-  return (
-    relative === "" ||
-    (relative !== ".." && !relative.startsWith(`..${Path.sep}`) && !Path.isAbsolute(relative))
-  )
-}
+import {
+  isPathContained,
+  parseProjectRelativePath,
+  resolveContainedProjectPath,
+} from "../ProjectPath/index.ts"
 
 /** True when `fileName` is a descendant of `projectRoot`. */
-export const isWithinProject = (projectRoot: string, fileName: string): boolean => {
-  const root = Path.resolve(projectRoot)
-  const file = Path.resolve(fileName)
-  return file !== root && isContained(root, file)
-}
+export const isWithinProject = (projectRoot: string, fileName: string): boolean =>
+  isPathContained(Path, projectRoot, fileName)
 
 /**
  * Convert a host-relative path to slash-separated form.
@@ -36,9 +25,9 @@ export const resolveProjectRelativeFile = (
   fileName: string,
 ): string | undefined => {
   const relative = parseProjectRelativePath(fileName)
-  if (relative === undefined) return undefined
-  const absolute = Path.resolve(projectRoot, relative)
-  return isWithinProject(projectRoot, absolute) ? absolute : undefined
+  return relative === undefined
+    ? undefined
+    : resolveContainedProjectPath(Path, projectRoot, relative)
 }
 
 /**
@@ -48,10 +37,4 @@ export const resolveProjectRelativeFile = (
 export const resolveContainedSnapshotPath = (
   projectRoot: string,
   fileName: string,
-): string | undefined => {
-  const relative = resolveProjectRelativeFile(projectRoot, fileName)
-  if (relative !== undefined) return relative
-  if (!Path.isAbsolute(fileName)) return undefined
-  const absolute = Path.resolve(fileName)
-  return isWithinProject(projectRoot, absolute) ? absolute : undefined
-}
+): string | undefined => resolveContainedProjectPath(Path, projectRoot, fileName)

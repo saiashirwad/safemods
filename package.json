@@ -55,9 +55,9 @@
       "types": "./dist/src/Policy/index.d.ts",
       "default": "./dist/src/Policy/index.js"
     },
-    "./Precondition": {
-      "types": "./dist/src/Precondition/index.d.ts",
-      "default": "./dist/src/Precondition/index.js"
+    "./ProjectPath": {
+      "types": "./dist/src/ProjectPath/index.d.ts",
+      "default": "./dist/src/ProjectPath/index.js"
     },
     "./Query": {
       "types": "./dist/src/Query/index.d.ts",

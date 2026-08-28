@@ -8,15 +8,13 @@ import {
   type Symbol as NativeSymbol,
   type Type as NativeType,
 } from "typescript/unstable/async"
-import {
-  nativeRequest,
-  WorkspaceCompilerError,
-  type NativeCompilerError,
-} from "./internal/NativeCompiler.ts"
+import { nativeRequest, WorkspaceCompilerError, type NativeCompilerError } from "./NativeRequest.ts"
 import {
   InvalidProjectRelativePath,
+  isPathContained,
   parseProjectRelativePath,
   requireProjectRelativePath,
+  resolveContainedProjectPath,
   type ProjectRelativePath,
 } from "../ProjectPath/index.ts"
 import type { ConfiguredProject } from "./ConfiguredProject.ts"
@@ -160,36 +158,21 @@ export const projectSnapshotFor = ({
   ensureActive,
   runtime,
 }: ProjectSnapshotOptions): ProjectSnapshot => {
-  const isWithinProject = (fileName: string): boolean => {
-    // Native paths (e.g. symbol declaration paths from the compiler) can
-    // differ from the workspace root in letter case on case-insensitive
-    // filesystems, so containment folds case before comparing.
-    const relative = runtime.relativePath(
-      projectRoot.toLowerCase(),
-      runtime.resolvePath(fileName).toLowerCase(),
-    )
-    return (
-      relative !== "" &&
-      relative !== ".." &&
-      !relative.startsWith(`..${runtime.pathSeparator}`) &&
-      !runtime.isAbsolutePath(relative)
-    )
+  const projectPaths = {
+    resolve: runtime.resolvePath,
+    dirname: runtime.dirname,
+    relative: runtime.relativePath,
+    isAbsolute: runtime.isAbsolutePath,
+    sep: runtime.pathSeparator,
   }
+  const isWithinProject = (fileName: string): boolean =>
+    isPathContained(projectPaths, projectRoot, fileName)
   const containsFileName = isWithinProject
   const resolveFileName = (fileName: string): string => runtime.resolvePath(projectRoot, fileName)
   const relativeFileName = (fileName: string): string =>
     runtime.relativePath(projectRoot, runtime.resolvePath(fileName)).replaceAll("\\", "/")
-
-  const requireContainedPath = (fileName: string): string | undefined => {
-    const relative = parseProjectRelativePath(fileName)
-    if (relative !== undefined) {
-      const absolute = runtime.resolvePath(projectRoot, relative)
-      return isWithinProject(absolute) ? absolute : undefined
-    }
-    if (!runtime.isAbsolutePath(fileName)) return undefined
-    const absolute = runtime.resolvePath(fileName)
-    return isWithinProject(absolute) ? absolute : undefined
-  }
+  const requireContainedPath = (fileName: string): string | undefined =>
+    resolveContainedProjectPath(projectPaths, projectRoot, fileName)
 
   const isOwnedSourceFile = (sf: SourceFile, observedName = sf.fileName) =>
     Effect.gen(function* () {

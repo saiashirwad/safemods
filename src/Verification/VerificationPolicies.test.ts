@@ -9,8 +9,8 @@ import * as Verification from "../Verification/index.ts"
 import type { VerificationObservation } from "../Verification/VerificationReceipt.ts"
 import { verifyPreview } from "../Verification/Verify.ts"
 import { finalizePlan, type TransformationPlan } from "../Plan/index.ts"
-import { WorkspaceSnapshot } from "../Workspace/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("verification diagnostics and policies", () => {
   it("computes diagnostic diffs accurately", () => {
@@ -126,8 +126,7 @@ describe("verification diagnostics and policies", () => {
             policies: [Policy.matches({ min: 1 }), Policy.noNewErrors(), Policy.idempotent()],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
                   module: "./library.js",
                   name: "TargetInput",
@@ -140,8 +139,7 @@ describe("verification diagnostics and policies", () => {
             policies: [Policy.matches({ min: 999 })],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
                   module: "./library.js",
                   name: "TargetInput",
@@ -246,8 +244,7 @@ describe("verification diagnostics and policies", () => {
             policies: [{ diagnostics: "exact-delta" }, Policy.idempotent()],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(
                   project,
                   "src/repeated.ts",
@@ -279,8 +276,7 @@ describe("verification diagnostics and policies", () => {
             policies: [Policy.noNewErrors()],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(project, "src/broken.ts", broken)
               }),
           })
@@ -310,8 +306,7 @@ describe("verification diagnostics and policies", () => {
             policies: [{ diagnostics: "exact-delta" }],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(project, "src/assign.ts", source)
               }),
           })
@@ -333,8 +328,7 @@ describe("verification diagnostics and policies", () => {
             policies: [Policy.allowErrors({ code })],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(project, "src/assign.ts", source)
               }),
           })
@@ -343,8 +337,7 @@ describe("verification diagnostics and policies", () => {
             policies: [Policy.allowErrors({ code: otherCode })],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(project, "src/assign.ts", source)
               }),
           })

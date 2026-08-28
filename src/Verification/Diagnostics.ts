@@ -2,7 +2,8 @@
 import { Effect } from "effect"
 import { DiagnosticCategory, type Diagnostic } from "typescript/unstable/async"
 import type { DiagnosticRecord } from "../Policy/index.ts"
-import { nativeRequest, WorkspaceSnapshot } from "../Workspace/index.ts"
+import { WorkspaceSnapshot } from "../Workspace/index.ts"
+import { nativeRequest } from "../Workspace/NativeRequest.ts"
 
 const normalizeDiagnostic = (diagnostic: Diagnostic): DiagnosticRecord => ({
   code: diagnostic.code,

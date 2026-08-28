@@ -1,5 +1,6 @@
 /** Native compiler filesystem options for an isolated virtual snapshot. */
 import type { APIOptions } from "typescript/unstable/async"
+import { isPathContained } from "../../ProjectPath/index.ts"
 import type { VirtualFsSnapshot } from "../../VirtualFs/index.ts"
 import type { SnapshotTransition } from "../ConfiguredProject.ts"
 import type { WorkspaceRuntimeService } from "../Runtime.ts"
@@ -22,17 +23,20 @@ export const compilerOverlayFor = (
   apiOptions: APIOptions,
   overlay: VirtualFsSnapshot,
 ): CompilerOverlay => {
+  const projectPaths = {
+    resolve: runtime.resolvePath,
+    dirname: runtime.dirname,
+    relative: runtime.relativePath,
+    isAbsolute: runtime.isAbsolutePath,
+    sep: runtime.pathSeparator,
+  }
   const deleted = overlay.deleted
   const created = overlay.created
   const matchesVirtualPath = (observed: string, planned: string): boolean => {
     if (observed === planned) return true
+    if (!isPathContained(projectPaths, root, planned)) return false
     const relative = runtime.relativePath(root, planned)
-    return (
-      relative !== "" &&
-      !relative.startsWith("..") &&
-      !runtime.isAbsolutePath(relative) &&
-      observed.endsWith(`${runtime.pathSeparator}${relative}`)
-    )
+    return observed.endsWith(`${runtime.pathSeparator}${relative}`)
   }
 
   const options: APIOptions = {
@@ -59,9 +63,8 @@ export const compilerOverlayFor = (
           (existing?.directories ?? []).filter((entry) => !isDeleted(entry)),
         )
         for (const plannedFileName of overlay.files.keys()) {
+          if (!isPathContained(projectPaths, directoryName, plannedFileName)) continue
           const relative = runtime.relativePath(directoryName, plannedFileName)
-          if (relative === "" || relative.startsWith("..") || runtime.isAbsolutePath(relative))
-            continue
           const first = relative.split(runtime.pathSeparator)[0]!
           if (first === relative) files.add(first)
           else directories.add(first)

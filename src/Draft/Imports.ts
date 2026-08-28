@@ -7,7 +7,8 @@ import {
   isNamedImports,
   isStringLiteral,
 } from "typescript/unstable/ast/is"
-import { textHash } from "../Edit/Hash.ts"
+// oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports -- Pure TextEdit value constructor.
+import { makeTextEdit } from "../Edit/Hash.ts"
 import {
   isProjectFile,
   type ProjectFile,
@@ -83,14 +84,14 @@ const addNamedToProject = (
                   const last = named.elements[named.elements.length - 1]!
                   const insertPos = last.getEnd()
                   return draftForEdit(
-                    {
+                    makeTextEdit({
                       projectId: project.project.id,
                       fileName: project.relativeFileName(source.fileName),
+                      sourceText: source.text,
                       start: insertPos,
                       end: insertPos,
-                      expectedTextHash: textHash(""),
                       newText: `, ${importName}`,
-                    },
+                    }),
                     `import:addNamed:${options.module}:${options.name}`,
                     { module: options.module, name: options.name },
                   )
@@ -104,14 +105,14 @@ const addNamedToProject = (
         const importText = `import { ${importName} } from "${options.module}";\n`
 
         return draftForEdit(
-          {
+          makeTextEdit({
             projectId: project.project.id,
             fileName: project.relativeFileName(source.fileName),
+            sourceText: source.text,
             start: insertPos,
             end: insertPos,
-            expectedTextHash: textHash(""),
             newText: importText,
-          },
+          }),
           `import:addNamed:${options.module}:${options.name}`,
           { module: options.module, name: options.name },
         )
@@ -168,14 +169,14 @@ export const imports = {
           const start = clause.name?.getEnd() ?? declaration.getFullStart()
           const end = clause.name === undefined ? declaration.getEnd() : named.getEnd()
           return draftForEdit(
-            {
+            makeTextEdit({
               projectId: project.project.id,
               fileName: project.relativeFileName(sourceFile.fileName),
+              sourceText: sourceFile.text,
               start,
               end,
-              expectedTextHash: textHash(sourceFile.text.slice(start, end)),
               newText: "",
-            },
+            }),
             `import:removeNamed:${name}`,
             { name },
           )
@@ -194,14 +195,14 @@ export const imports = {
         }
 
         return draftForEdit(
-          {
+          makeTextEdit({
             projectId: project.project.id,
             fileName: project.relativeFileName(sourceFile.fileName),
+            sourceText: sourceFile.text,
             start,
             end,
-            expectedTextHash: textHash(sourceFile.text.slice(start, end)),
             newText: "",
-          },
+          }),
           `import:removeNamed:${name}`,
           { name },
         )
@@ -227,14 +228,14 @@ export const imports = {
         const end = specifier.getEnd()
 
         return draftForEdit(
-          {
+          makeTextEdit({
             projectId: project.project.id,
             fileName: project.relativeFileName(sourceFile.fileName),
+            sourceText: sourceFile.text,
             start,
             end,
-            expectedTextHash: textHash(sourceFile.text.slice(start, end)),
             newText: newSpecifierText,
-          },
+          }),
           `import:update-source:${newModule}`,
           { module: newModule },
         )
@@ -394,14 +395,14 @@ export const imports = {
           if (formattedImports === currentImports) return empty
 
           return draftForEdit(
-            {
+            makeTextEdit({
               projectId: project.project.id,
               fileName: project.relativeFileName(source.fileName),
+              sourceText: source.text,
               start,
               end,
-              expectedTextHash: textHash(currentImports),
               newText: formattedImports,
-            },
+            }),
             "import:organize",
             { imports: importDecls.length },
           )

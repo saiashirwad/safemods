@@ -52,10 +52,6 @@ describe("architecture boundaries", () => {
         writeFile(join(root, "src", "index.ts"), 'export * as Query from "./Query/index.ts"\n'),
         writeFile(join(root, "src", "Query", "index.ts"), "export {}\n"),
         writeFile(join(root, "src", "Workspace", "index.ts"), "export {}\n"),
-        writeFile(
-          join(root, "src", "Workspace", "ProjectPath.ts"),
-          'export { projectRelativePath } from "../Node/ProjectPath.ts"\n',
-        ),
         writeFile(join(root, "src", "Workspace", "Bad.ts"), 'import "../Node/ProjectPath.ts"\n'),
         writeFile(join(root, "src", "Node", "ProjectPath.ts"), "export {}\n"),
         writeFile(
@@ -93,10 +89,6 @@ describe("architecture boundaries", () => {
       assert.ok(failures.some((failure) => failure.includes("imports the root façade")))
       assert.equal(
         failures.some((failure) => failure.includes("Draft/Good.ts")),
-        false,
-      )
-      assert.equal(
-        failures.some((failure) => failure.includes("Workspace/ProjectPath.ts")),
         false,
       )
       assert.ok(

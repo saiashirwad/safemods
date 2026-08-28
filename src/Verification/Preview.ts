@@ -1,13 +1,13 @@
 /** Read-only materialization of a plan's exact proposed bytes. */
 import { Effect, type FileSystem, Path } from "effect"
-import { textHash } from "../Edit/index.ts"
+import { sha256 } from "../Edit/index.ts"
 import {
   isContentFingerprint,
   type PlanDecodeError,
   validatePlan,
   type TransformationPlan,
 } from "../Plan/index.ts"
-import { isProjectRelativePath } from "../ProjectPath/index.ts"
+import { resolvePlanFilePath, unsafePlanFilePathMessage } from "../ProjectPath/index.ts"
 import {
   materialize as materializeVirtualFs,
   virtualFileKey,
@@ -64,15 +64,9 @@ export const previewPlan = (
     }
 
     const resolvePath = (projectId: string, fileName: string): string => {
-      const project = validated.projects.find((candidate) => candidate.id === projectId)
-      if (
-        project === undefined ||
-        !isProjectRelativePath(fileName) ||
-        !isProjectRelativePath(project.configFileName)
-      ) {
-        throw new Error(`Unsafe or unknown project path: ${projectId}:${fileName}`)
-      }
-      return path.resolve(workspaceRoot, path.dirname(project.configFileName), fileName)
+      const resolved = resolvePlanFilePath(path, validated, workspaceRoot, projectId, fileName)
+      if (resolved === undefined) throw new Error(unsafePlanFilePathMessage(projectId, fileName))
+      return resolved.fileName
     }
 
     const materialized = yield* materializeVirtualFs<never>({
@@ -97,7 +91,7 @@ export const previewPlan = (
           return new VerificationFailure({
             planId: validated.planId,
             policy: "edits",
-            detail: `Missing source for ${error.projectId}\0${error.fileName}`,
+            detail: `Missing source for ${virtualFileKey(error.projectId, error.fileName)}`,
           })
         }
         return new VerificationFailure({
@@ -134,7 +128,7 @@ export const previewPlan = (
 
     const filesByKey = new Map<string, FilePreview>()
     const stateOf = (text: string | undefined): FileState =>
-      text === undefined ? { exists: false } : { exists: true, text, hash: textHash(text) }
+      text === undefined ? { exists: false } : { exists: true, text, hash: sha256(text) }
     for (const key of touched) {
       // SAFETY: every virtualFileKey is created from exactly one project ID and file name.
       const [projectId, fileName] = key.split("\0") as [string, string]

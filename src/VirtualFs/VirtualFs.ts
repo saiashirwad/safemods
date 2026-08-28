@@ -1,7 +1,7 @@
 import { Data, Effect } from "effect"
 import {
   applyFileEdits,
-  textHash,
+  sha256,
   type EditConflict,
   type InvalidEdit,
   type TextEdit,
@@ -121,7 +121,7 @@ export const materialize = <E>(
       }
 
       const current = yield* requireExisting(operation.projectId, operation.path)
-      const actualHash = textHash(current.content)
+      const actualHash = sha256(current.content)
       if (actualHash !== operation.initialHash) {
         return yield* new VirtualFsError({
           reason: "source-mismatch",

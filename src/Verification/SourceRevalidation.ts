@@ -1,17 +1,18 @@
 /** Project identity and source fingerprint revalidation. */
 import { Effect, FileSystem, Path } from "effect"
-import { textHash } from "../Edit/index.ts"
+import { hashDirectoryListing, sha256 } from "../Edit/Hash.ts"
 import type { SourceFingerprint, TransformationPlan } from "../Plan/index.ts"
-import { isProjectRelativePath, parseProjectRelativePath } from "../ProjectPath/index.ts"
-import { hashDirectoryListing } from "../Workspace/index.ts"
+import {
+  parseProjectRelativePath,
+  resolvePlanFilePath,
+  unsafePlanFilePathMessage,
+} from "../ProjectPath/index.ts"
 import { ProjectIdentityMismatch, StalePlanError, VerificationFailure } from "./Errors.ts"
 
 const liveProjectIdentities = (
   projects: ReadonlyArray<{ readonly id: string; readonly config: string }>,
 ): ReadonlyArray<{ readonly id: string; readonly config: string }> =>
-  [...projects]
-    .map((project) => ({ id: project.id, config: project.config }))
-    .sort((left, right) => left.id.localeCompare(right.id))
+  [...projects].sort((left, right) => left.id.localeCompare(right.id))
 
 const planProjectIdentities = (
   plan: TransformationPlan,
@@ -49,19 +50,15 @@ const absoluteFileName = (
 ): Effect.Effect<string, VerificationFailure, Path.Path> =>
   Effect.gen(function* () {
     const path = yield* Path.Path
-    const project = plan.projects.find((candidate) => candidate.id === projectId)
-    if (
-      project === undefined ||
-      !isProjectRelativePath(fileName) ||
-      !isProjectRelativePath(project.configFileName)
-    ) {
+    const resolved = resolvePlanFilePath(path, plan, workspaceRoot, projectId, fileName)
+    if (resolved === undefined) {
       return yield* new VerificationFailure({
         planId: plan.planId,
         policy: "edits",
-        detail: `Unsafe or unknown project path: ${projectId}:${fileName}`,
+        detail: unsafePlanFilePathMessage(projectId, fileName),
       })
     }
-    return path.resolve(workspaceRoot, path.dirname(project.configFileName), fileName)
+    return resolved.fileName
   })
 
 const staleSource = (planId: string, source: SourceFingerprint): StalePlanError =>
@@ -104,11 +101,11 @@ export const revalidateSource = (
       const relative = parseProjectRelativePath(
         path.relative(realRoot, resolved).split(path.sep).join("/"),
       )
-      if (relative === undefined || textHash(relative) !== source.hash) return yield* stale
+      if (relative === undefined || sha256(relative) !== source.hash) return yield* stale
       return undefined
     }
     const content = yield* fs.readFileString(absolute).pipe(Effect.mapError(() => stale))
-    if (textHash(content) !== source.hash) return yield* stale
+    if (sha256(content) !== source.hash) return yield* stale
     return content
   })
 

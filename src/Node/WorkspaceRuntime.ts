@@ -3,7 +3,8 @@ import * as Fs from "node:fs"
 import * as Path from "node:path"
 import { Layer } from "effect"
 import type { APIOptions } from "typescript/unstable/async"
-import { Workspace, type WorkspaceDefinition } from "../Workspace/index.ts"
+import type { WorkspaceDefinition } from "../Workspace/index.ts"
+import { layer as workspaceLayer } from "../Workspace/Service.ts"
 import { WorkspaceRuntime } from "../Workspace/Runtime.ts"
 
 export const workspaceRuntimeLayer = Layer.sync(WorkspaceRuntime, () =>
@@ -57,4 +58,4 @@ export const workspaceRuntimeLayer = Layer.sync(WorkspaceRuntime, () =>
 
 /** Ready Node-backed Workspace layer for normal application composition. */
 export const workspaceLayerNode = (definition: WorkspaceDefinition, options: APIOptions = {}) =>
-  Workspace.layer(definition, options).pipe(Layer.provide(workspaceRuntimeLayer))
+  workspaceLayer(definition, options).pipe(Layer.provide(workspaceRuntimeLayer))

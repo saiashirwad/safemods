@@ -1,8 +1,9 @@
 /** Structural, semantic, and canonical Plan validation. */
 import { Effect, Predicate, Schema } from "effect"
-import { compareEdits, editsConflict } from "../Edit/index.ts"
+import { compareEdits, editsConflict, sha256 } from "../Edit/index.ts"
+import { virtualFileKey } from "../VirtualFs/index.ts"
 import { parseProjectRelativePath, type ProjectRelativePath } from "../ProjectPath/index.ts"
-import { asJson, canonicalJson, digest } from "./Canonical.ts"
+import { asJson, canonicalJson } from "./Canonical.ts"
 import {
   isContentFingerprint,
   PlanBuildError,
@@ -45,8 +46,8 @@ export const normalizedPath = (value: string): ProjectRelativePath | undefined =
   parseProjectRelativePath(value)
 
 const operationKeys = (operation: PlannedFileOperation): Array<string> => {
-  const keys = [`${operation.projectId}\0${operation.path}`]
-  if (operation.kind === "move") keys.push(`${operation.projectId}\0${operation.toPath}`)
+  const keys = [virtualFileKey(operation.projectId, operation.path)]
+  if (operation.kind === "move") keys.push(virtualFileKey(operation.projectId, operation.toPath))
   return keys
 }
 
@@ -60,7 +61,7 @@ const validateOperation = (
   if (normalizedPath(operation.path) === undefined) return `Invalid path ${operation.path}`
   for (const id of operation.evidenceIds ?? [])
     if (!evidence.has(id)) return `Unknown evidence ${id}`
-  const source = sources.get(`${operation.projectId}\0${operation.path}`)
+  const source = sources.get(virtualFileKey(operation.projectId, operation.path))
   if (operation.kind === "create") {
     if (source !== undefined) return `Create path already exists: ${operation.path}`
   } else {
@@ -70,7 +71,7 @@ const validateOperation = (
       if (normalizedPath(operation.toPath) === undefined)
         return `Invalid target path ${operation.toPath}`
       if (operation.toPath === operation.path) return "Move source and target must differ"
-      if (sources.has(`${operation.projectId}\0${operation.toPath}`))
+      if (sources.has(virtualFileKey(operation.projectId, operation.toPath)))
         return `Move target exists: ${operation.toPath}`
     }
   }
@@ -104,7 +105,7 @@ const validateInputSemantics = (input: PlanInput): Effect.Effect<void, PlanBuild
       seenSources.add(unique)
       const normalized = { ...source, fileName: path }
       if (isContentFingerprint(normalized))
-        sourceMap.set(`${source.projectId}\0${path}`, normalized)
+        sourceMap.set(virtualFileKey(source.projectId, path), normalized)
     }
     const evidenceIds = new Set<string>()
     for (const item of input.evidence) {
@@ -123,7 +124,10 @@ const validateInputSemantics = (input: PlanInput): Effect.Effect<void, PlanBuild
       }
       const fileName = normalizedPath(edit.fileName)
       if (fileName === undefined) return yield* fail("invalid-path", edit.fileName)
-      if (!projectIds.has(edit.projectId) || !sourceMap.has(`${edit.projectId}\0${fileName}`)) {
+      if (
+        !projectIds.has(edit.projectId) ||
+        !sourceMap.has(virtualFileKey(edit.projectId, fileName))
+      ) {
         return yield* fail("missing-source", edit.fileName)
       }
       for (const id of edit.evidenceIds)
@@ -176,7 +180,7 @@ export const validateDecodedPlan = (
   Effect.gen(function* () {
     const { schemaVersion: _, planId: __, snapshotHash: ___, ...input } = plan
     yield* validateInputSemantics(input)
-    const expectedSnapshot = digest(
+    const expectedSnapshot = sha256(
       canonicalJson(asJson({ projects: plan.projects, sources: plan.sources })),
     )
     if (expectedSnapshot !== plan.snapshotHash)

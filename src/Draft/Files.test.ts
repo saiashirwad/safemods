@@ -2,7 +2,7 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import type { PlannedFileOperation } from "../Plan/index.ts"
 import { applyFileEdits } from "../Edit/index.ts"
-import { textHash } from "../Edit/Hash.ts"
+import { sha256 } from "../Edit/Hash.ts"
 import { withProject } from "../test/project-fixture.ts"
 import * as Draft from "./index.ts"
 
@@ -50,7 +50,7 @@ describe("Draft.files", () => {
           const draft = yield* Draft.files.delete(project, "src/library.ts")
           const operation = expectKind(draft.fileOperations![0]!, "delete")
           expect(operation.path).toBe("src/library.ts")
-          expect(operation.initialHash).toBe(textHash(source))
+          expect(operation.initialHash).toBe(sha256(source))
           expect(draft.evidence[0]!.id).toBe(operation.evidenceIds?.[0])
         }),
       ),

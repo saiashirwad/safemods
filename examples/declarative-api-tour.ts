@@ -14,7 +14,7 @@ import { isObjectLiteralExpression } from "typescript/unstable/ast/is"
 import { Effect, Layer, Schema } from "effect"
 import * as Application from "safemods/Application"
 import * as Draft from "safemods/Draft"
-import { applicationLayerNode, workspaceLayerNode } from "safemods/Node"
+import { layer as nodeLayer, workspaceLayerNode } from "safemods/Node"
 import * as Policy from "safemods/Policy"
 import { Criterion } from "safemods/Query"
 import * as Query from "safemods/Query"
@@ -104,7 +104,7 @@ export const runTour = Effect.gen(function* () {
     `[Diagnostic Diff] Introduced: ${verified.diagnosticDiff.introduced.length}, Resolved: ${verified.diagnosticDiff.resolved.length}`,
   )
 
-  const receipt = yield* Application.apply(verified)
+  const receipt = yield* Application.applyVerifiedPlan(verified)
   console.log(`[Application Applied] Confirmed output files: ${receipt.outputs.length}`)
 
   return receipt
@@ -116,7 +116,7 @@ async function main() {
   await Fs.cp(fixtureSource, tmpRoot, { recursive: true })
 
   const workspaceLayer = workspaceLayerNode({ projects: [app] }, { cwd: tmpRoot })
-  const appLayer = applicationLayerNode.pipe(Layer.provideMerge(workspaceLayer))
+  const appLayer = nodeLayer.pipe(Layer.provideMerge(workspaceLayer))
 
   try {
     await Effect.runPromise(runTour.pipe(Effect.provide(appLayer)))

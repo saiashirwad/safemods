@@ -1,5 +1,5 @@
 /** Record compiler filesystem observations for the Snapshot Input Manifest. */
-import { createHash } from "node:crypto"
+import { hashDirectoryListing, sha256 } from "../../Edit/Hash.ts"
 import { Predicate } from "effect"
 import type { APIOptions } from "typescript/unstable/async"
 import type { WorkspaceRuntimeService } from "../Runtime.ts"
@@ -25,13 +25,6 @@ interface ObservedFileSystem extends HostFileSystem {
   readonly [InputObserverId]: InputObserver
 }
 
-export const hashDirectoryListing = (names: ReadonlyArray<string>): string =>
-  createHash("sha256")
-    .update(JSON.stringify([...names].sort()))
-    .digest("hex")
-
-const contentHash = (text: string): string => createHash("sha256").update(text).digest("hex")
-
 const observeFileSystem = (
   base: HostFileSystem | undefined,
   runtime: WorkspaceRuntimeService,
@@ -45,12 +38,12 @@ const observeFileSystem = (
       return null
     }
     if (Predicate.isString(delegated)) {
-      record({ kind: "file", path: fileName, hash: contentHash(delegated) })
+      record({ kind: "file", path: fileName, hash: sha256(delegated) })
       return delegated
     }
     const content = runtime.readFileText(fileName)
     if (content !== undefined) {
-      record({ kind: "file", path: fileName, hash: contentHash(content) })
+      record({ kind: "file", path: fileName, hash: sha256(content) })
       return content
     }
     return undefined
@@ -96,12 +89,12 @@ const observeFileSystem = (
   realpath: (value) => {
     const delegated = base?.realpath?.(value)
     if (delegated !== undefined) {
-      record({ kind: "realpath", path: value, hash: contentHash(delegated) })
+      record({ kind: "realpath", path: value, hash: sha256(delegated) })
       return delegated
     }
     const resolved = runtime.realPath(value)
     if (resolved !== undefined) {
-      record({ kind: "realpath", path: value, hash: contentHash(resolved) })
+      record({ kind: "realpath", path: value, hash: sha256(resolved) })
       return resolved
     }
     return undefined

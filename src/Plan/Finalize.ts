@@ -1,7 +1,7 @@
 /** Normalize Plan input and assign its content-addressed identifiers. */
 import { Effect } from "effect"
-import { compareEdits, editsConflict } from "../Edit/index.ts"
-import { asJson, canonicalJson, digest, withoutPlanId } from "./Canonical.ts"
+import { compareEdits, editsConflict, sha256 } from "../Edit/index.ts"
+import { asJson, canonicalJson, withoutPlanId } from "./Canonical.ts"
 import { PlanBuildError, type PlanInput, type TransformationPlan } from "./TransformationPlan.ts"
 import { compareSourceFingerprints, normalizedPath, validateInput } from "./Validate.ts"
 
@@ -67,7 +67,7 @@ export const finalizePlan = (input: PlanInput): Effect.Effect<TransformationPlan
                 left.path.localeCompare(right.path) ||
                 left.kind.localeCompare(right.kind),
             )
-    const snapshotHash = digest(canonicalJson(asJson({ projects, sources })))
+    const snapshotHash = sha256(canonicalJson(asJson({ projects, sources })))
     const provisional: TransformationPlan = {
       schemaVersion: 1,
       planId: "",
@@ -80,5 +80,5 @@ export const finalizePlan = (input: PlanInput): Effect.Effect<TransformationPlan
     }
     const finalizedBase =
       fileOperations !== undefined ? { ...provisional, fileOperations } : provisional
-    return { ...finalizedBase, planId: digest(canonicalJson(withoutPlanId(finalizedBase))) }
+    return { ...finalizedBase, planId: sha256(canonicalJson(withoutPlanId(finalizedBase))) }
   })

@@ -3,14 +3,12 @@ import {
   SyntaxKind,
   type ClassDeclaration,
   type FunctionDeclaration,
-  type VariableDeclaration,
   type VariableStatement,
 } from "typescript/unstable/ast"
 import {
   isClassDeclaration,
   isFunctionDeclaration,
   isIdentifier,
-  isVariableDeclaration,
   isVariableStatement,
 } from "typescript/unstable/ast/is"
 import { matchFailure, matchSuccess, matchesName, type Pattern } from "./Pattern.ts"
@@ -115,31 +113,5 @@ export const variableStatement = (
       )
         return matchFailure
       return matchSuccess(node, { kind: syntaxKindName(node.kind) })
-    }),
-})
-
-export interface VariableDeclarationPatternOptions {
-  readonly name?: string | RegExp
-}
-export const variableDeclaration = (
-  options?: VariableDeclarationPatternOptions,
-): Pattern<VariableDeclaration, VariableDeclaration> => ({
-  mode: "node",
-  kind: "variableDeclaration",
-  syntaxKind: SyntaxKind.VariableDeclaration,
-  match: (node) =>
-    Effect.sync(() => {
-      if (
-        !isVariableDeclaration(node) ||
-        (options?.name !== undefined &&
-          (!isIdentifier(node.name) || !matchesName(options.name, node.name.text)))
-      )
-        return matchFailure
-      return matchSuccess(
-        node,
-        isIdentifier(node.name)
-          ? { kind: syntaxKindName(node.kind), name: node.name.text }
-          : { kind: syntaxKindName(node.kind) },
-      )
     }),
 })

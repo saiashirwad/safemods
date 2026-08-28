@@ -5,7 +5,7 @@ import { path as Path } from "../platform/node.ts"
 import { Config, Console, Data, Effect, Layer, Match, Option, Predicate, Schema } from "effect"
 import { EditConflict, InvalidEdit } from "../Edit/index.ts"
 import { executeRecipe, type RecipeExecutionHooks } from "../Execution/index.ts"
-import { applicationLayerNode, layer as nodeLayer, workspaceLayerNode } from "../Node/index.ts"
+import { layer as nodeLayer, workspaceLayerNode } from "../Node/index.ts"
 import { RecipeInputError, type Recipe } from "../Recipe/index.ts"
 import { StalePlanError, VerificationFailure } from "../Verification/index.ts"
 import {
@@ -18,26 +18,12 @@ import {
 import {
   buildAuditReport,
   CliMatchFoundError,
-  computeLineAndColumn,
   renderAuditCsv,
   renderAuditJson,
   renderAuditText,
-  type AuditCriterionRecord,
-  type AuditFinding,
-  type AuditReport,
 } from "./Audit.ts"
 import { renderDiagnosticDiff, renderPlanPreview } from "./Diff.ts"
 import { recipeToAgentTool } from "../AgentTool/FromRecipe.ts"
-
-export type { AuditCriterionRecord, AuditFinding, AuditReport }
-export {
-  buildAuditReport,
-  CliMatchFoundError,
-  computeLineAndColumn,
-  renderAuditCsv,
-  renderAuditJson,
-  renderAuditText,
-}
 
 export interface CliOptions {
   readonly recipePath: string
@@ -195,7 +181,7 @@ export const runCli = (options: CliOptions): Effect.Effect<void, CliError | CliM
           const execution = yield* executeRecipe(recipe, options.input, {
             mode: "apply",
             hooks,
-          }).pipe(Effect.provide(applicationLayerNode))
+          }).pipe(Effect.provide(nodeLayer))
           yield* Console.log(
             `\n✔ Applied ${execution.receipt.outputs.length} file changes successfully!`,
           )

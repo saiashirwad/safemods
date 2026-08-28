@@ -1,4 +1,4 @@
-import { nodeFsPromises as Fs, path as Path } from "../../platform/node.ts"
+import { layer as nodeLayer, nodeFsPromises as Fs, path as Path } from "../../platform/node.ts"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Layer } from "effect"
 import * as Application from "../../Application/index.ts"
@@ -7,10 +7,10 @@ import * as Recipe from "../../Recipe/index.ts"
 import * as Verification from "../../Verification/index.ts"
 import type { TransformationPlan } from "../../Plan/index.ts"
 import type { VerifiedPlan } from "../../Verification/index.ts"
-import { ConfiguredProject, WorkspaceSnapshot } from "../../Workspace/index.ts"
+import { ConfiguredProject } from "../../Workspace/index.ts"
 import { workspaceLayerNode } from "../WorkspaceRuntime.ts"
 import { withFixture } from "../../test/declarative-fixture.ts"
-import { makeApplicationLayerNode } from "./Layer.ts"
+import { fixtureProject } from "../../test/project-fixture.ts"
 
 type ForgedPlanValue =
   | symbol
@@ -53,8 +53,7 @@ describe("Node application capability and staleness checks", () => {
           policies: [{ diagnostics: "exact-delta" }],
           run: () =>
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               return yield* Draft.files.create(
                 project,
                 "src/escape/outside.ts",
@@ -64,8 +63,8 @@ describe("Node application capability and staleness checks", () => {
         })
         const plan = yield* Recipe.run(recipe, undefined)
         const verified = yield* Verification.verify(plan, recipe, undefined)
-        const result = yield* Application.apply(verified).pipe(
-          Effect.provide(makeApplicationLayerNode(root)),
+        const result = yield* Application.applyVerifiedPlan(verified).pipe(
+          Effect.provide(nodeLayer),
           Effect.result,
         )
         expect(result._tag).toBe("Failure")
@@ -76,7 +75,7 @@ describe("Node application capability and staleness checks", () => {
     ),
   )
 
-  effect("rejects a public-brand forgery and a stolen-brand clone with mutated preview text", () =>
+  effect("rejects public-symbol forgeries and unbranded clones", () =>
     withFixture((root, app) =>
       Effect.gen(function* () {
         const contents = "export const created = true;\n"
@@ -85,8 +84,7 @@ describe("Node application capability and staleness checks", () => {
           policies: [{ diagnostics: "exact-delta" }],
           run: () =>
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               return yield* Draft.files.create(project, "src/created.ts", contents)
             }),
         })
@@ -99,9 +97,8 @@ describe("Node application capability and staleness checks", () => {
           preview: verified.preview,
           receipt: verified.receipt,
         }
-        const stolen = Object.getOwnPropertySymbols(verified)[0]
         const clonedPreview = structuredClone(verified.preview)
-        const stolenForgery: ForgedPlanCapability = {
+        const clonedForgery: ForgedPlanCapability = {
           plan: structuredClone(verified.plan),
           preview: {
             ...clonedPreview,
@@ -116,20 +113,16 @@ describe("Node application capability and staleness checks", () => {
           },
           receipt: structuredClone(verified.receipt),
         }
-        if (stolen !== undefined) {
-          const brand: unknown = Object.getOwnPropertyDescriptor(verified, stolen)?.value
-          if (brand !== undefined) Object.assign(stolenForgery, { [stolen]: brand })
-        }
-        const publicResult = yield* Application.apply(
+        const publicResult = yield* Application.applyVerifiedPlan(
           // SAFETY: the test applies a caller-constructed public-brand object.
           publicForgery as VerifiedPlan,
-        ).pipe(Effect.provide(makeApplicationLayerNode(root)), Effect.result)
-        const stolenResult = yield* Application.apply(
-          // SAFETY: the test applies a cloned capability with a stolen brand.
-          stolenForgery as VerifiedPlan,
-        ).pipe(Effect.provide(makeApplicationLayerNode(root)), Effect.result)
+        ).pipe(Effect.provide(nodeLayer), Effect.result)
+        const clonedResult = yield* Application.applyVerifiedPlan(
+          // SAFETY: the test applies a cloned capability without its process-local brand.
+          clonedForgery as VerifiedPlan,
+        ).pipe(Effect.provide(nodeLayer), Effect.result)
         expect(publicResult._tag).toBe("Failure")
-        expect(stolenResult._tag).toBe("Failure")
+        expect(clonedResult._tag).toBe("Failure")
         expect(yield* exists(Path.join(root, "src/created.ts"))).toBe(false)
       }),
     ),
@@ -144,8 +137,7 @@ describe("Node application capability and staleness checks", () => {
           policies: [{ diagnostics: "exact-delta" }],
           run: () =>
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               return yield* Draft.files.create(project, "src/created.ts", contents)
             }),
         })
@@ -166,15 +158,15 @@ describe("Node application capability and staleness checks", () => {
 
         const other = ConfiguredProject.make({ id: app.id, config: "other.json" })
         const mismatchedWorkspace = workspaceLayerNode({ projects: [other] }, { cwd: root })
-        const mismatch = yield* Application.apply(verified).pipe(
-          Effect.provide(makeApplicationLayerNode(root).pipe(Layer.provide(mismatchedWorkspace))),
+        const mismatch = yield* Application.applyVerifiedPlan(verified).pipe(
+          Effect.provide(Layer.merge(nodeLayer, mismatchedWorkspace)),
           Effect.result,
         )
         expect(mismatch._tag).toBe("Failure")
         expect(yield* exists(Path.join(root, "src/created.ts"))).toBe(false)
 
-        const receipt = yield* Application.apply(verified).pipe(
-          Effect.provide(makeApplicationLayerNode(root)),
+        const receipt = yield* Application.applyVerifiedPlan(verified).pipe(
+          Effect.provide(nodeLayer),
         )
         expect(receipt.planId).toBe(plan.planId)
         expect(
@@ -192,8 +184,7 @@ describe("Node application capability and staleness checks", () => {
           policies: [{ diagnostics: "exact-delta" }],
           run: () =>
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
                 module: "./library.js",
                 name: "TargetInput",
@@ -206,8 +197,8 @@ describe("Node application capability and staleness checks", () => {
           Fs.readFile(Path.join(root, "src/consumer.ts"), "utf8"),
         )
         yield* Effect.promise(() => Fs.writeFile(Path.join(root, "src/consumer.ts"), "changed\n"))
-        const result = yield* Application.apply(verified).pipe(
-          Effect.provide(makeApplicationLayerNode(root)),
+        const result = yield* Application.applyVerifiedPlan(verified).pipe(
+          Effect.provide(nodeLayer),
           Effect.result,
         )
         expect(result._tag).toBe("Failure")

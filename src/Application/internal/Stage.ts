@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto"
 import { Effect, FileSystem, Path } from "effect"
 import type { TransformationPlan } from "../../Plan/index.ts"
-import { textHash } from "../../Edit/index.ts"
+import { sha256 } from "../../Edit/index.ts"
 import { StalePlanError } from "../../Verification/Errors.ts"
 import type { FilePreview } from "../../Verification/Preview.ts"
-import { asApplicationFailure } from "./Failure.ts"
+import { toApplicationFailure, type ApplicationFailureResult } from "./Failure.ts"
 import { safeTarget } from "./PathSafety.ts"
 
 export interface StagedFile {
@@ -19,7 +19,7 @@ export const checkExpectedState = (
   file: FilePreview,
 ): Effect.Effect<
   string,
-  StalePlanError | ReturnType<typeof asApplicationFailure>,
+  StalePlanError | ApplicationFailureResult,
   FileSystem.FileSystem | Path.Path
 > =>
   Effect.gen(function* () {
@@ -27,7 +27,7 @@ export const checkExpectedState = (
     const target = yield* safeTarget(plan, workspaceRoot, file.projectId, file.fileName)
     const exists = yield* fs
       .exists(target)
-      .pipe(Effect.mapError((cause) => asApplicationFailure(plan.planId, cause)))
+      .pipe(Effect.mapError((cause) => toApplicationFailure(plan.planId)(cause)))
     if (exists !== file.before.exists) {
       return yield* new StalePlanError({
         planId: plan.planId,
@@ -46,7 +46,7 @@ export const checkExpectedState = (
             }),
         ),
       )
-      if (textHash(current) !== file.before.hash) {
+      if (sha256(current) !== file.before.hash) {
         return yield* new StalePlanError({
           planId: plan.planId,
           projectId: file.projectId,
@@ -63,11 +63,7 @@ export const installExistingFile = (
   file: FilePreview,
   temporary: string,
   target: string,
-): Effect.Effect<
-  void,
-  StalePlanError | ReturnType<typeof asApplicationFailure>,
-  FileSystem.FileSystem
-> =>
+): Effect.Effect<void, StalePlanError | ApplicationFailureResult, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
     const stale = new StalePlanError({
@@ -75,7 +71,7 @@ export const installExistingFile = (
       projectId: file.projectId,
       fileName: file.fileName,
     })
-    const fail = (cause: unknown) => asApplicationFailure(plan.planId, cause)
+    const fail = (cause: unknown) => toApplicationFailure(plan.planId)(cause)
     // Vacate the live name by moving its bytes aside, then no-replace link
     // the staged inode. Never rename the staged file onto the live name —
     // that would replace a write that landed after the last hash check.
@@ -92,7 +88,7 @@ export const installExistingFile = (
       return yield* stale
     }
     const moved = yield* fs.readFileString(backup).pipe(Effect.mapError(() => stale))
-    if (textHash(moved) !== file.before.hash) {
+    if (sha256(moved) !== file.before.hash) {
       yield* fs.remove(target, { force: true }).pipe(Effect.ignore)
       yield* fs.rename(backup, target).pipe(Effect.mapError(fail))
       return yield* stale
@@ -108,7 +104,7 @@ export const stagePreviewFiles = (
   createdDirectories: Array<string>,
 ): Effect.Effect<
   void,
-  StalePlanError | ReturnType<typeof asApplicationFailure>,
+  StalePlanError | ApplicationFailureResult,
   FileSystem.FileSystem | Path.Path
 > =>
   Effect.gen(function* () {
@@ -140,6 +136,6 @@ export const stagePreviewFiles = (
     }
   }).pipe(
     Effect.mapError((error) =>
-      error instanceof StalePlanError ? error : asApplicationFailure(plan.planId, error),
+      error instanceof StalePlanError ? error : toApplicationFailure(plan.planId)(error),
     ),
   )

@@ -73,6 +73,8 @@ const optionsMap: Record<string, string | undefined> = {}
 let i = 0
 while (i < args.length) {
   const arg = args[i]
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- Build config keeps indexed argv access possibly undefined.
+  if (arg === undefined) break
   const optionWithInlineValue = [...optionsWithValues].find((option) =>
     arg.startsWith(`${option}=`),
   )

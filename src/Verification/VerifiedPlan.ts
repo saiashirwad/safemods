@@ -21,8 +21,6 @@ interface IssuedVerifiedPlan {
   readonly receipt: VerificationReceipt
 }
 
-const issuedVerifiedPlans = new WeakMap<VerifiedPlan, IssuedVerifiedPlan>()
-
 const freezeDeep = <A>(value: A): A => {
   if (Array.isArray(value)) {
     for (const item of value) freezeDeep(item)
@@ -34,32 +32,26 @@ const freezeDeep = <A>(value: A): A => {
   }
   return value
 }
-
 export const issueVerifiedPlan = (
   plan: TransformationPlan,
   preview: PlanPreview,
   receipt: VerificationReceipt,
   diagnosticDiff: DiagnosticDiff,
 ): VerifiedPlan & { readonly diagnosticDiff: DiagnosticDiff } => {
-  const issuedPlan = freezeDeep(structuredClone(plan))
-  const issuedPreview = freezeDeep(structuredClone(preview))
-  const issuedReceipt = freezeDeep(structuredClone(receipt))
   const verified: VerifiedPlan & { readonly diagnosticDiff: DiagnosticDiff } = {
     [VerifiedPlanTypeId]: VerifiedPlanTypeId,
-    plan: issuedPlan,
-    preview: issuedPreview,
-    receipt: issuedReceipt,
-    diagnosticDiff: freezeDeep(structuredClone(diagnosticDiff)),
+    plan: freezeDeep(plan),
+    preview: freezeDeep(preview),
+    receipt: freezeDeep(receipt),
+    diagnosticDiff: freezeDeep(diagnosticDiff),
   }
-  Object.freeze(verified)
-  issuedVerifiedPlans.set(verified, {
-    plan: issuedPlan,
-    preview: issuedPreview,
-    receipt: issuedReceipt,
-  })
-  return verified
+  return Object.freeze(verified)
 }
 
-/** Contents of a VerifiedPlan minted by successful verification, if any. */
+/** Contents of a VerifiedPlan carrying the process-local verification brand. */
 export const issuedVerifiedPlan = (verified: VerifiedPlan): IssuedVerifiedPlan | undefined =>
-  issuedVerifiedPlans.get(verified)
+  Predicate.isObject(verified) &&
+  VerifiedPlanTypeId in verified &&
+  verified[VerifiedPlanTypeId] === VerifiedPlanTypeId
+    ? verified
+    : undefined

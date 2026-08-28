@@ -4,8 +4,9 @@ import type { CallExpression } from "typescript/unstable/ast"
 import * as Pattern from "../Pattern/index.ts"
 import { Criterion } from "../Query/index.ts"
 import * as Query from "../Query/index.ts"
-import { Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"
+import { Workspace } from "../Workspace/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("declarative transformations API (@effect/vitest)", () => {
   describe("pattern matchers and query algebra", () => {
@@ -18,8 +19,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const targetSymbol = yield* project.symbolNamed("target", {
                   within: "src/library.ts",
                 })
@@ -53,8 +53,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
 
                 const typedCallPattern = Pattern.callExpression({
                   expression: Pattern.any,
@@ -93,8 +92,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const target = yield* project.symbolNamed("target", { within: "src/library.ts" })
 
                 const combinedCriterion = Criterion.all(
@@ -123,8 +121,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const pattern = Pattern.identifier({ name: /^target$/g })
                 const first = yield* Query.match(project, pattern).pipe(Query.collect)
                 const second = yield* Query.match(project, pattern).pipe(Query.collect)
