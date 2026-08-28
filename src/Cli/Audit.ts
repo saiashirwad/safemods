@@ -231,36 +231,3 @@ export const renderAuditText = (
 
   return lines.join("\n")
 }
-
-/** Format AuditReport as structured JSON string. */
-export const renderAuditJson = (report: AuditReport): string => JSON.stringify(report, null, 2)
-
-const escapeCsv = (str: string): string => {
-  if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
-    return `"${str.replace(/"/g, '""')}"`
-  }
-  return str
-}
-
-/** Format AuditReport as CSV table. */
-export const renderAuditCsv = (report: AuditReport): string => {
-  const header =
-    "project,file,start_line,start_col,end_line,end_col,start_offset,end_offset,criteria,snippet"
-  const rows = report.findings.map((f) => {
-    const criteriaSummary = f.criteria.map((c) => c.criterion).join(";")
-    const snippetClean = f.snippet ? f.snippet.replace(/\r?\n/g, " ") : ""
-    return [
-      escapeCsv(f.projectId),
-      escapeCsv(f.fileName),
-      f.startLine,
-      f.startColumn,
-      f.endLine,
-      f.endColumn,
-      f.start,
-      f.end,
-      escapeCsv(criteriaSummary),
-      escapeCsv(snippetClean),
-    ].join(",")
-  })
-  return [header, ...rows].join("\n")
-}

@@ -2,7 +2,7 @@
  * Safemods CLI — interactive runner and inspection tool.
  */
 import { path as Path } from "../platform/node.ts"
-import { Config, Console, Data, Effect, Layer, Match, Option, Predicate, Schema } from "effect"
+import { Config, Console, Data, Effect, Layer, Match, Option, Predicate } from "effect"
 import { EditConflict, InvalidEdit } from "../Edit/index.ts"
 import { executeRecipe, type RecipeExecutionHooks } from "../Execution/index.ts"
 import { layer as nodeLayer, workspaceLayerNode } from "../Node/index.ts"
@@ -15,24 +15,15 @@ import {
   Workspace,
   WorkspaceSnapshot,
 } from "../Workspace/index.ts"
-import {
-  buildAuditReport,
-  CliMatchFoundError,
-  renderAuditCsv,
-  renderAuditJson,
-  renderAuditText,
-} from "./Audit.ts"
+import { buildAuditReport, CliMatchFoundError, renderAuditText } from "./Audit.ts"
 import { renderDiagnosticDiff, renderPlanPreview } from "./Diff.ts"
-import { recipeToAgentTool } from "../AgentTool/FromRecipe.ts"
 
 export interface CliOptions {
   readonly recipePath: string
   readonly input?: unknown
   readonly cwd?: string | undefined
   readonly mode?: "preview" | "verify" | "apply" | "scan"
-  readonly format?: "text" | "json" | "csv"
   readonly failOnMatch?: boolean
-  readonly toolSchema?: boolean
   readonly noColor?: boolean
 }
 
@@ -114,8 +105,6 @@ const loadRecipe = (resolvedRecipe: string): Effect.Effect<Recipe<unknown>, CliE
     }),
   )
 
-const JsonText = Schema.fromJsonString(Schema.Unknown)
-
 export const runCli = (options: CliOptions): Effect.Effect<void, CliError | CliMatchFoundError> =>
   Effect.gen(function* () {
     const targetCwd =
@@ -123,15 +112,6 @@ export const runCli = (options: CliOptions): Effect.Effect<void, CliError | CliM
     const resolvedRecipe = Path.resolve(process.cwd(), options.recipePath)
 
     const recipe = yield* loadRecipe(resolvedRecipe)
-
-    if (options.toolSchema === true) {
-      const tool = recipeToAgentTool(recipe)
-      const encoded = yield* Schema.encodeEffect(JsonText)(tool).pipe(
-        Effect.mapError((cause) => new CliError({ message: String(cause) })),
-      )
-      yield* Console.log(encoded)
-      return
-    }
 
     const app = ConfiguredProject.make({ id: "app", config: "tsconfig.json" })
     const workspaceLayer = workspaceLayerNode({ projects: [app] }, { cwd: targetCwd })
@@ -158,14 +138,7 @@ export const runCli = (options: CliOptions): Effect.Effect<void, CliError | CliM
           }),
         )
 
-        const format = options.format ?? "text"
-        if (format === "json") {
-          yield* Console.log(renderAuditJson(report))
-        } else if (format === "csv") {
-          yield* Console.log(renderAuditCsv(report))
-        } else {
-          yield* Console.log(renderAuditText(report, { color: useColor }))
-        }
+        yield* Console.log(renderAuditText(report, { color: useColor }))
 
         if (options.failOnMatch === true && report.totalMatches > 0) {
           return yield* new CliMatchFoundError({

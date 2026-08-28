@@ -9,8 +9,6 @@ import {
   buildAuditReport,
   CliMatchFoundError,
   computeLineAndColumn,
-  renderAuditCsv,
-  renderAuditJson,
   renderAuditText,
 } from "./Audit.ts"
 import * as Draft from "../Draft/index.ts"
@@ -152,23 +150,12 @@ describe("safemods scan & audit reporting (@effect/vitest)", () => {
           expect(textOutput).toContain("Audit Report: audit-target-calls [v1.0.0]")
           expect(textOutput).toContain("src/consumer.ts")
           expect(textOutput).toContain("line")
-
-          const jsonOutput = renderAuditJson(report)
-          const parsedJson = JSON.parse(jsonOutput)
-          expect(parsedJson.recipe.name).toBe("audit-target-calls")
-          expect(parsedJson.findings.length).toBe(report.totalMatches)
-
-          const csvOutput = renderAuditCsv(report)
-          expect(csvOutput).toContain(
-            "project,file,start_line,start_col,end_line,end_col,start_offset,end_offset,criteria,snippet",
-          )
-          expect(csvOutput).toContain("app,src/consumer.ts")
         }),
       ),
   )
 
   effect(
-    "runCli mode=scan outputs JSON and CSV and respects failOnMatch",
+    "runCli mode=scan respects failOnMatch",
     () =>
       withFixture((root, _app) =>
         Effect.gen(function* () {
@@ -183,25 +170,6 @@ describe("safemods scan & audit reporting (@effect/vitest)", () => {
             cwd: root,
             input,
             mode: "scan",
-            format: "text",
-            noColor: true,
-          })
-
-          yield* runCli({
-            recipePath: wrapRecipePath,
-            cwd: root,
-            input,
-            mode: "scan",
-            format: "json",
-            noColor: true,
-          })
-
-          yield* runCli({
-            recipePath: wrapRecipePath,
-            cwd: root,
-            input,
-            mode: "scan",
-            format: "csv",
             noColor: true,
           })
 
@@ -246,46 +214,6 @@ describe("safemods scan & audit reporting (@effect/vitest)", () => {
           expect(textOut).toContain("Audit Report: wrap-target-input [v1.0.0]")
           expect(textOut).toContain("src/consumer.ts")
 
-          const { stdout: jsonOut } = yield* Effect.tryPromise(() =>
-            execFileAsync("node", [
-              binPath,
-              wrapRecipePath,
-              "--scan",
-              "--cwd",
-              root,
-              "--input",
-              inputJson,
-              "--json",
-            ]),
-          )
-          const parsed = JSON.parse(jsonOut)
-          expect(parsed.recipe.name).toBe("wrap-target-input")
-          expect(parsed.findings.length).toBeGreaterThan(0)
-
-          const { stdout: csvOut } = yield* Effect.tryPromise(() =>
-            execFileAsync("node", [
-              binPath,
-              "scan",
-              wrapRecipePath,
-              "--cwd",
-              root,
-              "--input",
-              inputJson,
-              "--csv",
-            ]),
-          )
-          expect(csvOut).toContain(
-            "project,file,start_line,start_col,end_line,end_col,start_offset,end_offset,criteria,snippet",
-          )
-          expect(csvOut).toContain("app,src/consumer.ts")
-
-          const { stdout: toolOut } = yield* Effect.tryPromise(() =>
-            execFileAsync("node", [binPath, wrapRecipePath, "--tool-schema"]),
-          )
-          const tool = JSON.parse(toolOut)
-          expect(tool.name).toBe("safemods_wrap_target_input")
-          expect(tool.schema.type).toBe("object")
-
           const positionalStderr = yield* Effect.promise(async () => {
             try {
               await execFileAsync("node", [binPath, "scan", wrapRecipePath, "unexpected.ts"])
@@ -312,7 +240,12 @@ describe("safemods scan & audit reporting (@effect/vitest)", () => {
               "--fail-on-match",
             ]),
           ).pipe(Effect.flip)
-          expect(failOnMatchError).toBeDefined()
+          const cause =
+            Predicate.isObject(failOnMatchError) && "cause" in failOnMatchError
+              ? failOnMatchError.cause
+              : failOnMatchError
+          const exitCode = Predicate.isObject(cause) && "code" in cause ? cause.code : 0
+          expect(exitCode).toBe(1)
         }),
       ),
     60_000,
@@ -357,7 +290,6 @@ describe("safemods scan & audit reporting (@effect/vitest)", () => {
           "--unknown-flag",
         )
         yield* expectNamedFailure([binPath, "scan", wrapRecipePath, "--input"], "--input")
-        yield* expectNamedFailure([binPath, "scan", wrapRecipePath, "--format", "bogus"], "bogus")
 
         const hyphenHelp = yield* Effect.promise(async () => {
           const { stdout } = await execFileAsync("node", [binPath, "--help"])
@@ -370,10 +302,9 @@ describe("safemods scan & audit reporting (@effect/vitest)", () => {
           "scan",
           wrapRecipePath,
           "--input=-1",
-          "--format",
-          "bogus",
+          "--bogus-flag",
         ])
-        expect(inlineHyphen.stderr).toContain("bogus")
+        expect(inlineHyphen.stderr).toContain("--bogus-flag")
         expect(inlineHyphen.stderr).not.toContain("Missing value for --input")
 
         const spacedHyphen = yield* runCli([
@@ -382,12 +313,10 @@ describe("safemods scan & audit reporting (@effect/vitest)", () => {
           wrapRecipePath,
           "--input",
           "-1",
-          "--format",
-          "bogus",
+          "--bogus-flag",
         ])
-        expect(spacedHyphen.stderr).toContain("bogus")
+        expect(spacedHyphen.stderr).toContain("--bogus-flag")
         expect(spacedHyphen.stderr).not.toContain("Missing value for --input")
-
         const echoInput = (inputArgs: ReadonlyArray<string>) =>
           Effect.promise(async () => {
             const { stdout } = await execFileAsync("node", [

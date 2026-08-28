@@ -145,31 +145,14 @@ const matches = yield * Query.match(project, pattern).pipe(Query.collect)
 
 ```
 safemods run  <recipe.ts> [--verify | --apply] [--cwd <dir>] [--input <json>] [--no-color]
-safemods scan <recipe.ts> [--json | --csv] [--fail-on-match]
-safemods tool <recipe.ts>
+safemods scan <recipe.ts> [--fail-on-match]
 ```
 
 `run` previews by default. `--verify` adds the diagnostic diff and policy results. `--apply` writes after a passing verification.
 
 `scan` runs the recipe through planning, then reports its recorded matches per file without verifying or writing. `--fail-on-match` exits non-zero if anything matched, which turns a recipe into a check you can run in CI.
 
-`tool` prints the recipe as a JSON-schema tool definition for an agent host.
-
 `--input` passes the recipe's input, validated against its `schema` if it declares one.
-
-## Agents
-
-A recipe with a `schema` is already a tool. `recipeToAgentTool` wraps it in the shape LLM function-calling expects and returns structured results: plan ID, affected files, diagnostic delta, policy outcomes, or a typed error.
-
-```ts
-import { recipeToAgentTool } from "safemods/AgentTool"
-
-const tool = recipeToAgentTool(renameRecipe, "Rename a symbol across the project.")
-await tool.execute({ oldName: "foo", newName: "bar", fileName: "src/a.ts" }) // verify only
-await tool.execute({ oldName: "foo", newName: "bar", fileName: "src/a.ts" }, { apply: true })
-```
-
-An agent gets the same guarantees a human does. It cannot write without a verified plan. This is the part I care about most. An agent that can run `sed` across a repo is a liability. An agent that can only propose a plan and wait for the type checker is something I will let loose.
 
 ## Programmatic use
 
