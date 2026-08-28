@@ -10,7 +10,7 @@ export const architectureLayers = [
   ["Draft", "Overlay"],
   ["Application", "Execution", "Recipe", "Verification"],
   ["Node", "platform"],
-  ["AgentTool", "Cli", "bin"],
+  ["Cli", "bin"],
 ]
 
 const layerByOwner = new Map(

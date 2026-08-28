@@ -15,10 +15,6 @@
       "types": "./dist/src/Application/index.d.ts",
       "default": "./dist/src/Application/index.js"
     },
-    "./AgentTool": {
-      "types": "./dist/src/AgentTool/index.d.ts",
-      "default": "./dist/src/AgentTool/index.js"
-    },
     "./Draft": {
       "types": "./dist/src/Draft/index.d.ts",
       "default": "./dist/src/Draft/index.js"
