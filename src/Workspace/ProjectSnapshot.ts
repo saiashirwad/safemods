@@ -165,14 +165,84 @@ export const projectSnapshotFor = ({
     isAbsolute: runtime.isAbsolutePath,
     sep: runtime.pathSeparator,
   }
+  const containmentOptions = { caseInsensitive: true } as const
+  const resolvedProjectRoot = runtime.resolvePath(projectRoot)
+  const canonicalProjectRoot = runtime.realPath(resolvedProjectRoot) ?? resolvedProjectRoot
+  const slashRelative = (from: string, to: string): string =>
+    runtime.relativePath(from, to).replaceAll("\\", "/")
+  const comparisonHostPath = (fileName: string): string => {
+    const resolved = runtime.resolvePath(fileName)
+    const real = runtime.realPath(resolved)
+    if (real !== undefined) return real
+    if (
+      !isPathContained(projectPaths, resolvedProjectRoot, resolved, {
+        ...containmentOptions,
+        includeRoot: true,
+      })
+    ) {
+      return resolved
+    }
+    const relative = isPathContained(projectPaths, resolvedProjectRoot, resolved, {
+      includeRoot: true,
+    })
+      ? runtime.relativePath(resolvedProjectRoot, resolved)
+      : runtime.relativePath(resolvedProjectRoot.toLowerCase(), resolved.toLowerCase())
+    return relative === ""
+      ? canonicalProjectRoot
+      : runtime.resolvePath(canonicalProjectRoot, relative)
+  }
+  const lookupHostPath = (fileName: string): string => {
+    const resolved = runtime.resolvePath(fileName)
+    if (
+      isPathContained(projectPaths, resolvedProjectRoot, resolved, {
+        includeRoot: true,
+      })
+    ) {
+      return resolved
+    }
+    const relative = runtime.relativePath(resolvedProjectRoot.toLowerCase(), resolved.toLowerCase())
+    return relative === ""
+      ? resolvedProjectRoot
+      : runtime.resolvePath(resolvedProjectRoot, relative)
+  }
   const isWithinProject = (fileName: string): boolean =>
-    isPathContained(projectPaths, projectRoot, fileName)
+    isPathContained(
+      projectPaths,
+      canonicalProjectRoot,
+      comparisonHostPath(fileName),
+      containmentOptions,
+    )
   const containsFileName = isWithinProject
   const resolveFileName = (fileName: string): string => runtime.resolvePath(projectRoot, fileName)
-  const relativeFileName = (fileName: string): string =>
-    runtime.relativePath(projectRoot, runtime.resolvePath(fileName)).replaceAll("\\", "/")
-  const requireContainedPath = (fileName: string): string | undefined =>
-    resolveContainedProjectPath(projectPaths, projectRoot, fileName)
+  const relativeFileName = (fileName: string): string => {
+    const resolved = runtime.resolvePath(fileName)
+    const real = runtime.realPath(resolved)
+    if (real !== undefined) {
+      const canonicalRelative = slashRelative(canonicalProjectRoot, real)
+      if (parseProjectRelativePath(canonicalRelative) !== undefined) return canonicalRelative
+    }
+    const lexicalRelative = slashRelative(resolvedProjectRoot, resolved)
+    if (parseProjectRelativePath(lexicalRelative) !== undefined) return lexicalRelative
+    return slashRelative(resolvedProjectRoot.toLowerCase(), resolved.toLowerCase())
+  }
+  const requireContainedPath = (fileName: string): string | undefined => {
+    const lexical = resolveContainedProjectPath(
+      projectPaths,
+      projectRoot,
+      fileName,
+      containmentOptions,
+    )
+    if (lexical === undefined) return undefined
+    const lookup = lookupHostPath(lexical)
+    return isPathContained(
+      projectPaths,
+      canonicalProjectRoot,
+      comparisonHostPath(lookup),
+      containmentOptions,
+    )
+      ? lookup
+      : undefined
+  }
 
   const isOwnedSourceFile = (sf: SourceFile, observedName = sf.fileName) =>
     Effect.gen(function* () {

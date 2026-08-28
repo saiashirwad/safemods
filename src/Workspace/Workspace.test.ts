@@ -46,7 +46,7 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
               expect(project.resolveFileName("src/library.ts")).toBe(library)
               expect(project.relativeFileName(library)).toBe("src/library.ts")
               expect(project.containsFileName(library)).toBe(true)
-              // Host containment preserves case so distinct paths remain distinct.
+              // Compiler-returned paths may vary in case on case-insensitive hosts.
               const rootBase = Path.basename(project.root)
               const flippedBase = rootBase.replace(/[a-z]/i, (char) =>
                 char === char.toLowerCase() ? char.toUpperCase() : char.toLowerCase(),
@@ -57,7 +57,9 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
                 flippedBase,
                 "src/library.ts",
               )
-              expect(project.containsFileName(caseVariant)).toBe(false)
+              expect(project.containsFileName(caseVariant)).toBe(true)
+              expect(project.relativeFileName(caseVariant)).toBe("src/library.ts")
+              expect(yield* project.sourceFile(caseVariant)).toBeDefined()
               expect(project.containsFileName(Path.resolve(project.root, "../outside.ts"))).toBe(
                 false,
               )

@@ -9,6 +9,7 @@ export {
   unsafePlanFilePathMessage,
 } from "./Portable.ts"
 export type {
+  PathContainmentOptions,
   PlanProjectPaths,
   ProjectPathOperations,
   ProjectRelativePath,

@@ -13,6 +13,11 @@ export interface ProjectPathOperations {
   readonly sep: string
 }
 
+export interface PathContainmentOptions {
+  readonly includeRoot?: boolean
+  readonly caseInsensitive?: boolean
+}
+
 export interface PlanProjectPaths {
   readonly projects: ReadonlyArray<{
     readonly id: string
@@ -66,16 +71,20 @@ export const requireProjectRelativePath = (value: string): ProjectRelativePath =
   return parsed
 }
 
-/** True when `candidate` is below `root`, with explicit root identity semantics. */
+/** True when `candidate` is below `root`, with explicit host comparison semantics. */
 export const isPathContained = (
   path: ProjectPathOperations,
   root: string,
   candidate: string,
-  options: { readonly includeRoot?: boolean } = {},
+  options: PathContainmentOptions = {},
 ): boolean => {
   const resolvedRoot = path.resolve(root)
   const resolvedCandidate = path.resolve(candidate)
-  const relative = path.relative(resolvedRoot, resolvedCandidate)
+  const comparisonRoot =
+    options.caseInsensitive === true ? resolvedRoot.toLowerCase() : resolvedRoot
+  const comparisonCandidate =
+    options.caseInsensitive === true ? resolvedCandidate.toLowerCase() : resolvedCandidate
+  const relative = path.relative(comparisonRoot, comparisonCandidate)
   return (
     (relative !== "" || options.includeRoot === true) &&
     relative !== ".." &&
@@ -89,6 +98,7 @@ export const resolveContainedProjectPath = (
   path: ProjectPathOperations,
   projectRoot: string,
   fileName: string,
+  options: PathContainmentOptions = {},
 ): string | undefined => {
   const relative = parseProjectRelativePath(fileName)
   const absolute =
@@ -97,7 +107,7 @@ export const resolveContainedProjectPath = (
       : path.isAbsolute(fileName)
         ? path.resolve(fileName)
         : undefined
-  return absolute !== undefined && isPathContained(path, projectRoot, absolute)
+  return absolute !== undefined && isPathContained(path, projectRoot, absolute, options)
     ? absolute
     : undefined
 }
