@@ -7,7 +7,6 @@ import {
   isNamedImports,
   isStringLiteral,
 } from "typescript/unstable/ast/is"
-import { textEdit } from "../Edit/TextEdit.ts"
 import {
   isProjectFile,
   type ProjectFile,
@@ -15,7 +14,7 @@ import {
   type ProjectSnapshotError,
   type SnapshotExpired,
 } from "../Workspace/index.ts"
-import { draftForEdit, empty, type Draft } from "./Draft.ts"
+import { draftForRange, empty, type Draft } from "./Draft.ts"
 
 export interface AddNamedImportOptions {
   readonly module: string
@@ -82,15 +81,12 @@ const addNamedToProject = (
                 if (named.elements.length > 0) {
                   const last = named.elements[named.elements.length - 1]!
                   const insertPos = last.getEnd()
-                  return draftForEdit(
-                    textEdit({
-                      projectId: project.project.id,
-                      fileName: project.relativeFileName(source.fileName),
-                      sourceText: source.text,
-                      start: insertPos,
-                      end: insertPos,
-                      newText: `, ${importName}`,
-                    }),
+                  return draftForRange(
+                    project,
+                    source,
+                    insertPos,
+                    insertPos,
+                    `, ${importName}`,
                     `import:addNamed:${options.module}:${options.name}`,
                     { module: options.module, name: options.name },
                   )
@@ -103,15 +99,12 @@ const addNamedToProject = (
         const insertPos = importInsertionPosition(source)
         const importText = `import { ${importName} } from "${options.module}";\n`
 
-        return draftForEdit(
-          textEdit({
-            projectId: project.project.id,
-            fileName: project.relativeFileName(source.fileName),
-            sourceText: source.text,
-            start: insertPos,
-            end: insertPos,
-            newText: importText,
-          }),
+        return draftForRange(
+          project,
+          source,
+          insertPos,
+          insertPos,
+          importText,
           `import:addNamed:${options.module}:${options.name}`,
           { module: options.module, name: options.name },
         )
@@ -167,15 +160,12 @@ export const imports = {
         if (elements.length === 1) {
           const start = clause.name?.getEnd() ?? declaration.getFullStart()
           const end = clause.name === undefined ? declaration.getEnd() : named.getEnd()
-          return draftForEdit(
-            textEdit({
-              projectId: project.project.id,
-              fileName: project.relativeFileName(sourceFile.fileName),
-              sourceText: sourceFile.text,
-              start,
-              end,
-              newText: "",
-            }),
+          return draftForRange(
+            project,
+            sourceFile,
+            start,
+            end,
+            "",
             `import:removeNamed:${name}`,
             { name },
           )
@@ -193,18 +183,15 @@ export const imports = {
           start = prev.getEnd()
         }
 
-        return draftForEdit(
-          textEdit({
-            projectId: project.project.id,
-            fileName: project.relativeFileName(sourceFile.fileName),
-            sourceText: sourceFile.text,
+          return draftForRange(
+            project,
+            sourceFile,
             start,
             end,
-            newText: "",
-          }),
-          `import:removeNamed:${name}`,
-          { name },
-        )
+            "",
+            `import:removeNamed:${name}`,
+            { name },
+          )
       }),
     ),
 
@@ -226,15 +213,12 @@ export const imports = {
         const start = specifier.getStart(sourceFile)
         const end = specifier.getEnd()
 
-        return draftForEdit(
-          textEdit({
-            projectId: project.project.id,
-            fileName: project.relativeFileName(sourceFile.fileName),
-            sourceText: sourceFile.text,
-            start,
-            end,
-            newText: newSpecifierText,
-          }),
+        return draftForRange(
+          project,
+          sourceFile,
+          start,
+          end,
+          newSpecifierText,
           `import:update-source:${newModule}`,
           { module: newModule },
         )
@@ -393,15 +377,12 @@ export const imports = {
           const formattedImports = groups.join("\n\n")
           if (formattedImports === currentImports) return empty
 
-          return draftForEdit(
-            textEdit({
-              projectId: project.project.id,
-              fileName: project.relativeFileName(source.fileName),
-              sourceText: source.text,
-              start,
-              end,
-              newText: formattedImports,
-            }),
+          return draftForRange(
+            project,
+            source,
+            start,
+            end,
+            formattedImports,
             "import:organize",
             { imports: importDecls.length },
           )

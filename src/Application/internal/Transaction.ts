@@ -8,16 +8,16 @@ import { requireMatchingProjectIdentity } from "../../Verification/SourceRevalid
 import { isVerifiedPlan, type VerifiedPlan } from "../../Verification/VerifiedPlan.ts"
 import { Workspace } from "../../Workspace/index.ts"
 import { preserveStalePlanError, toApplicationFailure } from "./Failure.ts"
+import { withExclusiveApplyLock } from "./Lock.ts"
+import { safeTarget } from "./PathSafety.ts"
 import {
   APPLY_JOURNAL_NAME,
   persistJournal,
+  recoverUnfinishedApplication,
   type JournalBeforeState,
   type JournalEntry,
   type TransactionJournal,
-} from "./Journal.ts"
-import { withExclusiveApplyLock } from "./Lock.ts"
-import { safeTarget } from "./PathSafety.ts"
-import { recoverUnfinishedApplication } from "./Recovery.ts"
+} from "./Recovery.ts"
 import {
   checkExpectedState,
   installExistingFile,

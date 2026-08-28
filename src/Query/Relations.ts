@@ -25,11 +25,7 @@ import { syntaxKindName, type NodeCriterion } from "../Pattern/index.ts"
 import type { ProjectSnapshot, ProjectSnapshotError } from "../Workspace/index.ts"
 import type { Criterion, Selection } from "./Query.ts"
 
-export interface InsideOptions {
-  readonly stopBy?: "boundary" | "root"
-}
-
-export interface HasOptions {
+export interface StopOptions {
   readonly stopBy?: "boundary" | "root"
 }
 
@@ -200,7 +196,7 @@ const evaluateSibling = <Out, E, R>(
 
 const criterionInside = <A extends Node, Out = unknown, E = never, R = never>(
   matcher: RelationalMatcher<Out, E, R>,
-  options?: InsideOptions,
+  options?: StopOptions,
 ): Criterion<A, E | ProjectSnapshotError, R> => ({
   mode: "selection",
   id: `inside(${matcherId(matcher)})`,
@@ -241,7 +237,7 @@ const criterionInside = <A extends Node, Out = unknown, E = never, R = never>(
 
 const criterionHas = <A extends Node, Out = unknown, E = never, R = never>(
   matcher: RelationalMatcher<Out, E, R>,
-  options?: HasOptions,
+  options?: StopOptions,
 ): Criterion<A, E | ProjectSnapshotError, R> => ({
   mode: "selection",
   id: `has(${matcherId(matcher)})`,

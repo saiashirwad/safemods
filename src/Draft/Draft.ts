@@ -17,7 +17,7 @@ import {
   type EvidenceRecord,
 } from "../Evidence/index.ts"
 import type { PlannedFileOperation } from "../Plan/index.ts"
-import type { Node } from "typescript/unstable/ast"
+import type { Node, SourceFile } from "typescript/unstable/ast"
 import { textEdit, type TextEdit } from "../Edit/TextEdit.ts"
 import type { Selection } from "../Query/index.ts"
 import type { ProjectSnapshot, ProjectSnapshotError, SnapshotExpired } from "../Workspace/index.ts"
@@ -88,27 +88,48 @@ export interface EditRangeOptions {
   readonly includeLeadingTrivia?: boolean
 }
 
-const editForNode = (
+/** Text edit over a half-open [start, end) range of a native source file. */
+const textEditForRange = (
+  project: ProjectSnapshot,
+  sourceFile: SourceFile,
+  start: number,
+  end: number,
+  newText: string,
+): TextEdit =>
+  textEdit({
+    projectId: project.project.id,
+    fileName: project.relativeFileName(sourceFile.fileName),
+    sourceText: sourceFile.text,
+    start,
+    end,
+    newText,
+  })
+
+/** Draft for a source-file range, with self-contained operation evidence. */
+export const draftForRange = (
+  project: ProjectSnapshot,
+  sourceFile: SourceFile,
+  start: number,
+  end: number,
+  newText: string,
+  operation: string,
+  facts: EvidenceRecord["facts"] = {},
+): Draft =>
+  draftForEdit(textEditForRange(project, sourceFile, start, end, newText), operation, facts)
+
+/** Draft replacing a node-derived range, evaluated inside the snapshot's native scope. */
+const draftForNodeRange = (
   project: ProjectSnapshot,
   node: Node,
   newText: string,
-  options?: EditRangeOptions & { readonly evidenceIds?: ReadonlyArray<string> },
-): Effect.Effect<ProposedEdit, SnapshotExpired> =>
+  operation: string,
+  range: (sourceFile: SourceFile) => { readonly start: number; readonly end: number },
+): Effect.Effect<Draft, SnapshotExpired> =>
   project.unsafeNative(() =>
     Effect.sync(() => {
       const sourceFile = node.getSourceFile()
-      const start =
-        options?.includeLeadingTrivia === true ? node.getFullStart() : node.getStart(sourceFile)
-      const end = node.getEnd()
-      return textEdit({
-        projectId: project.project.id,
-        fileName: project.relativeFileName(sourceFile.fileName),
-        sourceText: sourceFile.text,
-        start,
-        end,
-        newText,
-        evidenceIds: options?.evidenceIds,
-      })
+      const { start, end } = range(sourceFile)
+      return draftForRange(project, sourceFile, start, end, newText, operation)
     }),
   )
 
@@ -119,9 +140,11 @@ export const replace = (
   newText: string,
   options?: EditRangeOptions,
 ): Effect.Effect<Draft, SnapshotExpired> =>
-  editForNode(project, node, newText, options).pipe(
-    Effect.map(({ evidenceIds: _, ...edit }) => draftForEdit(edit, "node:replace")),
-  )
+  draftForNodeRange(project, node, newText, "node:replace", (sourceFile) => ({
+    start:
+      options?.includeLeadingTrivia === true ? node.getFullStart() : node.getStart(sourceFile),
+    end: node.getEnd(),
+  }))
 
 /** Remove a node's source range entirely. */
 export const remove = (
@@ -150,23 +173,10 @@ const insertAtNode = (
   text: string,
   side: "before" | "after",
 ): Effect.Effect<Draft, SnapshotExpired> =>
-  project.unsafeNative(() =>
-    Effect.sync(() => {
-      const sourceFile = node.getSourceFile()
-      const position = side === "before" ? node.getStart(sourceFile) : node.getEnd()
-      return draftForEdit(
-        textEdit({
-          projectId: project.project.id,
-          fileName: project.relativeFileName(sourceFile.fileName),
-          sourceText: sourceFile.text,
-          start: position,
-          end: position,
-          newText: text,
-        }),
-        `node:insert-${side}`,
-      )
-    }),
-  )
+  draftForNodeRange(project, node, text, `node:insert-${side}`, (sourceFile) => {
+    const position = side === "before" ? node.getStart(sourceFile) : node.getEnd()
+    return { start: position, end: position }
+  })
 
 /** Print a synthesized or updated native node to source text via the native emitter. */
 export const print = (
@@ -249,12 +259,22 @@ const draftFromProposal = <A extends Node>(
   }
   const node = isTextReplacement(proposed) ? selection.value : proposed.node
   const text = isTextReplacement(proposed) ? proposed : proposed.text
-  return editForNode(selection.project, node, text, { evidenceIds: [evidenceId] }).pipe(
-    Effect.map((edit): Draft => ({
-      edits: [edit],
-      evidence: [selectionEvidence(selection, evidenceId)],
-      matches: 1,
-    })),
+  return selection.project.unsafeNative(() =>
+    Effect.sync(() => {
+      const sourceFile = node.getSourceFile()
+      const edit = textEditForRange(
+        selection.project,
+        sourceFile,
+        node.getStart(sourceFile),
+        node.getEnd(),
+        text,
+      )
+      return {
+        edits: [{ ...edit, evidenceIds: [evidenceId] }],
+        evidence: [selectionEvidence(selection, evidenceId)],
+        matches: 1,
+      }
+    }),
   )
 }
 
