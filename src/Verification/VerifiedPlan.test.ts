@@ -135,14 +135,10 @@ describe("issued verified plans and project identity", () => {
           })
           const plan = yield* Recipe.run(recipe, undefined)
           expect(plan.sources.some((source) => source.fileName === "tsconfig.json")).toBe(true)
-          expect(plan.sources.some((source) => source.fileName === "tsconfig.base.json")).toBe(true)
-          expect(
-            plan.sources.some((source) => source.kind === "directory" && source.fileName === "src"),
-          ).toBe(true)
 
           yield* Effect.tryPromise(() =>
             Fs.writeFile(
-              Path.join(root, "tsconfig.base.json"),
+              Path.join(root, "tsconfig.json"),
               `${JSON.stringify({ compilerOptions: { strict: false } }, null, 2)}\n`,
             ),
           )

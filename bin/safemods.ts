@@ -1,162 +1,75 @@
 #!/usr/bin/env node
-import { runCli } from "../src/Cli/Run.ts"
+import { Argument, Command, Flag } from "effect/unstable/cli"
+import { Effect, Option, Schema } from "effect"
+import { NodeServices } from "@effect/platform-node"
 import { CliMatchFoundError } from "../src/Cli/Audit.ts"
-import { Effect, Predicate, Schema } from "effect"
+import { runCli } from "../src/Cli/Run.ts"
 
-const args = process.argv.slice(2)
-
-interface ErrorRecord {
-  readonly _tag?: unknown
-  readonly message?: unknown
-}
-
-const isErrorRecord = (cause: unknown): cause is ErrorRecord => Predicate.isObject(cause)
-
-const printHelp = () => {
-  console.log(`
-safemods — Effect-native TypeScript 7 Project Transformation Engine
-
-Usage:
-  safemods scan <recipe.ts> [options]
-  safemods run <recipe.ts> [options]
-  safemods tool <recipe.ts>
-  safemods <recipe.ts> [options]       Compatibility form for run
-
-Options:
-  --preview          Accepted compatibility no-op (run already defaults to preview)
-  --verify           Run full snapshot verification and diagnostic delta analysis
-  --apply            Apply verified changes atomically to disk
-  --fail-on-match    Exit with non-zero code if any matches are found (for scan)
-  --input <json|text>  JSON when valid; otherwise the raw string. Hyphenated values: --input=-1
-  --cwd <path>       Target workspace working directory (defaults to current dir)
-  --no-color         Disable ANSI terminal colors
-  --scan             Compatibility alias for the scan command
-  --help, -h         Show help message
-`)
-}
-
-if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
-  printHelp()
-  process.exit(0)
-}
-
-const commands = new Set(["scan", "run"])
-const optionsWithValues = new Set(["--input", "--cwd"])
-const knownFlags = new Set([
-  "--preview",
-  "--verify",
-  "--apply",
-  "--fail-on-match",
-  "--no-color",
-  "--help",
-  "-h",
-  "--scan",
-])
-
-function failArg(message: string): never {
-  console.error(`Error: ${message}`)
-  process.exit(1)
-}
-
-let command: string | undefined = undefined
-let recipeArg: string | undefined = undefined
-const flags = new Set<string>()
-const optionsMap: Record<string, string | undefined> = {}
-
-let i = 0
-while (i < args.length) {
-  const arg = args[i]
-  // oxlint-disable-next-line typescript/no-unnecessary-condition -- Build config keeps indexed argv access possibly undefined.
-  if (arg === undefined) break
-  const optionWithInlineValue = [...optionsWithValues].find((option) =>
-    arg.startsWith(`${option}=`),
-  )
-  if (optionWithInlineValue !== undefined) {
-    const value = arg.slice(optionWithInlineValue.length + 1)
-    if (value === "") {
-      failArg(`Missing value for ${optionWithInlineValue}`)
-    }
-    optionsMap[optionWithInlineValue] = value
-    i++
-    continue
-  }
-  if (optionsWithValues.has(arg)) {
-    const value = args[i + 1]
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- Indexed argv access is unproven by the type system past bounds.
-    if (value === undefined || knownFlags.has(value) || commands.has(value)) {
-      failArg(`Missing value for ${arg}`)
-    }
-    optionsMap[arg] = value
-    i += 2
-    continue
-  }
-  if (arg.startsWith("-")) {
-    if (!knownFlags.has(arg)) {
-      failArg(`Unknown flag ${arg}`)
-    }
-    flags.add(arg)
-    i++
-    continue
-  }
-  if (command === undefined && recipeArg === undefined && commands.has(arg)) {
-    command = arg
-    i++
-    continue
-  }
-  if (recipeArg === undefined) {
-    recipeArg = arg
-    i++
-    continue
-  }
-  failArg(`Unexpected positional argument ${arg}`)
-}
-
-if (!recipeArg) {
-  console.error("Error: Missing recipe file path.")
-  printHelp()
-  process.exit(1)
-}
-
-const isScan = command === "scan" || flags.has("--scan")
-const isApply = flags.has("--apply")
-const isVerify = flags.has("--verify") || isApply
-const noColor = flags.has("--no-color")
-const failOnMatch = flags.has("--fail-on-match")
+const recipeArg = Argument.string("recipe")
+const verifyFlag = Flag.boolean("verify")
+const applyFlag = Flag.boolean("apply")
+const failOnMatchFlag = Flag.boolean("fail-on-match")
+const noColorFlag = Flag.boolean("no-color")
+const inputFlag = Flag.optional(Flag.string("input"))
+const cwdFlag = Flag.optional(Flag.string("cwd"))
 
 const JsonValue = Schema.fromJsonString(Schema.Unknown)
 
-let input: unknown = undefined
-if (optionsMap["--input"] !== undefined) {
-  const raw = optionsMap["--input"]
+// oxlint-disable-next-line anti-slop/no-unknown-returns -- Raw CLI input string or JSON value passed to recipe input runner.
+const parseInput = (inputOption: Option.Option<string>): unknown => {
+  if (Option.isNone(inputOption)) return undefined
+  const raw = inputOption.value
   const decoded = Schema.decodeExit(JsonValue)(raw)
-  input = decoded._tag === "Success" ? decoded.value : raw
+  return decoded._tag === "Success" ? decoded.value : raw
 }
 
-const cwd = optionsMap["--cwd"]
+const runCmd = Command.make(
+  "run",
+  {
+    recipe: recipeArg,
+    verify: verifyFlag,
+    apply: applyFlag,
+    noColor: noColorFlag,
+    input: inputFlag,
+    cwd: cwdFlag,
+  },
+  (parsed) =>
+    runCli({
+      recipePath: parsed.recipe,
+      input: parseInput(parsed.input),
+      cwd: Option.getOrUndefined(parsed.cwd),
+      mode: parsed.apply ? "apply" : parsed.verify ? "verify" : "preview",
+      noColor: parsed.noColor,
+    }),
+)
 
-const mode: "preview" | "verify" | "apply" | "scan" = isScan
-  ? "scan"
-  : isApply
-    ? "apply"
-    : isVerify
-      ? "verify"
-      : "preview"
+const scanCmd = Command.make(
+  "scan",
+  {
+    recipe: recipeArg,
+    failOnMatch: failOnMatchFlag,
+    noColor: noColorFlag,
+    input: inputFlag,
+    cwd: cwdFlag,
+  },
+  (parsed) =>
+    runCli({
+      recipePath: parsed.recipe,
+      input: parseInput(parsed.input),
+      cwd: Option.getOrUndefined(parsed.cwd),
+      mode: "scan",
+      failOnMatch: parsed.failOnMatch,
+      noColor: parsed.noColor,
+    }),
+)
 
-Effect.runPromise(
-  runCli({
-    recipePath: recipeArg,
-    input,
-    cwd,
-    mode,
-    failOnMatch,
-    noColor,
-  }),
-).catch((cause: unknown) => {
+const safemodsCmd = Command.make("safemods").pipe(Command.withSubcommands([runCmd, scanCmd]))
+
+const cli = Command.run(safemodsCmd, { version: "1.0.0" })
+
+Effect.runPromise(cli.pipe(Effect.provide(NodeServices.layer))).catch((cause: unknown) => {
   if (cause instanceof CliMatchFoundError) {
     process.exit(1)
   }
-  const error = isErrorRecord(cause) ? cause : undefined
-  const msg = Predicate.isString(error?.message) ? error.message : String(cause)
-  console.error(`\n✖ ${msg}`)
   process.exit(1)
 })
