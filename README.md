@@ -186,7 +186,6 @@ await Effect.runPromise(program.pipe(Effect.provide(runtime)))
 - [Migrate an import specifier](./examples/migrate-import.ts)
 - [Rewrite call arguments by resolved symbol](./examples/semantic-api-migration.ts)
 - [Stage an import through an overlay, then query the result](./examples/overlay-aware-migration.ts)
-- [Expose a recipe as an agent tool](./examples/agent-tool.ts)
 - [Full API tour](./examples/declarative-api-tour.ts)
 
 ## Further reading

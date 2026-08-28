@@ -1,10 +1,7 @@
 /**
  * Module specifier rewriting for file moves.
- *
- * Pure AST-to-replacements translation: given a source file's AST and a
- * move, produce the exact string-literal ranges to rewrite so relative
- * imports keep resolving. Callers own applying or proposing these edits.
  */
+import { posix as PathPosix } from "node:path"
 import { SyntaxKind, type Node, type SourceFile, type StringLiteral } from "typescript/unstable/ast"
 import {
   isCallExpression,
@@ -31,40 +28,18 @@ const specifierExtension = (specText: string): string => {
 const isRelativeSpecifier = (specText: string): boolean =>
   specText.startsWith("./") || specText.startsWith("../")
 
-const pathSegments = (value: string): Array<string> => {
-  const segments: Array<string> = []
-  for (const part of value.split("/")) {
-    if (part === "" || part === ".") continue
-    if (part === "..") {
-      if (segments.at(-1) !== undefined && segments.at(-1) !== "..") {
-        segments.pop()
-      } else {
-        segments.push(part)
-      }
-      continue
-    }
-    segments.push(part)
-  }
-  return segments
+const directoryName = (value: string): string => {
+  const dir = PathPosix.dirname(value)
+  return dir === "." ? "." : dir
 }
 
 const relativePath = (fromDir: string, toPath: string): string => {
-  const from = pathSegments(fromDir)
-  const to = pathSegments(toPath)
-  let common = 0
-  while (common < from.length && common < to.length && from[common] === to[common]) common += 1
-  return [...Array.from({ length: from.length - common }, () => ".."), ...to.slice(common)].join(
-    "/",
-  )
-}
-
-const directoryName = (value: string): string => {
-  const index = value.lastIndexOf("/")
-  return index === -1 ? "." : value.slice(0, index) || "."
+  const rel = PathPosix.relative(fromDir, toPath)
+  return rel === "" ? "." : rel
 }
 
 const resolvedSpecifierPath = (fileDir: string, specText: string): string =>
-  pathSegments(`${fileDir}/${specText}`).join("/")
+  PathPosix.normalize(PathPosix.join(fileDir, specText))
 
 /**
  * Resolve a relative module specifier to a normalized project-relative path
@@ -80,7 +55,7 @@ export const resolveRelativeSpecifier = (
 
 const refersToMovedModule = (resolved: string, fromBase: string, sourcePath: string): boolean => {
   const stripped = stripModuleExtension(resolved)
-  return stripped === fromBase || stripped === `./${fromBase}` || stripped === sourcePath
+  return stripped === fromBase || stripped === sourcePath
 }
 
 const quotedSpecifier = (file: SourceFile, specifier: StringLiteral, next: string): string => {

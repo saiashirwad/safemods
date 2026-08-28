@@ -75,8 +75,6 @@ src/Execution/RecipeExecution.ts: executeRecipe
 
 `scan` diverges after planning. It builds a report from the Plan's recorded matches without running verification or Application. It still executes the Recipe and builds a complete Transformation Plan.
 
-`AgentTool` also calls `executeRecipe`: verification is its default, while its apply option provides the Application adapter.
-
 ## Authority by stage
 
 | Value or region     | May query compiler          | May describe changes                 | Durable       | May write                |
@@ -128,10 +126,9 @@ Start with the author-facing modules. Read adapters and low-level formats only w
 | ----------- | -------------------------------------------------------------------- |
 | `Node`      | Node filesystem, path, compiler, Workspace, and Application adapters |
 | `Cli`       | Terminal orchestration and rendering                                 |
-| `AgentTool` | Structured tool interface for agent hosts                            |
-| `Execution` | Internal shared orchestration used by CLI and AgentTool              |
+| `Execution` | Internal shared orchestration used by CLI                            |
 
-`Application`, `AgentTool`, `Cli`, `Draft`, `Edit`, `Evidence`, `Overlay`, `Pattern`, `Plan`, `Policy`, `ProjectPath`, `Query`, `Recipe`, `Verification`, `VirtualFs`, `Workspace`, and `Node` are published package subpaths. `Execution` is an internal source owner.
+`Application`, `Cli`, `Draft`, `Edit`, `Evidence`, `Overlay`, `Pattern`, `Plan`, `Policy`, `ProjectPath`, `Query`, `Recipe`, `Verification`, `VirtualFs`, `Workspace`, and `Node` are published package subpaths. `Execution` is an internal source owner.
 
 ## Dependency rules
 
@@ -142,7 +139,7 @@ Start with the author-facing modules. Read adapters and low-level formats only w
 3. `Draft`, `Overlay`
 4. `Application`, `Execution`, `Recipe`, `Verification`
 5. `Node`, platform adapters
-6. `AgentTool`, `Cli`, `bin`
+6. `Cli`, `bin`
 
 A module may import its own layer or a lower layer. The checker also gives assembly modules such as Recipe and Verification narrower explicit dependency sets. Imports from another owner's `internal` directory are forbidden. The root facade may expose only its listed public owners.
 
@@ -166,6 +163,6 @@ node tools/check-boundaries.mjs
 10. `src/Verification/Preview.ts`, `Verify.ts`, and `VerifiedPlan.ts`
 11. `src/Application/Application.ts`
 12. `src/Execution/RecipeExecution.ts`
-13. `Node`, `Cli`, and `AgentTool` last
+13. `Node` and `Cli` last
 
 On a first pass, read interfaces and orchestration functions. Internal AST traversal, filesystem adapters, codecs, and rendering can wait until a change requires them.

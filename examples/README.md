@@ -165,4 +165,3 @@ CLI or an agent host:
 
 - `semantic-api-migration.ts` combines schema input, semantic symbol resolution, dual query operators, argument rewriting, and idempotence verification.
 - `overlay-aware-migration.ts` stages an import in a virtual snapshot before querying the updated project state.
-- `agent-tool.ts` exposes a schema-validated recipe through the structured Agent Tool protocol.

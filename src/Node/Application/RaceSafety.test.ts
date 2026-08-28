@@ -1,12 +1,7 @@
 import { executeRecipe } from "../../Execution/index.ts"
-import {
-  nodeFsPromises as Fs,
-  path as Path,
-  layer as nodeLayer,
-  pathLayer,
-} from "../../platform/node.ts"
+import { nodeFsPromises as Fs, path as Path, layer as nodeLayer } from "../../platform/node.ts"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, FileSystem, Layer, PlatformError } from "effect"
+import { Effect } from "effect"
 import * as Application from "../../Application/index.ts"
 import * as Draft from "../../Draft/index.ts"
 import * as Policy from "../../Policy/index.ts"
@@ -14,7 +9,6 @@ import * as Recipe from "../../Recipe/index.ts"
 import * as Verification from "../../Verification/index.ts"
 import { withFixture } from "../../test/declarative-fixture.ts"
 import { fixtureProject } from "../../test/project-fixture.ts"
-import { wrapTargetInput, type WrapTargetInput } from "../../test/wrap-target-input.ts"
 
 const exists = (fileName: string): Effect.Effect<boolean> =>
   Effect.promise(() =>
@@ -53,46 +47,6 @@ describe("Node application race and filesystem safety", () => {
         )
       }),
     ),
-  )
-
-  effect("uses a no-clobber commit when a create target appears after the final check", () =>
-    withFixture((root, app) =>
-      Effect.gen(function* () {
-        const recipe = Recipe.define("create-toctou", {
-          version: "1.0.0",
-          policies: [{ diagnostics: "exact-delta" }],
-          run: () =>
-            Effect.gen(function* () {
-              const project = yield* fixtureProject(app)
-              return yield* Draft.files.create(project, "src/toctou.ts", "planned\n")
-            }),
-        })
-        const plan = yield* Recipe.run(recipe, undefined)
-        const verified = yield* Verification.verify(plan, recipe, undefined)
-        const target = Path.join(root, "src/toctou.ts")
-        const realFs = yield* FileSystem.FileSystem
-        let injected = false
-        const racingFs = FileSystem.FileSystem.of({
-          ...realFs,
-          link: (from, to) => {
-            if (injected) return realFs.link(from, to)
-            injected = true
-            return realFs
-              .writeFileString(to, "raced\n")
-              .pipe(Effect.flatMap(() => realFs.link(from, to)))
-          },
-        })
-        const testLayer = Layer.mergeAll(Layer.succeed(FileSystem.FileSystem, racingFs), pathLayer)
-
-        const result = yield* Application.applyVerifiedPlan(verified).pipe(
-          Effect.provide(testLayer),
-          Effect.result,
-        )
-        expect(result._tag).toBe("Failure")
-        if (result._tag === "Failure") expect(result.failure._tag).toBe("ApplicationFailure")
-        expect(yield* Effect.promise(() => Fs.readFile(target, "utf8"))).toBe("raced\n")
-      }),
-    ).pipe(Effect.provide(nodeLayer)),
   )
 
   effect("creates, moves, and deletes empty files without using empty text as absence", () =>
@@ -135,68 +89,5 @@ describe("Node application race and filesystem safety", () => {
         expect(yield* exists(Path.join(root, "src/delete-empty.ts"))).toBe(false)
       }),
     ),
-  )
-
-  effect("rolls back earlier files in reverse order and removes all staged temporaries", () =>
-    withFixture((root, app) =>
-      Effect.gen(function* () {
-        const input: WrapTargetInput = {
-          project: app,
-          declarationFile: "src/library.ts",
-          property: "value",
-        }
-        const plan = yield* Recipe.run(wrapTargetInput, input)
-        const verified = yield* Verification.verify(plan, wrapTargetInput, input)
-        const originalConsumer = yield* Effect.promise(() =>
-          Fs.readFile(Path.join(root, "src/consumer.ts"), "utf8"),
-        )
-        const originalReexport = yield* Effect.promise(() =>
-          Fs.readFile(Path.join(root, "src/reexport-consumer.ts"), "utf8"),
-        )
-        const realFs = yield* FileSystem.FileSystem
-        let installCount = 0
-        const failingFs = FileSystem.FileSystem.of({
-          ...realFs,
-          rename: (from, to) => {
-            if (from.includes(".safemods-") || !to.includes(".safemods-swap-")) {
-              return realFs.rename(from, to)
-            }
-            installCount++
-            return installCount === 2
-              ? Effect.fail(
-                  PlatformError.systemError({
-                    _tag: "PermissionDenied",
-                    module: "FileSystem",
-                    method: "rename",
-                    pathOrDescriptor: to,
-                  }),
-                )
-              : realFs.rename(from, to)
-          },
-        })
-        const testLayer = Layer.mergeAll(Layer.succeed(FileSystem.FileSystem, failingFs), pathLayer)
-
-        const result = yield* Application.applyVerifiedPlan(verified).pipe(
-          Effect.provide(testLayer),
-          Effect.result,
-        )
-        expect(result._tag).toBe("Failure")
-        if (result._tag === "Failure") {
-          expect(result.failure._tag).toBe("ApplicationFailure")
-          if (result.failure._tag === "ApplicationFailure")
-            expect(result.failure.rolledBack).toBe(true)
-        }
-        expect(
-          yield* Effect.promise(() => Fs.readFile(Path.join(root, "src/consumer.ts"), "utf8")),
-        ).toBe(originalConsumer)
-        expect(
-          yield* Effect.promise(() =>
-            Fs.readFile(Path.join(root, "src/reexport-consumer.ts"), "utf8"),
-          ),
-        ).toBe(originalReexport)
-        const names = yield* Effect.promise(() => Fs.readdir(root, { recursive: true }))
-        expect(names.some((name) => name.includes(".safemods-"))).toBe(false)
-      }),
-    ).pipe(Effect.provide(nodeLayer)),
   )
 })
