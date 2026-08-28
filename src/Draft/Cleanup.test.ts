@@ -10,7 +10,60 @@ import { withFixture } from "../test/declarative-fixture.ts"
 import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("declarative transformations API (@effect/vitest)", () => {
-  describe("automated cleanup", () => {
+  describe("automated cleanup and import organizing", () => {
+    effect(
+      "organizes, deduplicates, and sorts imports deterministically",
+      () =>
+        withFixture((root, app) =>
+          Effect.gen(function* () {
+            const consumerPath = Path.join(root, "src/consumer.ts")
+            const consumer = yield* Effect.tryPromise(() => Fs.readFile(consumerPath, "utf8"))
+            yield* Effect.tryPromise(() =>
+              Fs.writeFile(
+                consumerPath,
+                consumer.replace(
+                  'import { other, target as renamed } from "./library.js"',
+                  [
+                    'import { target as renamed } from "./library.js";',
+                    'import { other } from "./library.js";',
+                  ].join("\n"),
+                ),
+              ),
+            )
+            const workspaceLayer = workspaceLayerNode({ projects: [app] }, { cwd: root })
+            const mainLayer = nodeLayer.pipe(Layer.provideMerge(workspaceLayer))
+
+            const organizeRecipe = Recipe.define("organize-imports-recipe", {
+              version: "1.0.0",
+              run: () =>
+                Effect.gen(function* () {
+                  const project = yield* fixtureProject(app)
+                  return yield* Draft.imports.organize(project, "src/consumer.ts")
+                }),
+            })
+
+            const execution = yield* executeRecipe(organizeRecipe, undefined, {
+              mode: "apply",
+            }).pipe(Effect.provide(mainLayer))
+            expect(execution.plan.edits.length).toBe(1)
+
+            const consumerContent = yield* Effect.tryPromise(() =>
+              Fs.readFile(Path.join(root, "src/consumer.ts"), "utf8"),
+            )
+            expect(consumerContent).toContain(
+              'import { other, target as renamed } from "./library.js";',
+            )
+
+            const rerunWorkspaceLayer = workspaceLayerNode({ projects: [app] }, { cwd: root })
+            const secondPlan = yield* Recipe.run(organizeRecipe, undefined).pipe(
+              Effect.provide(rerunWorkspaceLayer),
+            )
+            expect(secondPlan.edits).toEqual([])
+          }),
+        ),
+      60_000,
+    )
+
     effect(
       "cleans up unused imports automatically with Draft.cleanUnused",
       () =>
