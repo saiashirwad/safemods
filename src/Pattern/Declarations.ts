@@ -11,8 +11,7 @@ import {
   isIdentifier,
   isVariableStatement,
 } from "typescript/unstable/ast/is"
-import { matchFailure, matchSuccess, matchesName, type Pattern } from "./Pattern.ts"
-import { syntaxKindName } from "./SyntaxKindName.ts"
+import { matchFailure, matchSuccess, matchesName, syntaxKindName, type Pattern } from "./Pattern.ts"
 
 type ExportableDeclaration = FunctionDeclaration | ClassDeclaration | VariableStatement
 

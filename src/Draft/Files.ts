@@ -29,28 +29,26 @@ export const files = {
   ): Effect.Effect<Draft, SnapshotExpired | InvalidProjectRelativePath> =>
     Effect.gen(function* () {
       const path = yield* checkedPath(relativePath)
-      return yield* project.unsafeNative(() =>
-        Effect.sync((): Draft => ({
-          edits: [],
-          fileOperations: [
-            {
-              kind: "create",
-              projectId: project.project.id,
-              path,
-              content,
-              evidenceIds: [`file:create:${project.project.id}:${path}`],
-            },
-          ],
-          evidence: [
-            {
-              id: `file:create:${project.project.id}:${path}`,
-              kind: "file-operation",
-              facts: { kind: "create", projectId: project.project.id, path },
-            },
-          ],
-          matches: 1,
-        })),
-      )
+      return {
+        edits: [],
+        fileOperations: [
+          {
+            kind: "create",
+            projectId: project.project.id,
+            path,
+            content,
+            evidenceIds: [`file:create:${project.project.id}:${path}`],
+          },
+        ],
+        evidence: [
+          {
+            id: `file:create:${project.project.id}:${path}`,
+            kind: "file-operation",
+            facts: { kind: "create", projectId: project.project.id, path },
+          },
+        ],
+        matches: 1,
+      }
     }),
 
   /** Propose deleting an existing source file from the project. */
@@ -61,28 +59,26 @@ export const files = {
     Effect.gen(function* () {
       const path = yield* checkedPath(relativePath)
       const source = yield* project.sourceText(path)
-      return yield* project.unsafeNative(() =>
-        Effect.sync((): Draft => ({
-          edits: [],
-          fileOperations: [
-            {
-              kind: "delete",
-              projectId: project.project.id,
-              path,
-              initialHash: sha256(source),
-              evidenceIds: [`file:delete:${project.project.id}:${path}`],
-            },
-          ],
-          evidence: [
-            {
-              id: `file:delete:${project.project.id}:${path}`,
-              kind: "file-operation",
-              facts: { kind: "delete", projectId: project.project.id, path },
-            },
-          ],
-          matches: 1,
-        })),
-      )
+      return {
+        edits: [],
+        fileOperations: [
+          {
+            kind: "delete",
+            projectId: project.project.id,
+            path,
+            initialHash: sha256(source),
+            evidenceIds: [`file:delete:${project.project.id}:${path}`],
+          },
+        ],
+        evidence: [
+          {
+            id: `file:delete:${project.project.id}:${path}`,
+            kind: "file-operation",
+            facts: { kind: "delete", projectId: project.project.id, path },
+          },
+        ],
+        matches: 1,
+      }
     }),
 
   /**

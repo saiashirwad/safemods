@@ -19,11 +19,11 @@ import {
   matchFailure,
   matchSuccess,
   matchesName,
+  syntaxKindName,
   tuple,
   type AnyPattern,
   type Pattern,
 } from "./Pattern.ts"
-import { syntaxKindName } from "./SyntaxKindName.ts"
 
 export const identifier = (options?: {
   readonly name?: string | RegExp

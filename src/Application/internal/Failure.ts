@@ -1,11 +1,8 @@
 import { ApplicationFailure } from "../../Application/Application.ts"
 import { StalePlanError } from "../../Verification/Errors.ts"
 
-export const toApplicationFailure = (
-  planId: string,
-  cause: unknown,
-  rolledBack = false,
-): ApplicationFailure => new ApplicationFailure({ planId, cause, rolledBack })
+export const toApplicationFailure = (planId: string, cause: unknown): ApplicationFailure =>
+  new ApplicationFailure({ planId, cause })
 
 export const preserveStalePlanError =
   (planId: string) =>

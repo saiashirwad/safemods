@@ -19,8 +19,7 @@ import {
   isReturnStatement,
   isWhileStatement,
 } from "typescript/unstable/ast/is"
-import { matchFailure, matchSuccess, predicate, type Pattern } from "./Pattern.ts"
-import { syntaxKindName } from "./SyntaxKindName.ts"
+import { matchFailure, matchSuccess, predicate, syntaxKindName, type Pattern } from "./Pattern.ts"
 
 export type LoopStatement =
   | ForStatement

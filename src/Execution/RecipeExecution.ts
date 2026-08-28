@@ -1,6 +1,6 @@
 import { Effect, type FileSystem, type Path } from "effect"
 import { applyVerifiedPlan, type ApplicationReceipt } from "../Application/index.ts"
-import type { ApplicationFailure, ApplicationIndeterminate } from "../Application/Application.ts"
+import type { ApplicationFailure } from "../Application/Application.ts"
 import type { DraftEvidenceConflict } from "../Evidence/index.ts"
 import type { PlanBuildError, PlanDecodeError, TransformationPlan } from "../Plan/index.ts"
 import { run, type Recipe, type RecipeInputError } from "../Recipe/index.ts"
@@ -85,10 +85,7 @@ export type RecipeExecutionError<E> =
   | PolicyMismatch
   | ToolchainMismatch
 
-export type RecipeApplicationError<E> =
-  | RecipeExecutionError<E>
-  | ApplicationFailure
-  | ApplicationIndeterminate
+export type RecipeApplicationError<E> = RecipeExecutionError<E> | ApplicationFailure
 
 interface PlanExecutionOptions {
   readonly mode: "plan"

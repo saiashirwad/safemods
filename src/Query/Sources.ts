@@ -71,7 +71,7 @@ const resolveScope = (
   )
 }
 
-/** Depth-first collection of nodes whose kind matches the optional filter. */
+/** Depth-first collection of nodes matching syntaxKind. */
 const descendantsMatching = (root: Node, syntaxKind?: SyntaxKindFilter): Array<Node> => {
   const found: Array<Node> = []
   const visit = (node: Node): void => {
@@ -84,7 +84,6 @@ const descendantsMatching = (root: Node, syntaxKind?: SyntaxKindFilter): Array<N
   visit(root)
   return found
 }
-
 const collectNodes = <A extends Node>(
   project: ProjectSnapshot,
   sourceFile: SourceFile,
@@ -93,8 +92,11 @@ const collectNodes = <A extends Node>(
 ): Array<Selection<A>> => {
   const fileName = requireProjectRelativePath(project.relativeFileName(sourceFile.fileName))
   const selections: Array<Selection<A>> = []
-  for (const node of descendantsMatching(sourceFile, syntaxKind)) {
-    if (guard(node)) {
+  const visit = (node: Node): void => {
+    const kindMatches =
+      syntaxKind === undefined ||
+      (Array.isArray(syntaxKind) ? syntaxKind.includes(node.kind) : node.kind === syntaxKind)
+    if (kindMatches && guard(node)) {
       selections.push({
         value: node,
         project,
@@ -109,7 +111,9 @@ const collectNodes = <A extends Node>(
         ],
       })
     }
+    node.forEachChild(visit)
   }
+  visit(sourceFile)
   return selections
 }
 

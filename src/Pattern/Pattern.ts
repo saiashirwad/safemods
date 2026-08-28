@@ -1,9 +1,12 @@
 import { Effect, Predicate } from "effect"
-import type { Node, SyntaxKind } from "typescript/unstable/ast"
+import { SyntaxKind, type Node } from "typescript/unstable/ast"
 import { isCallExpression } from "typescript/unstable/ast/is"
 import type { EvidenceFact } from "../Evidence/Evidence.ts"
 import type { ProjectSnapshot, ProjectSnapshotError } from "../Workspace/index.ts"
 
+export const syntaxKindName = (kind: number): string =>
+  // SAFETY: reverse-map coverage of every numeric member makes this total.
+  SyntaxKind[kind]!
 export interface PatternMatchResult<Out> {
   readonly matched: true
   readonly value: Out
