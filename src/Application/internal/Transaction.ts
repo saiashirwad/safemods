@@ -1,16 +1,13 @@
 import { randomUUID } from "node:crypto"
-import { Effect, FileSystem, Path, Predicate } from "effect"
+import { Effect, FileSystem, Path } from "effect"
 import { ApplicationIndeterminate } from "../../Application/Application.ts"
 import type { TransformationPlan } from "../../Plan/index.ts"
 import { StalePlanError } from "../../Verification/Errors.ts"
-import { previewPlan } from "../../Verification/Preview.ts"
-import {
-  requireMatchingProjectIdentity,
-  revalidatePlanSources,
-} from "../../Verification/SourceRevalidation.ts"
-import { issuedVerifiedPlan, type VerifiedPlan } from "../../Verification/VerifiedPlan.ts"
+import { previewValidatedPlan } from "../../Verification/Preview.ts"
+import { requireMatchingProjectIdentity } from "../../Verification/SourceRevalidation.ts"
+import { isVerifiedPlan, type VerifiedPlan } from "../../Verification/VerifiedPlan.ts"
 import { Workspace } from "../../Workspace/index.ts"
-import { toApplicationFailure } from "./Failure.ts"
+import { preserveStalePlanError, toApplicationFailure } from "./Failure.ts"
 import {
   APPLY_JOURNAL_NAME,
   persistJournal,
@@ -27,19 +24,6 @@ import {
   stagePreviewFiles,
   type StagedFile,
 } from "./Stage.ts"
-
-const planIdOf = (verified: VerifiedPlan): string => {
-  if (
-    Predicate.isObject(verified) &&
-    "plan" in verified &&
-    Predicate.isObject(verified.plan) &&
-    "planId" in verified.plan &&
-    Predicate.isString(verified.plan.planId)
-  ) {
-    return verified.plan.planId
-  }
-  return "unissued"
-}
 
 const journalEntry = (item: StagedFile): JournalEntry => {
   const before: JournalBeforeState = item.file.before.exists
@@ -80,13 +64,10 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
   const workspace = yield* Workspace
   const workspaceRoot = workspace.root
   const definition = workspace.definition
-  const issued = issuedVerifiedPlan(verified)
-  if (issued === undefined) {
-    return yield* toApplicationFailure(planIdOf(verified))(
-      "Verified plan was not issued by verification",
-    )
+  if (!isVerifiedPlan(verified)) {
+    return yield* toApplicationFailure("unissued", "Verified plan was not issued by verification")
   }
-  const plan = issued.plan
+  const plan = verified.plan
   yield* requireMatchingProjectIdentity(plan, definition.projects)
   return yield* withExclusiveApplyLock(
     workspaceRoot,
@@ -95,10 +76,8 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       // Recover leftover temps and partial commits before reading sources.
       yield* recoverUnfinishedApplication(workspaceRoot, plan.planId)
       // Rematerialize from the issued plan. Caller preview text is not used.
-      const preview = yield* previewPlan(plan, workspaceRoot).pipe(
-        Effect.mapError((error) =>
-          error instanceof StalePlanError ? error : toApplicationFailure(plan.planId)(error),
-        ),
+      const preview = yield* previewValidatedPlan(plan, workspaceRoot).pipe(
+        Effect.mapError(preserveStalePlanError(plan.planId)),
       )
       const staged: Array<StagedFile> = []
       const applied: Array<StagedFile> = []
@@ -122,13 +101,6 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       return yield* Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem
         const path = yield* Path.Path
-
-        // Revalidate every fingerprint, including inputs not directly edited.
-        yield* revalidatePlanSources(plan, workspaceRoot).pipe(
-          Effect.mapError((error) =>
-            error instanceof StalePlanError ? error : toApplicationFailure(plan.planId)(error),
-          ),
-        )
 
         // Stage every resulting file before changing any target. Missing
         // parent directories are tracked so a failed transaction removes them.
@@ -169,12 +141,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
               yield* fs.remove(item.temporary!, { force: true }).pipe(Effect.ignore)
             }
           }
-        }).pipe(
-          Effect.mapError((error) =>
-            error instanceof StalePlanError ? error : toApplicationFailure(plan.planId)(error),
-          ),
-          Effect.result,
-        )
+        }).pipe(Effect.mapError(preserveStalePlanError(plan.planId)), Effect.result)
 
         if (commitExit._tag === "Failure") {
           const rollbackExit = yield* rollbackAppliedFiles(plan, workspaceRoot, applied).pipe(
@@ -190,13 +157,13 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
           }
           yield* fs.remove(journalPath, { force: true }).pipe(Effect.ignore)
           if (commitExit.failure instanceof StalePlanError) return yield* commitExit.failure
-          return yield* toApplicationFailure(plan.planId, true)(commitExit.failure.cause)
+          return yield* toApplicationFailure(plan.planId, commitExit.failure.cause, true)
         }
 
         yield* persistJournal(journalPath, { ...journal, phase: "committed" })
         yield* fs
           .remove(journalPath, { force: true })
-          .pipe(Effect.mapError((cause) => toApplicationFailure(plan.planId)(cause)))
+          .pipe(Effect.mapError((cause) => toApplicationFailure(plan.planId, cause)))
         committed = true
         return {
           planId: plan.planId,

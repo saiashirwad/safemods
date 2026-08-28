@@ -11,8 +11,8 @@ import type {
   ProjectSnapshotError,
   SnapshotExpired,
 } from "../Workspace/index.ts"
-// oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports -- Pure TextEdit value constructor.
-import { makeTextEdit, sha256 } from "../Edit/Hash.ts"
+import { sha256 } from "../Edit/Hash.ts"
+import { textEdit } from "../Edit/TextEdit.ts"
 import {
   applySpecifierReplacements,
   specifierReplacements,
@@ -156,7 +156,7 @@ export const files = {
         for (const replacement of replacements) {
           const importEvidenceId = `import:move-target:${project.project.id}:${relFile}:${replacement.start}-${replacement.end}`
           importEdits.push(
-            makeTextEdit({
+            textEdit({
               projectId: project.project.id,
               fileName: relFile,
               sourceText: file.text,

@@ -5,4 +5,3 @@ export type {
   ApplicationReceipt,
 } from "./Application.ts"
 export { applyVerifiedPlan } from "./internal/Transaction.ts"
-export type { VerifiedPlan } from "../Verification/index.ts"

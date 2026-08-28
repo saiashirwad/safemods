@@ -23,20 +23,13 @@ export const compilerOverlayFor = (
   apiOptions: APIOptions,
   overlay: VirtualFsSnapshot,
 ): CompilerOverlay => {
-  const projectPaths = {
-    resolve: runtime.resolvePath,
-    dirname: runtime.dirname,
-    relative: runtime.relativePath,
-    isAbsolute: runtime.isAbsolutePath,
-    sep: runtime.pathSeparator,
-  }
   const deleted = overlay.deleted
   const created = overlay.created
   const matchesVirtualPath = (observed: string, planned: string): boolean => {
     if (observed === planned) return true
-    if (!isPathContained(projectPaths, root, planned)) return false
-    const relative = runtime.relativePath(root, planned)
-    return observed.endsWith(`${runtime.pathSeparator}${relative}`)
+    if (!isPathContained(runtime, root, planned)) return false
+    const relative = runtime.relative(root, planned)
+    return observed.endsWith(`${runtime.sep}${relative}`)
   }
 
   const options: APIOptions = {
@@ -55,7 +48,7 @@ export const compilerOverlayFor = (
             }
           })()
         const isDeleted = (entry: string) => {
-          const absolute = runtime.resolvePath(directoryName, entry)
+          const absolute = runtime.resolve(directoryName, entry)
           return [...deleted].some((path) => matchesVirtualPath(absolute, path))
         }
         const files = new Set((existing?.files ?? []).filter((entry) => !isDeleted(entry)))
@@ -63,9 +56,9 @@ export const compilerOverlayFor = (
           (existing?.directories ?? []).filter((entry) => !isDeleted(entry)),
         )
         for (const plannedFileName of overlay.files.keys()) {
-          if (!isPathContained(projectPaths, directoryName, plannedFileName)) continue
-          const relative = runtime.relativePath(directoryName, plannedFileName)
-          const first = relative.split(runtime.pathSeparator)[0]!
+          if (!isPathContained(runtime, directoryName, plannedFileName)) continue
+          const relative = runtime.relative(directoryName, plannedFileName)
+          const first = relative.split(runtime.sep)[0]!
           if (first === relative) files.add(first)
           else directories.add(first)
         }

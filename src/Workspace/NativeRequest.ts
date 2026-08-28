@@ -5,8 +5,6 @@ export class WorkspaceCompilerError extends Data.TaggedError("WorkspaceCompilerE
   readonly cause: unknown
 }> {}
 
-export type NativeCompilerError = WorkspaceCompilerError
-
 export const nativeRequest = <A>(
   operation: string,
   evaluate: () => PromiseLike<A>,

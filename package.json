@@ -11,10 +11,6 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": {
-      "types": "./dist/src/index.d.ts",
-      "default": "./dist/src/index.js"
-    },
     "./Application": {
       "types": "./dist/src/Application/index.d.ts",
       "default": "./dist/src/Application/index.js"
@@ -23,21 +19,9 @@
       "types": "./dist/src/AgentTool/index.d.ts",
       "default": "./dist/src/AgentTool/index.js"
     },
-    "./Cli": {
-      "types": "./dist/src/Cli/index.d.ts",
-      "default": "./dist/src/Cli/index.js"
-    },
     "./Draft": {
       "types": "./dist/src/Draft/index.d.ts",
       "default": "./dist/src/Draft/index.js"
-    },
-    "./Edit": {
-      "types": "./dist/src/Edit/index.d.ts",
-      "default": "./dist/src/Edit/index.js"
-    },
-    "./Evidence": {
-      "types": "./dist/src/Evidence/index.d.ts",
-      "default": "./dist/src/Evidence/index.js"
     },
     "./Overlay": {
       "types": "./dist/src/Overlay/index.d.ts",
@@ -47,17 +31,9 @@
       "types": "./dist/src/Pattern/index.d.ts",
       "default": "./dist/src/Pattern/index.js"
     },
-    "./Plan": {
-      "types": "./dist/src/Plan/index.d.ts",
-      "default": "./dist/src/Plan/index.js"
-    },
     "./Policy": {
       "types": "./dist/src/Policy/index.d.ts",
       "default": "./dist/src/Policy/index.js"
-    },
-    "./ProjectPath": {
-      "types": "./dist/src/ProjectPath/index.d.ts",
-      "default": "./dist/src/ProjectPath/index.js"
     },
     "./Query": {
       "types": "./dist/src/Query/index.d.ts",
@@ -70,10 +46,6 @@
     "./Verification": {
       "types": "./dist/src/Verification/index.d.ts",
       "default": "./dist/src/Verification/index.js"
-    },
-    "./VirtualFs": {
-      "types": "./dist/src/VirtualFs/index.d.ts",
-      "default": "./dist/src/VirtualFs/index.js"
     },
     "./Workspace": {
       "types": "./dist/src/Workspace/index.d.ts",

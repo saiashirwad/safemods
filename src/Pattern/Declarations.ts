@@ -14,6 +14,16 @@ import {
 import { matchFailure, matchSuccess, matchesName, type Pattern } from "./Pattern.ts"
 import { syntaxKindName } from "./SyntaxKindName.ts"
 
+type ExportableDeclaration = FunctionDeclaration | ClassDeclaration | VariableStatement
+
+const matchesExportModifier = (
+  node: ExportableDeclaration,
+  expected: boolean | undefined,
+): boolean =>
+  expected === undefined ||
+  (node.modifiers?.some((modifier) => modifier.kind === SyntaxKind.ExportKeyword) ?? false) ===
+    expected
+
 export interface FunctionDeclarationPatternOptions {
   readonly name?: string | RegExp
   readonly async?: boolean
@@ -38,12 +48,7 @@ export const functionDeclaration = (
         (node.modifiers?.some((m) => m.kind === SyntaxKind.AsyncKeyword) ?? false) !== options.async
       )
         return matchFailure
-      if (
-        options?.exported !== undefined &&
-        (node.modifiers?.some((m) => m.kind === SyntaxKind.ExportKeyword) ?? false) !==
-          options.exported
-      )
-        return matchFailure
+      if (!matchesExportModifier(node, options?.exported)) return matchFailure
       return matchSuccess(
         node,
         node.name === undefined
@@ -71,12 +76,7 @@ export const classDeclaration = (
         (node.name === undefined || !matchesName(options.name, node.name.text))
       )
         return matchFailure
-      if (
-        options?.exported !== undefined &&
-        (node.modifiers?.some((m) => m.kind === SyntaxKind.ExportKeyword) ?? false) !==
-          options.exported
-      )
-        return matchFailure
+      if (!matchesExportModifier(node, options?.exported)) return matchFailure
       return matchSuccess(
         node,
         node.name === undefined
@@ -99,12 +99,7 @@ export const variableStatement = (
   match: (node) =>
     Effect.sync(() => {
       if (!isVariableStatement(node)) return matchFailure
-      if (
-        options?.exported !== undefined &&
-        (node.modifiers?.some((m) => m.kind === SyntaxKind.ExportKeyword) ?? false) !==
-          options.exported
-      )
-        return matchFailure
+      if (!matchesExportModifier(node, options?.exported)) return matchFailure
       if (
         options?.name !== undefined &&
         !node.declarationList.declarations.some(

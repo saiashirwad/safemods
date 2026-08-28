@@ -50,13 +50,20 @@ export const matchSuccess = <Out>(
 
 export const matchFailure: PatternMismatch = { matched: false }
 
-export const matchesName = (name: string | RegExp, text: string): boolean => {
-  if (Predicate.isString(name)) return text === name
-  // `/g` and `/y` advance lastIndex; clone so two matches against the same
-  // name do not alternate.
-  const pattern = name.global || name.sticky ? new RegExp(name.source, name.flags) : name
-  return pattern.test(text)
+/** Test from index zero without leaking state from global or sticky expressions. */
+export const testRegExp = (pattern: RegExp, value: string): boolean => {
+  if (!pattern.global && !pattern.sticky) return pattern.test(value)
+  const lastIndex = pattern.lastIndex
+  try {
+    pattern.lastIndex = 0
+    return pattern.test(value)
+  } finally {
+    pattern.lastIndex = lastIndex
+  }
 }
+
+export const matchesName = (name: string | RegExp, text: string): boolean =>
+  Predicate.isString(name) ? text === name : testRegExp(name, text)
 
 const bindingOf = <K extends string, Out>(key: K, value: Out): Binding<K, Out> =>
   // SAFETY: the computed key is the binding name supplied to this pattern.

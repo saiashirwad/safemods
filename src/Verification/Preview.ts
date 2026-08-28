@@ -1,13 +1,19 @@
 /** Read-only materialization of a plan's exact proposed bytes. */
-import { Effect, type FileSystem, Path } from "effect"
+import { Effect, type FileSystem, type Path } from "effect"
 import { sha256 } from "../Edit/index.ts"
 import {
   isContentFingerprint,
   type PlanDecodeError,
+  type ValidatedPlan,
   validatePlan,
   type TransformationPlan,
 } from "../Plan/index.ts"
-import { resolvePlanFilePath, unsafePlanFilePathMessage } from "../ProjectPath/index.ts"
+import { type ProjectIdentityMismatch, StalePlanError, VerificationFailure } from "./Errors.ts"
+import {
+  absoluteTarget,
+  requireMatchingProjectIdentity,
+  revalidateSource,
+} from "./SourceRevalidation.ts"
 import {
   materialize as materializeVirtualFs,
   virtualFileKey,
@@ -15,8 +21,6 @@ import {
   VirtualFsError,
 } from "../VirtualFs/index.ts"
 import { Workspace } from "../Workspace/index.ts"
-import { type ProjectIdentityMismatch, StalePlanError, VerificationFailure } from "./Errors.ts"
-import { requireMatchingProjectIdentity, revalidateSource } from "./SourceRevalidation.ts"
 
 export type FileState =
   | { readonly exists: false; readonly text?: undefined; readonly hash?: undefined }
@@ -39,21 +43,20 @@ export interface PlanPreview {
   readonly files: ReadonlyArray<FilePreview>
 }
 
-export const previewPlan = (
-  plan: TransformationPlan,
+/** Materialize a plan that has already crossed a validation boundary. */
+export const previewValidatedPlan = (
+  plan: ValidatedPlan,
   workspaceRoot: string,
 ): Effect.Effect<
   PlanPreview,
-  StalePlanError | VerificationFailure | PlanDecodeError,
+  StalePlanError | VerificationFailure,
   FileSystem.FileSystem | Path.Path
 > =>
   Effect.gen(function* () {
-    const validated = yield* validatePlan(plan)
-    const path = yield* Path.Path
     const initialFiles: Array<VirtualFsInitialFile> = []
     const initial = new Map<string, string>()
-    for (const source of validated.sources) {
-      const content = yield* revalidateSource(validated, workspaceRoot, source)
+    for (const source of plan.sources) {
+      const content = yield* revalidateSource(plan, workspaceRoot, source)
       if (!isContentFingerprint(source) || content === undefined) continue
       initialFiles.push({
         projectId: source.projectId,
@@ -63,39 +66,56 @@ export const previewPlan = (
       initial.set(virtualFileKey(source.projectId, source.fileName), content)
     }
 
-    const resolvePath = (projectId: string, fileName: string): string => {
-      const resolved = resolvePlanFilePath(path, validated, workspaceRoot, projectId, fileName)
-      if (resolved === undefined) throw new Error(unsafePlanFilePathMessage(projectId, fileName))
-      return resolved.fileName
+    const absoluteTargets = new Map<string, string>()
+    const targetPaths = new Map<string, readonly [projectId: string, fileName: string]>()
+    const addTarget = (projectId: string, fileName: string): void => {
+      targetPaths.set(virtualFileKey(projectId, fileName), [projectId, fileName])
     }
+    for (const source of plan.sources) addTarget(source.projectId, source.fileName)
+    for (const edit of plan.edits) addTarget(edit.projectId, edit.fileName)
+    for (const operation of plan.fileOperations ?? []) {
+      addTarget(operation.projectId, operation.path)
+      if (operation.kind === "move") addTarget(operation.projectId, operation.toPath)
+    }
+    for (const [key, [projectId, fileName]] of targetPaths) {
+      absoluteTargets.set(key, yield* absoluteTarget(plan, workspaceRoot, projectId, fileName))
+    }
+    const resolvePath = (projectId: string, fileName: string): string =>
+      // SAFETY: every materializer input path is collected above.
+      absoluteTargets.get(virtualFileKey(projectId, fileName))!
 
-    const materialized = yield* materializeVirtualFs<never>({
+    const materialized = yield* materializeVirtualFs<VerificationFailure>({
       initialFiles,
-      // Every source used by a valid plan is fingerprinted above. This loader
-      // is only a defensive boundary for malformed plans.
       load: (projectId, fileName) =>
-        Effect.die(new Error(`Missing fingerprint for ${projectId}:${fileName}`)),
+        Effect.fail(
+          new VerificationFailure({
+            planId: plan.planId,
+            policy: "edits",
+            detail: `Missing fingerprint for ${virtualFileKey(projectId, fileName)}`,
+          }),
+        ),
       resolvePath,
-      edits: validated.edits,
-      fileOperations: validated.fileOperations,
+      edits: plan.edits,
+      fileOperations: plan.fileOperations,
     }).pipe(
       Effect.mapError((error) => {
+        if (error instanceof VerificationFailure) return error
         if (error instanceof VirtualFsError) {
           if (error.reason === "source-mismatch") {
             return new StalePlanError({
-              planId: validated.planId,
+              planId: plan.planId,
               projectId: error.projectId,
               fileName: error.fileName,
             })
           }
           return new VerificationFailure({
-            planId: validated.planId,
+            planId: plan.planId,
             policy: "edits",
             detail: `Missing source for ${virtualFileKey(error.projectId, error.fileName)}`,
           })
         }
         return new VerificationFailure({
-          planId: validated.planId,
+          planId: plan.planId,
           policy: "edits",
           detail: error._tag,
         })
@@ -105,7 +125,7 @@ export const previewPlan = (
     const touched = new Set<string>()
     const moveCounterpart = new Map<string, string>()
     const operationKinds = new Map<string, "create" | "delete" | "move">()
-    for (const operation of validated.fileOperations ?? []) {
+    for (const operation of plan.fileOperations ?? []) {
       const sourceKey = virtualFileKey(operation.projectId, operation.path)
       touched.add(sourceKey)
       if (operation.kind === "create") {
@@ -122,7 +142,7 @@ export const previewPlan = (
       }
     }
 
-    for (const edit of validated.edits) {
+    for (const edit of plan.edits) {
       touched.add(virtualFileKey(edit.projectId, edit.fileName))
     }
 
@@ -155,7 +175,21 @@ export const previewPlan = (
         left.projectId.localeCompare(right.projectId) ||
         left.fileName.localeCompare(right.fileName),
     )
-    return { planId: validated.planId, snapshotHash: validated.snapshotHash, files }
+    return { planId: plan.planId, snapshotHash: plan.snapshotHash, files }
+  })
+
+/** Validate and materialize a plan against an explicit workspace root. */
+export const previewPlan = (
+  plan: TransformationPlan,
+  workspaceRoot: string,
+): Effect.Effect<
+  PlanPreview,
+  StalePlanError | VerificationFailure | PlanDecodeError,
+  FileSystem.FileSystem | Path.Path
+> =>
+  Effect.gen(function* () {
+    const validated = yield* validatePlan(plan)
+    return yield* previewValidatedPlan(validated, workspaceRoot)
   })
 
 /** Materialize a validated preview against the active Workspace. Never writes. */
@@ -170,6 +204,6 @@ export const of = (
     Effect.gen(function* () {
       const validated = yield* validatePlan(plan)
       yield* requireMatchingProjectIdentity(validated, workspace.definition.projects)
-      return yield* previewPlan(validated, workspace.root)
+      return yield* previewValidatedPlan(validated, workspace.root)
     }),
   )

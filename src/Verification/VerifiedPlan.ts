@@ -1,6 +1,6 @@
 /** Process-local capability that grants application authority. */
 import { Predicate } from "effect"
-import type { TransformationPlan } from "../Plan/index.ts"
+import type { ValidatedPlan } from "../Plan/index.ts"
 import type { DiagnosticDiff } from "../Policy/index.ts"
 import type { PlanPreview } from "./Preview.ts"
 import type { VerificationReceipt } from "./VerificationReceipt.ts"
@@ -10,15 +10,10 @@ const VerifiedPlanTypeId: unique symbol = Symbol("@safemods/internal/VerifiedPla
 
 export interface VerifiedPlan {
   readonly [VerifiedPlanTypeId]: typeof VerifiedPlanTypeId
-  readonly plan: TransformationPlan
+  readonly plan: ValidatedPlan
   readonly preview: PlanPreview
   readonly receipt: VerificationReceipt
-}
-
-interface IssuedVerifiedPlan {
-  readonly plan: TransformationPlan
-  readonly preview: PlanPreview
-  readonly receipt: VerificationReceipt
+  readonly diagnosticDiff: DiagnosticDiff
 }
 
 const freezeDeep = <A>(value: A): A => {
@@ -33,12 +28,12 @@ const freezeDeep = <A>(value: A): A => {
   return value
 }
 export const issueVerifiedPlan = (
-  plan: TransformationPlan,
+  plan: ValidatedPlan,
   preview: PlanPreview,
   receipt: VerificationReceipt,
   diagnosticDiff: DiagnosticDiff,
-): VerifiedPlan & { readonly diagnosticDiff: DiagnosticDiff } => {
-  const verified: VerifiedPlan & { readonly diagnosticDiff: DiagnosticDiff } = {
+): VerifiedPlan => {
+  const verified: VerifiedPlan = {
     [VerifiedPlanTypeId]: VerifiedPlanTypeId,
     plan: freezeDeep(plan),
     preview: freezeDeep(preview),
@@ -48,10 +43,8 @@ export const issueVerifiedPlan = (
   return Object.freeze(verified)
 }
 
-/** Contents of a VerifiedPlan carrying the process-local verification brand. */
-export const issuedVerifiedPlan = (verified: VerifiedPlan): IssuedVerifiedPlan | undefined =>
-  Predicate.isObject(verified) &&
-  VerifiedPlanTypeId in verified &&
-  verified[VerifiedPlanTypeId] === VerifiedPlanTypeId
-    ? verified
-    : undefined
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Process-local capability guard at the public application boundary.
+export const isVerifiedPlan = (value: unknown): value is VerifiedPlan =>
+  Predicate.isObject(value) &&
+  VerifiedPlanTypeId in value &&
+  value[VerifiedPlanTypeId] === VerifiedPlanTypeId

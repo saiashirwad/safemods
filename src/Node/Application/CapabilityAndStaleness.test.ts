@@ -6,6 +6,7 @@ import * as Draft from "../../Draft/index.ts"
 import * as Recipe from "../../Recipe/index.ts"
 import * as Verification from "../../Verification/index.ts"
 import type { TransformationPlan } from "../../Plan/index.ts"
+import type { DiagnosticDiff } from "../../Policy/index.ts"
 import type { VerifiedPlan } from "../../Verification/index.ts"
 import { ConfiguredProject } from "../../Workspace/index.ts"
 import { workspaceLayerNode } from "../WorkspaceRuntime.ts"
@@ -17,6 +18,7 @@ type ForgedPlanValue =
   | TransformationPlan
   | Verification.PlanPreview
   | Verification.VerificationReceipt
+  | DiagnosticDiff
 
 interface ForgedPlanCapability extends Partial<VerifiedPlan> {
   readonly [key: PropertyKey]: ForgedPlanValue

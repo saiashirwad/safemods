@@ -3,6 +3,7 @@ export {
   isPathContained,
   isProjectRelativePath,
   parseProjectRelativePath,
+  projectRelative,
   requireProjectRelativePath,
   resolveContainedProjectPath,
   resolvePlanFilePath,

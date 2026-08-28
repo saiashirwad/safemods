@@ -1,19 +1,17 @@
 /** Recipe construction. */
-import type { Schema } from "effect"
 import { sha256 } from "../Edit/index.ts"
-import type { PlanPolicies } from "../Plan/index.ts"
 import * as Policy from "../Policy/index.ts"
-import type { VerificationRule } from "../Policy/index.ts"
+import type { CompiledPolicy } from "../Policy/index.ts"
 import type { Recipe, RecipeDefinition } from "./Recipe.ts"
 
 /** Construct a recipe from durable policies and runtime rules. */
 export const fromCompiled = <Input, E, R>(
   name: string,
   version: string,
-  compiled: { readonly policy: PlanPolicies; readonly rules: ReadonlyArray<VerificationRule> },
+  compiled: CompiledPolicy,
   run: Recipe<Input, E, R>["run"],
   options: {
-    readonly schema?: Schema.Schema<Input> | undefined
+    readonly schema?: Recipe<Input>["schema"]
     readonly implementationHash?: string | undefined
   } = {},
 ): Recipe<Input, E, R> =>

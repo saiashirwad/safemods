@@ -1,8 +1,8 @@
 import { path as Path } from "../platform/node.ts"
+import { projectRelative } from "../ProjectPath/index.ts"
 import { describe, expect, it } from "vitest"
 import {
   isWithinProject,
-  projectRelativePath,
   resolveContainedSnapshotPath,
   resolveProjectRelativeFile,
 } from "./ProjectPath.ts"
@@ -16,8 +16,8 @@ describe("Node project paths", () => {
     expect(isWithinProject(root, inside)).toBe(true)
     expect(isWithinProject(root, root)).toBe(false)
     expect(isWithinProject(root, outside)).toBe(false)
-    expect(projectRelativePath(root, inside)).toBe("src/index.ts")
-    expect(projectRelativePath(root, Path.join(root, "src", "nested", "value.ts"))).toBe(
+    expect(projectRelative(Path, root, inside)).toBe("src/index.ts")
+    expect(projectRelative(Path, root, Path.join(root, "src", "nested", "value.ts"))).toBe(
       "src/nested/value.ts",
     )
   })

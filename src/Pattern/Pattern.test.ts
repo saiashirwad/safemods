@@ -70,12 +70,6 @@ describe("declarative transformations API (@effect/vitest)", () => {
                   Query.collect,
                 )
                 expect(numberArgs.length).toBeGreaterThan(0)
-
-                const firstCall = matches[0]!.value.call
-                const callType = yield* Query.typeOf(project, firstCall)
-                expect(callType).toBeDefined()
-                const typeStr = yield* project.typeToString(callType!)
-                expect(typeStr).toContain("number")
               }),
             )
           }),

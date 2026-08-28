@@ -4,7 +4,6 @@ import { workspaceRuntimeLayer } from "./WorkspaceRuntime.ts"
 
 export {
   isWithinProject,
-  projectRelativePath,
   resolveContainedSnapshotPath,
   resolveProjectRelativeFile,
 } from "./ProjectPath.ts"

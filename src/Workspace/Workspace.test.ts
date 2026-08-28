@@ -3,10 +3,9 @@ import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { ConfiguredProject, Workspace } from "./index.ts"
-import { InvalidProjectRelativePath } from "../ProjectPath/index.ts"
-import { isWithinProject, projectRelativePath } from "../Node/ProjectPath.ts"
+import { InvalidProjectRelativePath, projectRelative } from "../ProjectPath/index.ts"
+import { isWithinProject } from "../Node/ProjectPath.ts"
 import { workspaceLayerNode } from "../Node/index.ts"
-import { emptySnapshot } from "../VirtualFs/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
 import { fixtureProject } from "../test/project-fixture.ts"
 
@@ -91,7 +90,7 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
       expect(isWithinProject(projectRoot, inside)).toBe(true)
       expect(isWithinProject(projectRoot, mixedCaseSibling)).toBe(false)
       expect(isWithinProject(projectRoot, "/tmp/SafeModsCase/Project/../Other/x.ts")).toBe(false)
-      expect(projectRelativePath(projectRoot, mixedCaseSibling).startsWith("..")).toBe(true)
+      expect(projectRelative(Path, projectRoot, mixedCaseSibling).startsWith("..")).toBe(true)
     }),
   )
 
@@ -108,7 +107,7 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
             )
             const workspace = yield* Workspace
             yield* workspace.withIsolatedSnapshot(
-              emptySnapshot(),
+              { files: new Map(), created: new Set(), deleted: new Set() },
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
                 const text = yield* project.sourceText("src/library.ts")

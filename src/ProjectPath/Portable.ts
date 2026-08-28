@@ -55,6 +55,13 @@ const canonicalPath = (value: string): string | undefined => {
   return result.length === 0 ? undefined : result.join("/")
 }
 
+/** Convert a host path to slash-separated form relative to a project root. */
+export const projectRelative = (
+  path: ProjectPathOperations,
+  root: string,
+  absolute: string,
+): string => path.relative(path.resolve(root), path.resolve(absolute)).split(path.sep).join("/")
+
 /** Parse and normalize a portable project-relative path. */
 export const parseProjectRelativePath = (value: string): ProjectRelativePath | undefined => {
   const normalized = canonicalPath(value)

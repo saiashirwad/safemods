@@ -1,9 +1,8 @@
-/** Structural, semantic, and canonical Plan validation. */
+/** Structural and semantic Plan validation. */
 import { Effect, Predicate, Schema } from "effect"
-import { compareEdits, editsConflict, sha256 } from "../Edit/index.ts"
+import { editsConflict } from "../Edit/index.ts"
 import { virtualFileKey } from "../VirtualFs/index.ts"
 import { parseProjectRelativePath, type ProjectRelativePath } from "../ProjectPath/index.ts"
-import { asJson, canonicalJson } from "./Canonical.ts"
 import {
   isContentFingerprint,
   PlanBuildError,
@@ -33,14 +32,6 @@ const validateInputStructure = (input: unknown): Effect.Effect<void, PlanBuildEr
       () => new PlanBuildError({ reason: "invalid-plan", detail: "Plan shape is invalid" }),
     ),
   )
-
-export const compareSourceFingerprints = (
-  left: SourceFingerprint,
-  right: SourceFingerprint,
-): number =>
-  left.projectId.localeCompare(right.projectId) ||
-  left.fileName.localeCompare(right.fileName) ||
-  (left.kind ?? "file").localeCompare(right.kind ?? "file")
 
 export const normalizedPath = (value: string): ProjectRelativePath | undefined =>
   parseProjectRelativePath(value)
@@ -180,62 +171,6 @@ export const validateDecodedPlan = (
   Effect.gen(function* () {
     const { schemaVersion: _, planId: __, snapshotHash: ___, ...input } = plan
     yield* validateInputSemantics(input)
-    const expectedSnapshot = sha256(
-      canonicalJson(asJson({ projects: plan.projects, sources: plan.sources })),
-    )
-    if (expectedSnapshot !== plan.snapshotHash)
-      return yield* fail("invalid-plan", "Snapshot hash mismatch")
-    const projects = [...plan.projects].sort((left, right) => left.id.localeCompare(right.id))
-    const sources = [...plan.sources].sort(compareSourceFingerprints)
-    const edits = [...plan.edits].sort(compareEdits)
-    const evidence = [...plan.evidence].sort((left, right) => left.id.localeCompare(right.id))
-    const operations =
-      plan.fileOperations === undefined
-        ? undefined
-        : [...plan.fileOperations].sort(
-            (left, right) =>
-              left.projectId.localeCompare(right.projectId) ||
-              left.path.localeCompare(right.path) ||
-              left.kind.localeCompare(right.kind),
-          )
-    if (
-      plan.projects.some(
-        (project) => parseProjectRelativePath(project.configFileName) !== project.configFileName,
-      ) ||
-      plan.sources.some(
-        (source) => parseProjectRelativePath(source.fileName) !== source.fileName,
-      ) ||
-      plan.edits.some((edit) => parseProjectRelativePath(edit.fileName) !== edit.fileName) ||
-      (plan.fileOperations ?? []).some(
-        (operation) =>
-          parseProjectRelativePath(operation.path) !== operation.path ||
-          (operation.kind === "move" &&
-            parseProjectRelativePath(operation.toPath) !== operation.toPath),
-      )
-    ) {
-      return yield* fail("invalid-plan", "Paths are not canonical")
-    }
-    if (
-      JSON.stringify(plan.projects) !== JSON.stringify(projects) ||
-      JSON.stringify(plan.sources) !== JSON.stringify(sources) ||
-      JSON.stringify(plan.edits) !== JSON.stringify(edits) ||
-      JSON.stringify(plan.evidence) !== JSON.stringify(evidence) ||
-      JSON.stringify(plan.fileOperations) !== JSON.stringify(operations)
-    ) {
-      return yield* fail("invalid-plan", "Plan arrays are not canonical")
-    }
-    for (const edit of plan.edits) {
-      if (JSON.stringify(edit.evidenceIds) !== JSON.stringify([...edit.evidenceIds].sort()))
-        return yield* fail("invalid-plan", "Evidence IDs are not canonical")
-    }
-    for (const operation of plan.fileOperations ?? []) {
-      if (
-        operation.evidenceIds !== undefined &&
-        JSON.stringify(operation.evidenceIds) !== JSON.stringify([...operation.evidenceIds].sort())
-      ) {
-        return yield* fail("invalid-plan", "Evidence IDs are not canonical")
-      }
-    }
     for (let index = 1; index < plan.edits.length; index++) {
       if (editsConflict(plan.edits[index - 1]!, plan.edits[index]!))
         return yield* fail("edit-conflict", "Overlapping edits")

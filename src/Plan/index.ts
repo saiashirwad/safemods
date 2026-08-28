@@ -1,5 +1,11 @@
-export { asJson, canonicalJson } from "./Canonical.ts"
-export { parsePlan, serializePlan, validatePlan } from "./Codec.ts"
+export {
+  canonicalJson,
+  compareSourceFingerprints,
+  parsePlan,
+  serializePlan,
+  validatePlan,
+} from "./Codec.ts"
+export type { ValidatedPlan } from "./Codec.ts"
 export { finalizePlan } from "./Finalize.ts"
 export { isContentFingerprint, PlanBuildError, PlanDecodeError } from "./TransformationPlan.ts"
 export type {

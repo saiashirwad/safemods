@@ -109,7 +109,7 @@ const planContentFields = {
 
 export const PlanInputSchema = Schema.Struct(planContentFields)
 
-/** Complete durable-plan structure. Semantic and canonical checks live in Validate. */
+/** Complete durable-plan structure. Semantic and canonical checks follow decoding. */
 export const TransformationPlanSchema = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   planId: Schema.String,

@@ -1,5 +1,5 @@
 /** Recipe composition and conditional execution. */
-import { Effect, type Schema } from "effect"
+import { Effect } from "effect"
 import * as Draft from "../Draft/index.ts"
 import type { DraftEvidenceConflict } from "../Evidence/index.ts"
 import { sha256, type EditConflict, type InvalidEdit } from "../Edit/index.ts"
@@ -20,7 +20,7 @@ import { compileChildren } from "./PolicyComposition.ts"
 
 const composedSchema = <Input>(
   recipes: ReadonlyArray<Recipe<Input, any, any>>,
-): Schema.Schema<Input> | undefined => {
+): Recipe<Input>["schema"] => {
   const schemas = recipes.flatMap((recipe) => (recipe.schema === undefined ? [] : [recipe.schema]))
   const schema = schemas[0]
   if (schema !== undefined && !schemas.every((candidate) => candidate === schema)) {

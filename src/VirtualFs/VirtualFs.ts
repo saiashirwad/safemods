@@ -43,12 +43,6 @@ export interface VirtualFsMaterializeOptions<E> {
 export const virtualFileKey = (projectId: string, fileName: string): string =>
   `${projectId}\0${fileName}`
 
-export const emptySnapshot = (): VirtualFsSnapshot => ({
-  files: new Map(),
-  created: new Set(),
-  deleted: new Set(),
-})
-
 interface VirtualFile {
   readonly projectId: string
   readonly fileName: string

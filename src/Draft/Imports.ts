@@ -7,8 +7,7 @@ import {
   isNamedImports,
   isStringLiteral,
 } from "typescript/unstable/ast/is"
-// oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports -- Pure TextEdit value constructor.
-import { makeTextEdit } from "../Edit/Hash.ts"
+import { textEdit } from "../Edit/TextEdit.ts"
 import {
   isProjectFile,
   type ProjectFile,
@@ -84,7 +83,7 @@ const addNamedToProject = (
                   const last = named.elements[named.elements.length - 1]!
                   const insertPos = last.getEnd()
                   return draftForEdit(
-                    makeTextEdit({
+                    textEdit({
                       projectId: project.project.id,
                       fileName: project.relativeFileName(source.fileName),
                       sourceText: source.text,
@@ -105,7 +104,7 @@ const addNamedToProject = (
         const importText = `import { ${importName} } from "${options.module}";\n`
 
         return draftForEdit(
-          makeTextEdit({
+          textEdit({
             projectId: project.project.id,
             fileName: project.relativeFileName(source.fileName),
             sourceText: source.text,
@@ -169,7 +168,7 @@ export const imports = {
           const start = clause.name?.getEnd() ?? declaration.getFullStart()
           const end = clause.name === undefined ? declaration.getEnd() : named.getEnd()
           return draftForEdit(
-            makeTextEdit({
+            textEdit({
               projectId: project.project.id,
               fileName: project.relativeFileName(sourceFile.fileName),
               sourceText: sourceFile.text,
@@ -195,7 +194,7 @@ export const imports = {
         }
 
         return draftForEdit(
-          makeTextEdit({
+          textEdit({
             projectId: project.project.id,
             fileName: project.relativeFileName(sourceFile.fileName),
             sourceText: sourceFile.text,
@@ -228,7 +227,7 @@ export const imports = {
         const end = specifier.getEnd()
 
         return draftForEdit(
-          makeTextEdit({
+          textEdit({
             projectId: project.project.id,
             fileName: project.relativeFileName(sourceFile.fileName),
             sourceText: sourceFile.text,
@@ -395,7 +394,7 @@ export const imports = {
           if (formattedImports === currentImports) return empty
 
           return draftForEdit(
-            makeTextEdit({
+            textEdit({
               projectId: project.project.id,
               fileName: project.relativeFileName(source.fileName),
               sourceText: source.text,

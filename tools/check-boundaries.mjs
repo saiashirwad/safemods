@@ -1,7 +1,6 @@
 import { readdir, readFile } from "node:fs/promises"
 import { dirname, relative, resolve, sep } from "node:path"
 
-const ROOT_FACADE = "$root"
 const TYPESCRIPT_SOURCE = /\.(?:[cm]?ts|tsx)$/
 const TYPESCRIPT_TEST = /\.test\.(?:[cm]?ts|tsx)$/
 
@@ -17,29 +16,6 @@ export const architectureLayers = [
 const layerByOwner = new Map(
   architectureLayers.flatMap((owners, layer) => owners.map((owner) => [owner, layer])),
 )
-
-const rootFacadeDependencies = new Set([
-  "Application",
-  "Draft",
-  "Edit",
-  "Evidence",
-  "Overlay",
-  "Pattern",
-  "Plan",
-  "Policy",
-  "ProjectPath",
-  "Query",
-  "Recipe",
-  "Verification",
-  "VirtualFs",
-  "Workspace",
-])
-
-/**
- * Temporary imports that cross upward into Node adapters. Remove each edge
- * when its owner uses injected filesystem and path services.
- */
-export const temporaryAdapterImports = new Map()
 
 const exactDependencies = new Map([
   ["Pattern", new Set(["Evidence", "Workspace"])],
@@ -112,7 +88,6 @@ const ownerOf = (repositoryRoot, file) => {
   const sourceRoot = resolve(repositoryRoot, "src")
   const sourceRelative = relative(sourceRoot, file)
   if (!sourceRelative.startsWith(`..${sep}`) && sourceRelative !== "..") {
-    if (sourceRelative === "index.ts") return ROOT_FACADE
     return sourceRelative.split(sep)[0]
   }
   const binRoot = resolve(repositoryRoot, "bin")
@@ -127,7 +102,7 @@ const targetDetails = (repositoryRoot, file, specifier) => {
   const sourceRelative = relative(sourceRoot, target)
   if (!sourceRelative.startsWith(`..${sep}`) && sourceRelative !== "..") {
     return {
-      owner: sourceRelative === "index.ts" ? ROOT_FACADE : sourceRelative.split(sep)[0],
+      owner: sourceRelative.split(sep)[0],
       parts: sourceRelative.split(sep),
     }
   }
@@ -141,18 +116,11 @@ const targetDetails = (repositoryRoot, file, specifier) => {
 
 export const dependencyFailure = (owner, targetOwner) => {
   if (owner === targetOwner) return undefined
-  if (targetOwner === ROOT_FACADE) return "imports the root façade"
-  if (owner === ROOT_FACADE) {
-    return rootFacadeDependencies.has(targetOwner)
-      ? undefined
-      : `root façade imports non-public owner ${targetOwner}`
-  }
 
   const exact = exactDependencies.get(owner)
   if (exact !== undefined && !exact.has(targetOwner)) {
     return `${owner} must not depend on ${targetOwner}`
   }
-  if (temporaryAdapterImports.get(owner)?.has(targetOwner) === true) return undefined
 
   const ownerLayer = layerByOwner.get(owner)
   const targetLayer = layerByOwner.get(targetOwner)
@@ -173,7 +141,7 @@ export const checkArchitectureBoundaries = async (repositoryRoot) => {
     const owner = ownerOf(repositoryRoot, file)
     if (owner === "test") continue
     const displayFile = relative(repositoryRoot, file)
-    if (owner === undefined || (owner !== ROOT_FACADE && !layerByOwner.has(owner))) {
+    if (owner === undefined || !layerByOwner.has(owner)) {
       failures.push(`${displayFile}: unclassified source owner ${owner ?? "outside roots"}`)
       continue
     }

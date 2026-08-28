@@ -44,7 +44,7 @@ describe("recipe project-file composition", () => {
   )
 
   effect(
-    "supports validated ProjectFile handles with fail-fast lookup and scoped operations",
+    "supports validated ProjectFile handles with scoped operations",
     () =>
       withFixture((root, app) =>
         Effect.gen(function* () {
@@ -56,9 +56,6 @@ describe("recipe project-file composition", () => {
 
                 const consumerFile = yield* project.file("src/consumer.ts")
                 expect(consumerFile.path).toBe("src/consumer.ts")
-
-                const maybeFile = yield* project.findFile("src/nonexistent.ts")
-                expect(maybeFile._tag).toBe("None")
 
                 const libraryFile = yield* project.file("src/library.ts")
                 const targetSymbol = yield* libraryFile.symbolNamed("target")
@@ -102,7 +99,7 @@ describe("recipe project-file composition", () => {
   )
 
   effect(
-    "ProjectFile navigation resolves direct and transitive referencing/referenced file graphs",
+    "ProjectFile arrays scope queries and de-duplicate repeated files",
     () =>
       withFixture((_root, app) =>
         Effect.gen(function* () {
@@ -111,48 +108,11 @@ describe("recipe project-file composition", () => {
             {},
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
-
               const libraryFile = yield* project.file("src/library.ts")
-              const barrelFile = yield* project.file("src/barrel.ts")
               const consumerFile = yield* project.file("src/consumer.ts")
-              const reexportConsumerFile = yield* project.file("src/reexport-consumer.ts")
-
-              const libraryDirectReferencing = yield* libraryFile.referencingFiles()
-              expect(libraryDirectReferencing.map((f) => f.path)).toEqual([
-                "src/barrel.ts",
-                "src/consumer.ts",
-              ])
-
-              const barrelDirectReferencing = yield* barrelFile.referencingFiles()
-              expect(barrelDirectReferencing.map((f) => f.path)).toEqual([
-                "src/reexport-consumer.ts",
-              ])
-
-              const libraryTransitiveReferencing = yield* libraryFile.referencingFiles({
-                transitive: true,
-              })
-              expect(libraryTransitiveReferencing.map((f) => f.path)).toEqual([
-                "src/barrel.ts",
-                "src/consumer.ts",
-                "src/reexport-consumer.ts",
-              ])
-
-              const reexportDirectReferenced = yield* reexportConsumerFile.referencedFiles()
-              expect(reexportDirectReferenced.map((f) => f.path)).toEqual(["src/barrel.ts"])
-
-              const consumerDirectReferenced = yield* consumerFile.referencedFiles()
-              expect(consumerDirectReferenced.map((f) => f.path)).toEqual(["src/library.ts"])
-
-              const reexportTransitiveReferenced = yield* reexportConsumerFile.referencedFiles({
-                transitive: true,
-              })
-              expect(reexportTransitiveReferenced.map((f) => f.path)).toEqual([
-                "src/barrel.ts",
-                "src/library.ts",
-              ])
-
               const targetSymbol = yield* libraryFile.symbolNamed("target")
-              const callsInSlice = yield* Query.calls(libraryDirectReferencing).pipe(
+
+              const callsInSlice = yield* Query.calls([libraryFile, consumerFile]).pipe(
                 Query.where(Query.resolvesTo(targetSymbol, { location: (c) => c.expression })),
                 Query.collect,
               )
@@ -167,7 +127,7 @@ describe("recipe project-file composition", () => {
                 Pattern.functionDeclaration({ exported: true }),
               ).pipe(Query.collect)
               expect(fnDeclsInSlice.length).toBe(2)
-              expect(fnDeclsInSlice.map((d) => d.fileName)).toEqual([
+              expect(fnDeclsInSlice.map((declaration) => declaration.fileName)).toEqual([
                 "src/library.ts",
                 "src/library.ts",
               ])
@@ -177,56 +137,6 @@ describe("recipe project-file composition", () => {
                 Query.collect,
               )
               expect(callsWithDuplicates.length).toBe(1)
-            }),
-          )
-        }),
-      ),
-    60_000,
-  )
-
-  effect(
-    "ProjectFile navigation handles circular dependencies safely with cycle protection",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          yield* Effect.tryPromise(() =>
-            Fs.writeFile(
-              Path.join(root, "src/library.ts"),
-              `import "./consumer.js"\nexport function target(input: number): number { return input + 1 }\n`,
-              "utf8",
-            ),
-          )
-
-          const workspace = yield* Workspace
-          yield* workspace.withSnapshot(
-            {},
-            Effect.gen(function* () {
-              const project = yield* fixtureProject(app)
-
-              const libraryFile = yield* project.file("src/library.ts")
-              const consumerFile = yield* project.file("src/consumer.ts")
-
-              const libReferencing = yield* libraryFile.referencingFiles()
-              expect(libReferencing.map((f) => f.path)).toContain("src/consumer.ts")
-
-              const consumerReferencing = yield* consumerFile.referencingFiles()
-              expect(consumerReferencing.map((f) => f.path)).toContain("src/library.ts")
-
-              const libTransitive = yield* libraryFile.referencingFiles({ transitive: true })
-              expect(libTransitive.map((f) => f.path)).not.toContain("src/library.ts")
-              expect(libTransitive.map((f) => f.path)).toContain("src/consumer.ts")
-
-              const consumerTransitive = yield* consumerFile.referencingFiles({
-                transitive: true,
-              })
-              expect(consumerTransitive.map((f) => f.path)).not.toContain("src/consumer.ts")
-              expect(consumerTransitive.map((f) => f.path)).toContain("src/library.ts")
-
-              const libTransitiveReferenced = yield* libraryFile.referencedFiles({
-                transitive: true,
-              })
-              expect(libTransitiveReferenced.map((f) => f.path)).not.toContain("src/library.ts")
-              expect(libTransitiveReferenced.map((f) => f.path)).toContain("src/consumer.ts")
             }),
           )
         }),

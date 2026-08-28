@@ -18,9 +18,7 @@ import {
 } from "../Evidence/index.ts"
 import type { PlannedFileOperation } from "../Plan/index.ts"
 import type { Node } from "typescript/unstable/ast"
-// oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports -- Pure TextEdit value constructor.
-import { makeTextEdit } from "../Edit/Hash.ts"
-import type { TextEdit } from "../Edit/TextEdit.ts"
+import { textEdit, type TextEdit } from "../Edit/TextEdit.ts"
 import type { Selection } from "../Query/index.ts"
 import type { ProjectSnapshot, ProjectSnapshotError, SnapshotExpired } from "../Workspace/index.ts"
 
@@ -102,7 +100,7 @@ const editForNode = (
       const start =
         options?.includeLeadingTrivia === true ? node.getFullStart() : node.getStart(sourceFile)
       const end = node.getEnd()
-      return makeTextEdit({
+      return textEdit({
         projectId: project.project.id,
         fileName: project.relativeFileName(sourceFile.fileName),
         sourceText: sourceFile.text,
@@ -157,7 +155,7 @@ const insertAtNode = (
       const sourceFile = node.getSourceFile()
       const position = side === "before" ? node.getStart(sourceFile) : node.getEnd()
       return draftForEdit(
-        makeTextEdit({
+        textEdit({
           projectId: project.project.id,
           fileName: project.relativeFileName(sourceFile.fileName),
           sourceText: sourceFile.text,

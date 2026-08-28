@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { Effect, FileSystem, Schema } from "effect"
-import { toApplicationFailure, type ApplicationFailureResult } from "./Failure.ts"
+import type { ApplicationFailure } from "../../Application/Application.ts"
+import { toApplicationFailure } from "./Failure.ts"
 
 export const APPLY_JOURNAL_NAME = ".safemods-apply.journal"
 
@@ -53,15 +54,15 @@ export const parseJournal = (text: string): TransactionJournal | undefined => {
 export const persistJournal = (
   journalPath: string,
   journal: TransactionJournal,
-): Effect.Effect<void, ApplicationFailureResult, FileSystem.FileSystem> =>
+): Effect.Effect<void, ApplicationFailure, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
     const temporary = `${journalPath}.${randomUUID()}.tmp`
     yield* fs
       .writeFileString(temporary, JSON.stringify(journal), { flag: "wx" })
-      .pipe(Effect.mapError((cause) => toApplicationFailure(journal.planId)(cause)))
+      .pipe(Effect.mapError((cause) => toApplicationFailure(journal.planId, cause)))
     yield* fs.rename(temporary, journalPath).pipe(
-      Effect.mapError((cause) => toApplicationFailure(journal.planId)(cause)),
+      Effect.mapError((cause) => toApplicationFailure(journal.planId, cause)),
       Effect.ensuring(fs.remove(temporary, { force: true }).pipe(Effect.ignore)),
     )
   })

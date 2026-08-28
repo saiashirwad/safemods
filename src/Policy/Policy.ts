@@ -17,6 +17,17 @@ export interface DiagnosticRecord {
   readonly length?: number | undefined
 }
 
+/** Stable identity for comparing compiler diagnostics across snapshots. */
+export const diagnosticIdentity = (diagnostic: DiagnosticRecord): string =>
+  JSON.stringify([
+    diagnostic.category,
+    diagnostic.code,
+    diagnostic.fileName ?? null,
+    diagnostic.start ?? null,
+    diagnostic.length ?? null,
+    diagnostic.message,
+  ])
+
 export interface DiagnosticDiff {
   readonly introduced: ReadonlyArray<DiagnosticRecord>
   readonly resolved: ReadonlyArray<DiagnosticRecord>
@@ -54,8 +65,6 @@ export interface Policy {
   readonly rules?: ReadonlyArray<VerificationRule> | undefined
 }
 
-export type PlanPolicy = Omit<Policy, "rules">
-
 export interface CompiledPolicy {
   readonly policy: PlanPolicies
   readonly rules: ReadonlyArray<VerificationRule>
@@ -65,22 +74,13 @@ export const computeDiagnosticDiff = (
   baseline: ReadonlyArray<DiagnosticRecord>,
   proposed: ReadonlyArray<DiagnosticRecord>,
 ): DiagnosticDiff => {
-  // Category and the complete location are part of diagnostic identity.  In
+  // Category and the complete location are part of diagnostic identity. In
   // particular, a warning becoming an error must be treated as an introduced
   // error even when its code and message stay the same.
-  const key = (diagnostic: DiagnosticRecord) =>
-    JSON.stringify([
-      diagnostic.category,
-      diagnostic.code,
-      diagnostic.fileName ?? null,
-      diagnostic.start ?? null,
-      diagnostic.length ?? null,
-      diagnostic.message,
-    ])
   const group = (diagnostics: ReadonlyArray<DiagnosticRecord>) => {
     const grouped = new Map<string, Array<DiagnosticRecord>>()
     for (const diagnostic of diagnostics) {
-      const diagnosticKey = key(diagnostic)
+      const diagnosticKey = diagnosticIdentity(diagnostic)
       const matches = grouped.get(diagnosticKey)
       if (matches === undefined) grouped.set(diagnosticKey, [diagnostic])
       else matches.push(diagnostic)

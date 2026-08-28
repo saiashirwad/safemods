@@ -8,8 +8,7 @@ import {
   type InvalidEdit,
   type TextEdit,
 } from "../Edit/index.ts"
-// oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports -- Pure TextEdit value constructor.
-import { makeTextEdit } from "../Edit/Hash.ts"
+import { textEdit } from "../Edit/TextEdit.ts"
 import { mergeEvidenceEffect, type DraftEvidenceConflict } from "../Evidence/index.ts"
 import type { PlannedFileOperation } from "../Plan/index.ts"
 import { virtualFileKey } from "../VirtualFs/index.ts"
@@ -112,7 +111,7 @@ export const rebaseDrafts = (
         }
 
         combinedEdits.push(
-          makeTextEdit({
+          textEdit({
             projectId,
             fileName,
             sourceText: t0,

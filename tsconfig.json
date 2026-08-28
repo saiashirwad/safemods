@@ -15,7 +15,6 @@
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
     "paths": {
-      "safemods": ["./src/index.ts"],
       "safemods/*": ["./src/*/index.ts"]
     },
     "skipLibCheck": false,

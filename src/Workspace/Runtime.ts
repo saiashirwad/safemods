@@ -1,5 +1,6 @@
 /** Synchronous host operations required by TypeScript compiler callbacks. */
 import { Context } from "effect"
+import type { ProjectPathOperations } from "../ProjectPath/index.ts"
 
 export interface WorkspaceDirectoryEntries {
   readonly files: ReadonlyArray<string>
@@ -7,12 +8,7 @@ export interface WorkspaceDirectoryEntries {
 }
 
 /** Runtime authority for synchronous TypeScript compiler-host callbacks. */
-export interface WorkspaceRuntimeService {
-  readonly resolvePath: (...paths: ReadonlyArray<string>) => string
-  readonly dirname: (path: string) => string
-  readonly relativePath: (from: string, to: string) => string
-  readonly isAbsolutePath: (path: string) => boolean
-  readonly pathSeparator: string
+export interface WorkspaceRuntimeService extends ProjectPathOperations {
   readonly readFileText: (path: string) => string | undefined
   readonly fileExists: (path: string) => boolean | undefined
   readonly directoryExists: (path: string) => boolean | undefined

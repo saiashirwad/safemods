@@ -1,7 +1,7 @@
 import { sha256 } from "../Edit/index.ts"
+import { planHashOf } from "../Plan/Codec.ts"
 import type { Json } from "../Evidence/index.ts"
 import {
-  asJson,
   canonicalJson,
   finalizePlan,
   validatePlan,
@@ -335,7 +335,7 @@ export const encodeUnknown = (candidate: unknown): string =>
 
 export const hashJson = (value: Json): string => sha256(canonicalJson(value))
 
-export const rehashPlan = (plan: TransformationPlan): TransformationPlan => {
-  const { planId: _, ...payload } = plan
-  return { ...plan, planId: hashJson(asJson(payload)) }
-}
+export const rehashPlan = (plan: TransformationPlan): TransformationPlan => ({
+  ...plan,
+  planId: planHashOf(plan),
+})

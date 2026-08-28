@@ -4,6 +4,7 @@ import { hashDirectoryListing, sha256 } from "../Edit/Hash.ts"
 import type { SourceFingerprint, TransformationPlan } from "../Plan/index.ts"
 import {
   parseProjectRelativePath,
+  projectRelative,
   resolvePlanFilePath,
   unsafePlanFilePathMessage,
 } from "../ProjectPath/index.ts"
@@ -42,7 +43,7 @@ export const requireMatchingProjectIdentity = (
   return Effect.fail(new ProjectIdentityMismatch({ planId: plan.planId, expected, actual }))
 }
 
-const absoluteFileName = (
+export const absoluteTarget = (
   plan: TransformationPlan,
   workspaceRoot: string,
   projectId: string,
@@ -79,7 +80,7 @@ export const revalidateSource = (
 > =>
   Effect.gen(function* () {
     const stale = staleSource(plan.planId, source)
-    const absolute = yield* absoluteFileName(plan, workspaceRoot, source.projectId, source.fileName)
+    const absolute = yield* absoluteTarget(plan, workspaceRoot, source.projectId, source.fileName)
     const fs = yield* FileSystem.FileSystem
     if (source.kind === "missing") {
       const exists = yield* fs.exists(absolute).pipe(Effect.mapError(() => stale))
@@ -98,23 +99,11 @@ export const revalidateSource = (
       const path = yield* Path.Path
       const projectRoot = path.resolve(workspaceRoot, path.dirname(project.configFileName))
       const realRoot = yield* fs.realPath(projectRoot).pipe(Effect.orElseSucceed(() => projectRoot))
-      const relative = parseProjectRelativePath(
-        path.relative(realRoot, resolved).split(path.sep).join("/"),
-      )
+      const relative = parseProjectRelativePath(projectRelative(path, realRoot, resolved))
       if (relative === undefined || sha256(relative) !== source.hash) return yield* stale
       return undefined
     }
     const content = yield* fs.readFileString(absolute).pipe(Effect.mapError(() => stale))
     if (sha256(content) !== source.hash) return yield* stale
     return content
-  })
-
-export const revalidatePlanSources = (
-  plan: TransformationPlan,
-  workspaceRoot: string,
-): Effect.Effect<void, StalePlanError | VerificationFailure, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function* () {
-    for (const source of plan.sources) {
-      yield* revalidateSource(plan, workspaceRoot, source)
-    }
   })

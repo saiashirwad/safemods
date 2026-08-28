@@ -9,11 +9,11 @@ import { WorkspaceRuntime } from "../Workspace/Runtime.ts"
 
 export const workspaceRuntimeLayer = Layer.sync(WorkspaceRuntime, () =>
   WorkspaceRuntime.of({
-    resolvePath: (...paths) => Path.resolve(...paths),
+    resolve: (...paths) => Path.resolve(...paths),
     dirname: Path.dirname,
-    relativePath: Path.relative,
-    isAbsolutePath: Path.isAbsolute,
-    pathSeparator: Path.sep,
+    relative: Path.relative,
+    isAbsolute: Path.isAbsolute,
+    sep: Path.sep,
     readFileText: (path) => {
       try {
         return Fs.readFileSync(path, "utf8")

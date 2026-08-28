@@ -1,8 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Exit } from "effect"
-import { asJson, finalizePlan, parsePlan, serializePlan, validatePlan } from "./index.ts"
+import { snapshotHashOf } from "./Codec.ts"
+import { finalizePlan, parsePlan, serializePlan, validatePlan } from "./index.ts"
 import {
-  hashJson,
   encodeUnknown,
   exactStructureMutations,
   finalizeUnknown,
@@ -82,7 +82,7 @@ describe("plan structural and semantic validation", () => {
         rehashPlan({
           ...plan,
           sources,
-          snapshotHash: hashJson(asJson({ projects: plan.projects, sources })),
+          snapshotHash: snapshotHashOf({ projects: plan.projects, sources }),
         }),
       ]
 

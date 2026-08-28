@@ -50,7 +50,7 @@ const toNativeChanges = (changes: WorkspaceChanges | undefined): FileChanges | u
 }
 
 export interface OpenSnapshotRegionOptions {
-  readonly regionCompiler: NativeCompiler["Service"]
+  readonly regionCompiler: NativeCompiler
   readonly projects: ReadonlyArray<ConfiguredProject>
   readonly resolvedById: ReadonlyMap<string, string>
   readonly openProjects: ReadonlyArray<string> | undefined

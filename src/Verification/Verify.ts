@@ -1,5 +1,5 @@
 /** Complete verification orchestration and VerifiedPlan issuance. */
-import { Effect, type FileSystem, Path, Schema } from "effect"
+import { Effect, type FileSystem, type Path, Schema } from "effect"
 import {
   Workspace,
   type ProjectNotInSnapshot,
@@ -7,7 +7,6 @@ import {
   type WorkspaceCompilerError,
   type WorkspaceSnapshot,
 } from "../Workspace/index.ts"
-import type { Json } from "../Evidence/index.ts"
 import {
   canonicalJson,
   type PlanDecodeError,
@@ -17,13 +16,11 @@ import {
 import {
   allowedErrorsFromRules,
   computeDiagnosticDiff,
-  type DiagnosticDiff,
   type DiagnosticRecord,
   type PolicyEvaluationContext,
 } from "../Policy/index.ts"
-import { resolvePlanFilePath, unsafePlanFilePathMessage } from "../ProjectPath/index.ts"
 import { TOOLCHAIN, type Recipe } from "../Recipe/index.ts"
-import { decodeRecipeInput, encodeRecipeInput } from "../Recipe/Input.ts"
+import { validateRecipeInput } from "../Recipe/Input.ts"
 import type { VirtualFsSnapshot } from "../VirtualFs/index.ts"
 import { collectDiagnostics } from "./Diagnostics.ts"
 import {
@@ -35,31 +32,13 @@ import {
   ToolchainMismatch,
   VerificationFailure,
 } from "./Errors.ts"
-import { of, type PlanPreview } from "./Preview.ts"
+import { previewValidatedPlan, type PlanPreview } from "./Preview.ts"
 import { evaluateBuiltInPolicies, evaluateCustomRules } from "./PolicyEvaluation.ts"
 import type { VerificationReceipt } from "./VerificationReceipt.ts"
-import { requireMatchingProjectIdentity } from "./SourceRevalidation.ts"
+import { absoluteTarget, requireMatchingProjectIdentity } from "./SourceRevalidation.ts"
 import { issueVerifiedPlan, type VerifiedPlan } from "./VerifiedPlan.ts"
 
 const decodeJson = Schema.decodeUnknownSync(Schema.Json)
-
-const canonicalInput = <Input, E, R>(
-  recipe: Recipe<Input, E, R>,
-  input: Input,
-  planId: string,
-  expected: Json,
-): Effect.Effect<{ readonly value: Input; readonly json: Json }, RecipeInputMismatch> =>
-  Effect.gen(function* () {
-    let validated = input
-    if (recipe.schema !== undefined) {
-      validated = yield* decodeRecipeInput(recipe.schema, input)
-      const encoded = yield* encodeRecipeInput(recipe.schema, validated)
-      const json = encoded ?? null
-      return { value: validated, json }
-    }
-    const json = decodeJson(validated ?? null)
-    return { value: validated, json }
-  }).pipe(Effect.mapError(() => new RecipeInputMismatch({ planId, expected, actual: null })))
 
 const validateRecipeForPlan = <Input, E, R>(
   plan: TransformationPlan,
@@ -92,12 +71,21 @@ const validateRecipeForPlan = <Input, E, R>(
       })
     }
 
-    const encoded = yield* canonicalInput(recipe, input, plan.planId, plan.recipe.options)
-    if (canonicalJson(encoded.json) !== canonicalJson(plan.recipe.options)) {
+    const validated = yield* validateRecipeInput(recipe, input).pipe(
+      Effect.mapError(
+        () =>
+          new RecipeInputMismatch({
+            planId: plan.planId,
+            expected: plan.recipe.options,
+            actual: null,
+          }),
+      ),
+    )
+    if (canonicalJson(validated.encoded) !== canonicalJson(plan.recipe.options)) {
       return yield* new RecipeInputMismatch({
         planId: plan.planId,
         expected: plan.recipe.options,
-        actual: encoded.json,
+        actual: validated.encoded,
       })
     }
 
@@ -116,33 +104,14 @@ const validateRecipeForPlan = <Input, E, R>(
         actual: TOOLCHAIN,
       })
     }
-    return encoded.value
-  })
-
-const absoluteTarget = (
-  workspaceRoot: string,
-  plan: TransformationPlan,
-  projectId: string,
-  fileName: string,
-): Effect.Effect<string, VerificationFailure, Path.Path> =>
-  Effect.gen(function* () {
-    const path = yield* Path.Path
-    const resolved = resolvePlanFilePath(path, plan, workspaceRoot, projectId, fileName)
-    if (resolved === undefined) {
-      return yield* new VerificationFailure({
-        planId: plan.planId,
-        policy: "edits",
-        detail: unsafePlanFilePathMessage(projectId, fileName),
-      })
-    }
-    return resolved.fileName
+    return validated.value
   })
 
 const errorCount = (diagnostics: ReadonlyArray<DiagnosticRecord>): number =>
   diagnostics.filter((d) => d.category === "error").length
 
 export interface VerifyOptions {
-  readonly preview?: PlanPreview | undefined
+  readonly onPreview?: ((preview: PlanPreview) => Effect.Effect<void>) | undefined
 }
 
 /**
@@ -155,7 +124,7 @@ export const verify = <Input, E, R>(
   input: Input,
   options?: VerifyOptions | undefined,
 ): Effect.Effect<
-  VerifiedPlan & { readonly diagnosticDiff: DiagnosticDiff },
+  VerifiedPlan,
   | E
   | VerificationFailure
   | StalePlanError
@@ -175,15 +144,16 @@ export const verify = <Input, E, R>(
     const validatedPlan = yield* validatePlan(plan)
     yield* requireMatchingProjectIdentity(validatedPlan, workspace.definition.projects)
     const validatedInput = yield* validateRecipeForPlan(validatedPlan, recipe, input)
-    const proposed = options?.preview ?? (yield* of(validatedPlan))
+    const proposed = yield* previewValidatedPlan(validatedPlan, workspace.root)
+    if (options?.onPreview !== undefined) yield* options.onPreview(proposed)
 
     const files = new Map<string, string>()
     const created = new Set<string>()
     const deleted = new Set<string>()
     for (const file of proposed.files) {
       const target = yield* absoluteTarget(
-        workspace.root,
         validatedPlan,
+        workspace.root,
         file.projectId,
         file.fileName,
       )

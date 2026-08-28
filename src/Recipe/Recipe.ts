@@ -15,13 +15,13 @@ export interface Recipe<Input = undefined, E = never, R = never> {
   readonly implementationHash: string
   readonly policies: PlanPolicies
   readonly rules: ReadonlyArray<VerificationRule>
-  readonly schema?: Schema.Schema<Input> | undefined
+  readonly schema?: Schema.Codec<Input, unknown> | undefined
   readonly run: (input: Input) => Effect.Effect<Draft, E, R | WorkspaceSnapshot | Workspace>
 }
 
 export interface RecipeDefinition<Input, E, R> {
   readonly version: string
-  readonly schema?: Schema.Schema<Input>
+  readonly schema?: Schema.Codec<Input, unknown>
   /** Digest supplied by release tooling. The development default uses name and version. */
   readonly implementationHash?: string
   readonly policies?: ReadonlyArray<Policy>
