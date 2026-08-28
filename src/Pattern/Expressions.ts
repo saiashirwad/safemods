@@ -1,28 +1,17 @@
 import { Effect } from "effect"
 import {
   SyntaxKind,
-  type AwaitExpression,
   type CallExpression,
   type Identifier,
   type Node,
-  type NoSubstitutionTemplateLiteral,
-  type NumericLiteral,
   type ObjectLiteralExpression,
-  type PropertyAccessExpression,
-  type StringLiteral,
-  type TemplateExpression,
 } from "typescript/unstable/ast"
 import {
-  isAwaitExpression,
   isCallExpression,
   isIdentifier,
-  isNoSubstitutionTemplateLiteral,
-  isNumericLiteral,
   isObjectLiteralExpression,
-  isPropertyAccessExpression,
   isPropertyAssignment,
   isStringLiteral,
-  isTemplateExpression,
 } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol } from "typescript/unstable/async"
 import type { EvidenceFact } from "../Evidence/Evidence.ts"
@@ -30,7 +19,6 @@ import {
   matchFailure,
   matchSuccess,
   matchesName,
-  predicate,
   tuple,
   type AnyPattern,
   type Pattern,
@@ -113,57 +101,6 @@ export const callExpression = <EOut = Node, AOut = ReadonlyArray<Node>>(options?
   }
 }
 
-export const propertyAccess = (options?: {
-  readonly expression?: Pattern<Node, unknown>
-  readonly name?: string | RegExp
-}): Pattern<PropertyAccessExpression, PropertyAccessExpression> => ({
-  mode: "node",
-  kind: "propertyAccess",
-  syntaxKind: SyntaxKind.PropertyAccessExpression,
-  match: (node, project) =>
-    Effect.gen(function* () {
-      if (
-        !isPropertyAccessExpression(node) ||
-        (options?.name !== undefined && !matchesName(options.name, node.name.text))
-      )
-        return matchFailure
-      if (
-        options?.expression !== undefined &&
-        !(yield* options.expression.match(node.expression, project)).matched
-      )
-        return matchFailure
-      return matchSuccess(node, { property: node.name.text })
-    }),
-})
-
-export const stringLiteral = (options?: {
-  readonly text?: string | RegExp
-}): Pattern<StringLiteral, StringLiteral> => ({
-  mode: "node",
-  kind: "stringLiteral",
-  syntaxKind: SyntaxKind.StringLiteral,
-  match: (node) =>
-    Effect.sync(() =>
-      !isStringLiteral(node) ||
-      (options?.text !== undefined && !matchesName(options.text, node.text))
-        ? matchFailure
-        : matchSuccess(node, { text: node.text }),
-    ),
-})
-export const numericLiteral = (options?: {
-  readonly value?: number
-}): Pattern<NumericLiteral, NumericLiteral> => ({
-  mode: "node",
-  kind: "numericLiteral",
-  syntaxKind: SyntaxKind.NumericLiteral,
-  match: (node) =>
-    Effect.sync(() =>
-      !isNumericLiteral(node) ||
-      (options?.value !== undefined && Number(node.text) !== options.value)
-        ? matchFailure
-        : matchSuccess(node, { value: Number(node.text) }),
-    ),
-})
 export const objectLiteral = (options?: {
   readonly hasProperties?: ReadonlyArray<string>
 }): Pattern<ObjectLiteralExpression, ObjectLiteralExpression> => ({
@@ -184,35 +121,5 @@ export const objectLiteral = (options?: {
         }
       }
       return matchSuccess(node, { propertyCount: node.properties.length })
-    }),
-})
-
-export type StringLike = StringLiteral | NoSubstitutionTemplateLiteral | TemplateExpression
-export const isStringLike = (node: Node): node is StringLike =>
-  isStringLiteral(node) || isNoSubstitutionTemplateLiteral(node) || isTemplateExpression(node)
-export const stringLike = (): Pattern<Node, StringLike> =>
-  predicate<Node, StringLike>("string-like", isStringLike, [
-    SyntaxKind.StringLiteral,
-    SyntaxKind.NoSubstitutionTemplateLiteral,
-    SyntaxKind.TemplateExpression,
-  ])
-export interface AwaitExpressionPatternOptions {
-  readonly expression?: Pattern<Node, unknown>
-}
-export const awaitExpression = (
-  options?: AwaitExpressionPatternOptions,
-): Pattern<AwaitExpression, AwaitExpression> => ({
-  mode: "node",
-  kind: "awaitExpression",
-  syntaxKind: SyntaxKind.AwaitExpression,
-  match: (node, project) =>
-    Effect.gen(function* () {
-      if (!isAwaitExpression(node)) return matchFailure
-      if (
-        options?.expression !== undefined &&
-        !(yield* options.expression.match(node.expression, project)).matched
-      )
-        return matchFailure
-      return matchSuccess(node, { kind: syntaxKindName(node.kind) })
     }),
 })

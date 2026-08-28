@@ -1,3 +1,4 @@
+import { path as Path, nodeFsPromises as Fs } from "../platform/node.ts"
 import { describe, effect, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../Draft/index.ts"
@@ -6,11 +7,9 @@ import * as Policy from "../Policy/index.ts"
 import * as Recipe from "../Recipe/index.ts"
 import { VerificationFailure } from "../Verification/index.ts"
 import * as Verification from "../Verification/index.ts"
-import type { VerificationObservation } from "../Verification/VerificationReceipt.ts"
-import { verifyPreview } from "../Verification/Verify.ts"
-import { finalizePlan, type TransformationPlan } from "../Plan/index.ts"
-import { WorkspaceSnapshot } from "../Workspace/index.ts"
+import { finalizePlan } from "../Plan/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("verification diagnostics and policies", () => {
   it("computes diagnostic diffs accurately", () => {
@@ -61,41 +60,39 @@ describe("verification diagnostics and policies", () => {
     expect(diff.introduced[0]!.code).toBe(2322)
   })
 
-  it("rejects replacing one error with another even when the total is unchanged", () => {
-    // SAFETY: test uses a partial TransformationPlan stub sufficient for verifyPreview.
-    const plan = {
-      planId: "diagnostic-diff",
-      policies: {
-        matchCount: {},
-        diagnostics: "no-new-errors",
-        idempotence: "not-promised",
-      },
-    } as TransformationPlan
-    const diagnosticDiff = computeDiagnosticDiff(
-      [{ code: 2304, message: "old", category: "error" }],
-      [{ code: 2322, message: "new", category: "error" }],
-    )
-    const observation: VerificationObservation = {
-      actualMatches: 0,
-      baselineErrorCount: 1,
-      proposedErrorCount: 1,
-      diagnosticDiff,
-      policyResults: [{ name: "no-new-errors", passed: false }],
-    }
-    const result = Effect.runSyncExit(
-      verifyPreview(
-        plan,
-        {
-          planId: plan.planId,
-          snapshotHash: "snapshot",
-          files: [],
-        },
-        observation,
+  effect(
+    "rejects replacing one error with another even when the total is unchanged",
+    () =>
+      withFixture((root, app) =>
+        Effect.gen(function* () {
+          // Baseline: one error (TS2322) already in the project before the recipe runs.
+          yield* Effect.tryPromise(() =>
+            Fs.writeFile(Path.join(root, "src/swap.ts"), `export const n: number = "text";\n`),
+          )
+          const recipe = Recipe.define("swap-one-error-for-another", {
+            version: "1.0.0",
+            policies: [Policy.noNewErrors()],
+            run: () =>
+              Effect.gen(function* () {
+                const project = yield* fixtureProject(app)
+                // Resolve the TS2322 error, introduce one TS2304 error: count stays 1.
+                return Draft.concat(
+                  yield* Draft.files.delete(project, "src/swap.ts"),
+                  yield* Draft.files.create(project, "src/other.ts", "missingName;\n"),
+                )
+              }),
+          })
+          const plan = yield* Recipe.run(recipe, undefined)
+          const failure = yield* Verification.verify(plan, recipe, undefined).pipe(Effect.flip)
+          expect(failure).toBeInstanceOf(VerificationFailure)
+          if (failure instanceof VerificationFailure) {
+            expect(failure.policy).toBe("diagnostics")
+            expect(failure.detail).toContain("Introduced 1 new error diagnostic")
+          }
+        }),
       ),
-    )
-    expect(result._tag).toBe("Failure")
-    if (result._tag === "Failure") expect(result.cause).toBeDefined()
-  })
+    60_000,
+  )
 
   it("treats a diagnostic category or span change as a real transition", () => {
     const warning: DiagnosticRecord = {
@@ -126,8 +123,7 @@ describe("verification diagnostics and policies", () => {
             policies: [Policy.matches({ min: 1 }), Policy.noNewErrors(), Policy.idempotent()],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
                   module: "./library.js",
                   name: "TargetInput",
@@ -140,8 +136,7 @@ describe("verification diagnostics and policies", () => {
             policies: [Policy.matches({ min: 999 })],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
                   module: "./library.js",
                   name: "TargetInput",
@@ -246,8 +241,7 @@ describe("verification diagnostics and policies", () => {
             policies: [{ diagnostics: "exact-delta" }, Policy.idempotent()],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(
                   project,
                   "src/repeated.ts",
@@ -279,8 +273,7 @@ describe("verification diagnostics and policies", () => {
             policies: [Policy.noNewErrors()],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(project, "src/broken.ts", broken)
               }),
           })
@@ -310,8 +303,7 @@ describe("verification diagnostics and policies", () => {
             policies: [{ diagnostics: "exact-delta" }],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(project, "src/assign.ts", source)
               }),
           })
@@ -333,8 +325,7 @@ describe("verification diagnostics and policies", () => {
             policies: [Policy.allowErrors({ code })],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(project, "src/assign.ts", source)
               }),
           })
@@ -343,8 +334,7 @@ describe("verification diagnostics and policies", () => {
             policies: [Policy.allowErrors({ code: otherCode })],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(project, "src/assign.ts", source)
               }),
           })

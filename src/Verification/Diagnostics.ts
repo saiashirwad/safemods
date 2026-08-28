@@ -1,8 +1,9 @@
 /** Compiler diagnostic collection and normalization. */
 import { Effect } from "effect"
 import { DiagnosticCategory, type Diagnostic } from "typescript/unstable/async"
-import type { DiagnosticRecord } from "../Policy/index.ts"
-import { nativeRequest, WorkspaceSnapshot } from "../Workspace/index.ts"
+import { diagnosticIdentity, type DiagnosticRecord } from "../Policy/index.ts"
+import { WorkspaceSnapshot } from "../Workspace/index.ts"
+import { nativeRequest } from "../Workspace/NativeRequest.ts"
 
 const normalizeDiagnostic = (diagnostic: Diagnostic): DiagnosticRecord => ({
   code: diagnostic.code,
@@ -19,16 +20,6 @@ const normalizeDiagnostic = (diagnostic: Diagnostic): DiagnosticRecord => ({
   start: diagnostic.pos,
   length: diagnostic.end - diagnostic.pos,
 })
-
-const diagnosticIdentity = (diagnostic: DiagnosticRecord): string =>
-  JSON.stringify([
-    diagnostic.category,
-    diagnostic.code,
-    diagnostic.fileName ?? null,
-    diagnostic.start ?? null,
-    diagnostic.length ?? null,
-    diagnostic.message,
-  ])
 
 const collectProjectDiagnostics = (nativeProject: {
   readonly program: {

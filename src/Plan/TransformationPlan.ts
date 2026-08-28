@@ -1,4 +1,3 @@
-/** Durable Plan domain values and errors. */
 import { Data } from "effect"
 import type { TextEdit } from "../Edit/TextEdit.ts"
 import type { EvidenceRecord, Json } from "../Evidence/Evidence.ts"
@@ -15,7 +14,6 @@ export interface SourceFingerprint {
   readonly projectId: string
   readonly fileName: string
   readonly hash: string
-  /** Absent or `"file"` is a content hash. Other kinds are non-source observations. */
   readonly kind?: SourceFingerprintKind | undefined
 }
 
@@ -42,7 +40,6 @@ export interface MoveFileOperation extends FileOperationBase {
   readonly kind: "move"
   readonly toPath: ProjectRelativePath
   readonly initialHash: string
-  /** Optional content lets callers make the move self-contained. */
   readonly content?: string | undefined
 }
 
@@ -83,7 +80,6 @@ export interface TransformationPlan {
   readonly measurements?: PlanMeasurements | undefined
 }
 
-/** Input boundary before the content-addressed fields are assigned. */
 export interface PlanInput {
   readonly recipe: TransformationPlan["recipe"]
   readonly toolchain: TransformationPlan["toolchain"]

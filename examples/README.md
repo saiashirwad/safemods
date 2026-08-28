@@ -79,7 +79,7 @@ Legacy codemods relied on deeply nested `if` statements, manual AST node type ca
 
 ---
 
-## 3. High-Fidelity Draft Mutations (`Draft.replaceEach`, `Draft.replaceWith`, `Draft.imports`)
+## 3. High-Fidelity Draft Mutations (`Draft.replaceEach`, `Draft.imports`)
 
 ### What it solves
 

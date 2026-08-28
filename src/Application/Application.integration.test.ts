@@ -1,15 +1,15 @@
 import { path as Path, nodeFsPromises as Fs } from "../platform/node.ts"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Layer } from "effect"
-import { textHash } from "../Edit/index.ts"
-import * as Application from "../Application/index.ts"
+import { sha256 } from "../Edit/index.ts"
 import * as Draft from "../Draft/index.ts"
-import { applicationLayerNode } from "../Node/index.ts"
+import { executeRecipe } from "../Execution/index.ts"
+import { layer as nodeLayer } from "../Node/index.ts"
 import * as Overlay from "../Overlay/index.ts"
 import * as Recipe from "../Recipe/index.ts"
-import * as Verification from "../Verification/index.ts"
 import { Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("declarative transformations API (@effect/vitest)", () => {
   describe("file lifecycle operations in plans", () => {
@@ -18,7 +18,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
       () =>
         withFixture((root, app) =>
           Effect.gen(function* () {
-            const mainLayer = applicationLayerNode.pipe(
+            const mainLayer = nodeLayer.pipe(
               Layer.provideMerge(Layer.succeed(Workspace, yield* Workspace)),
             )
 
@@ -27,8 +27,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
               policies: [{ diagnostics: "exact-delta" }],
               run: () =>
                 Effect.gen(function* () {
-                  const snapshot = yield* WorkspaceSnapshot
-                  const project = yield* snapshot.project(app)
+                  const project = yield* fixtureProject(app)
 
                   const d1 = yield* Draft.files.create(
                     project,
@@ -46,14 +45,11 @@ describe("declarative transformations API (@effect/vitest)", () => {
                 }),
             })
 
-            const plan = yield* Recipe.run(fileLifecycleRecipe, undefined)
-            expect(plan.fileOperations?.length).toBe(2)
-
-            const preview = yield* Verification.of(plan)
-            expect(preview.files.length).toBeGreaterThanOrEqual(2)
-
-            const verified = yield* Verification.verify(plan, fileLifecycleRecipe, undefined)
-            yield* Application.apply(verified).pipe(Effect.provide(mainLayer))
+            const execution = yield* executeRecipe(fileLifecycleRecipe, undefined, {
+              mode: "apply",
+            }).pipe(Effect.provide(mainLayer))
+            expect(execution.plan.fileOperations?.length).toBe(2)
+            expect(execution.preview.files.length).toBeGreaterThanOrEqual(2)
 
             const createdContent = yield* Effect.tryPromise(() =>
               Fs.readFile(Path.join(root, "src/utils.ts"), "utf8"),
@@ -79,7 +75,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
       () =>
         withFixture((root, app) =>
           Effect.gen(function* () {
-            const mainLayer = applicationLayerNode.pipe(
+            const mainLayer = nodeLayer.pipe(
               Layer.provideMerge(Layer.succeed(Workspace, yield* Workspace)),
             )
             yield* Effect.tryPromise(() =>
@@ -123,8 +119,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
               policies: [{ diagnostics: "exact-delta" }],
               run: () =>
                 Effect.gen(function* () {
-                  const snapshot = yield* WorkspaceSnapshot
-                  const project = yield* snapshot.project(app)
+                  const project = yield* fixtureProject(app)
                   return yield* Draft.files.move(project, "src/movable.ts", "src/nested/moved.ts")
                 }),
             })
@@ -134,7 +129,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
               {},
               Effect.gen(function* () {
                 const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const moveDraft = yield* Draft.files.move(
                   project,
                   "src/movable.ts",
@@ -148,7 +143,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
                       fileName: "src/movable.ts",
                       start: 0,
                       end: 0,
-                      expectedTextHash: textHash(""),
+                      expectedTextHash: sha256(""),
                       newText: "// pre-move\n",
                       evidenceIds: [],
                     },
@@ -159,13 +154,16 @@ describe("declarative transformations API (@effect/vitest)", () => {
             )
             expect(preMoveFail._tag).toBe("Failure")
 
-            const plan = yield* Recipe.run(moveRecipe, undefined)
-            const move = plan.fileOperations?.find((operation) => operation.kind === "move")
+            const execution = yield* executeRecipe(moveRecipe, undefined, {
+              mode: "apply",
+            }).pipe(Effect.provide(mainLayer))
+            const move = execution.plan.fileOperations?.find(
+              (operation) => operation.kind === "move",
+            )
             expect(move?.kind === "move" ? move.content : "").toContain("../peer.js")
-            expect(plan.edits.some((edit) => edit.fileName === "src/specifiers.ts")).toBe(true)
-
-            const verified = yield* Verification.verify(plan, moveRecipe, undefined)
-            yield* Application.apply(verified).pipe(Effect.provide(mainLayer))
+            expect(execution.plan.edits.some((edit) => edit.fileName === "src/specifiers.ts")).toBe(
+              true,
+            )
 
             const moved = yield* Effect.tryPromise(() =>
               Fs.readFile(Path.join(root, "src/nested/moved.ts"), "utf8"),

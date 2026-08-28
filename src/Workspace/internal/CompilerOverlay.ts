@@ -1,5 +1,6 @@
 /** Native compiler filesystem options for an isolated virtual snapshot. */
 import type { APIOptions } from "typescript/unstable/async"
+import { isPathContained } from "../../ProjectPath/index.ts"
 import type { VirtualFsSnapshot } from "../../VirtualFs/index.ts"
 import type { SnapshotTransition } from "../ConfiguredProject.ts"
 import type { WorkspaceRuntimeService } from "../Runtime.ts"
@@ -18,22 +19,13 @@ interface WorkspaceFileChanges {
 /** Build the compiler overlay without writing to the workspace. */
 export const compilerOverlayFor = (
   runtime: WorkspaceRuntimeService,
-  root: string,
   apiOptions: APIOptions,
   overlay: VirtualFsSnapshot,
 ): CompilerOverlay => {
   const deleted = overlay.deleted
   const created = overlay.created
-  const matchesVirtualPath = (observed: string, planned: string): boolean => {
-    if (observed === planned) return true
-    const relative = runtime.relativePath(root, planned)
-    return (
-      relative !== "" &&
-      !relative.startsWith("..") &&
-      !runtime.isAbsolutePath(relative) &&
-      observed.endsWith(`${runtime.pathSeparator}${relative}`)
-    )
-  }
+  const matchesVirtualPath = (observed: string, planned: string): boolean =>
+    runtime.resolve(observed) === runtime.resolve(planned)
 
   const options: APIOptions = {
     ...apiOptions,
@@ -51,7 +43,7 @@ export const compilerOverlayFor = (
             }
           })()
         const isDeleted = (entry: string) => {
-          const absolute = runtime.resolvePath(directoryName, entry)
+          const absolute = runtime.resolve(directoryName, entry)
           return [...deleted].some((path) => matchesVirtualPath(absolute, path))
         }
         const files = new Set((existing?.files ?? []).filter((entry) => !isDeleted(entry)))
@@ -59,10 +51,9 @@ export const compilerOverlayFor = (
           (existing?.directories ?? []).filter((entry) => !isDeleted(entry)),
         )
         for (const plannedFileName of overlay.files.keys()) {
-          const relative = runtime.relativePath(directoryName, plannedFileName)
-          if (relative === "" || relative.startsWith("..") || runtime.isAbsolutePath(relative))
-            continue
-          const first = relative.split(runtime.pathSeparator)[0]!
+          if (!isPathContained(runtime, directoryName, plannedFileName)) continue
+          const relative = runtime.relative(directoryName, plannedFileName)
+          const first = relative.split(runtime.sep)[0]!
           if (first === relative) files.add(first)
           else directories.add(first)
         }

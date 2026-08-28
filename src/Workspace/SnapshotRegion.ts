@@ -1,7 +1,8 @@
 /** Snapshot-region lifetime and service provisioning. */
 import { Context, Effect } from "effect"
 import type { FileChanges } from "typescript/unstable/proto"
-import type { NativeCompiler, WorkspaceCompilerError } from "./internal/NativeCompiler.ts"
+import type { NativeCompiler } from "./internal/NativeCompiler.ts"
+import type { WorkspaceCompilerError } from "./NativeRequest.ts"
 import {
   type ConfiguredProject,
   ProjectNotInSnapshot,
@@ -49,7 +50,7 @@ const toNativeChanges = (changes: WorkspaceChanges | undefined): FileChanges | u
 }
 
 export interface OpenSnapshotRegionOptions {
-  readonly regionCompiler: NativeCompiler["Service"]
+  readonly regionCompiler: NativeCompiler
   readonly projects: ReadonlyArray<ConfiguredProject>
   readonly resolvedById: ReadonlyMap<string, string>
   readonly openProjects: ReadonlyArray<string> | undefined

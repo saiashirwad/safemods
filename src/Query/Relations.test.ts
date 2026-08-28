@@ -3,7 +3,6 @@ import { Effect } from "effect"
 import * as Draft from "../Draft/index.ts"
 import * as Overlay from "../Overlay/index.ts"
 import * as Pattern from "../Pattern/index.ts"
-import { Criterion } from "../Query/index.ts"
 import * as Query from "../Query/index.ts"
 import { Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"
 import {
@@ -14,6 +13,7 @@ import {
   isVariableStatement,
 } from "typescript/unstable/ast/is"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("declarative transformations API (@effect/vitest)", () => {
   describe("relational AST combinators", () => {
@@ -26,8 +26,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const consumerFile = yield* project.sourceFile("src/consumer.ts")
                 expect(consumerFile).toBeDefined()
 
@@ -61,7 +60,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
                     const awaitsInLoops = yield* Query.nodes(
                       overlayProject,
                       isAwaitExpression,
-                    ).pipe(Query.inside(Pattern.loop()), Query.collect)
+                    ).pipe(Query.where(Query.Criterion.inside(Pattern.loop())), Query.collect)
                     expect(awaitsInLoops.length).toBe(1)
                     expect(
                       awaitsInLoops[0]!.evidence.some((e) => e.criterion.startsWith("inside")),
@@ -71,7 +70,9 @@ describe("declarative transformations API (@effect/vitest)", () => {
                       overlayProject,
                       isAwaitExpression,
                     ).pipe(
-                      Query.inside(Pattern.functionDeclaration({ name: /Handler$/ })),
+                      Query.where(
+                        Query.Criterion.inside(Pattern.functionDeclaration({ name: /Handler$/ })),
+                      ),
                       Query.collect,
                     )
                     expect(awaitsInHandlers.length).toBe(1)
@@ -79,7 +80,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
                     const logsInLoopWithBoundary = yield* Query.calls(overlayProject).pipe(
                       Query.within("src/consumer.ts"),
                       Query.where(Query.textMatches("in-callback")),
-                      Query.inside(Pattern.loop(), { stopBy: "boundary" }),
+                      Query.where(Query.Criterion.inside(Pattern.loop(), { stopBy: "boundary" })),
                       Query.collect,
                     )
                     expect(logsInLoopWithBoundary.length).toBe(0)
@@ -87,7 +88,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
                     const logsInLoopWithRoot = yield* Query.calls(overlayProject).pipe(
                       Query.within("src/consumer.ts"),
                       Query.where(Query.textMatches("in-callback")),
-                      Query.inside(Pattern.loop(), { stopBy: "root" }),
+                      Query.where(Query.Criterion.inside(Pattern.loop(), { stopBy: "root" })),
                       Query.collect,
                     )
                     expect(logsInLoopWithRoot.length).toBe(1)
@@ -109,8 +110,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const consumerFile = yield* project.sourceFile("src/consumer.ts")
                 expect(consumerFile).toBeDefined()
                 const code = `
@@ -149,10 +149,12 @@ describe("declarative transformations API (@effect/vitest)", () => {
                     })
 
                     const tryWithTarget = yield* Query.nodes(overlayProject, isTryStatement).pipe(
-                      Query.has(
-                        Query.resolvesTo(targetSymbol, {
-                          location: (n) => (isCallExpression(n) ? n.expression : n),
-                        }),
+                      Query.where(
+                        Query.Criterion.has(
+                          Query.resolvesTo(targetSymbol, {
+                            location: (n) => (isCallExpression(n) ? n.expression : n),
+                          }),
+                        ),
                       ),
                       Query.collect,
                     )
@@ -166,7 +168,11 @@ describe("declarative transformations API (@effect/vitest)", () => {
                       isFunctionDeclaration,
                     ).pipe(
                       Query.where(Query.textMatches("outerFunction")),
-                      Query.has(Pattern.identifier({ name: "target" }), { stopBy: "boundary" }),
+                      Query.where(
+                        Query.Criterion.has(Pattern.identifier({ name: "target" }), {
+                          stopBy: "boundary",
+                        }),
+                      ),
                       Query.collect,
                     )
                     expect(outerBoundary.length).toBe(0)
@@ -176,7 +182,11 @@ describe("declarative transformations API (@effect/vitest)", () => {
                       isFunctionDeclaration,
                     ).pipe(
                       Query.where(Query.textMatches("outerFunction")),
-                      Query.has(Pattern.identifier({ name: "target" }), { stopBy: "root" }),
+                      Query.where(
+                        Query.Criterion.has(Pattern.identifier({ name: "target" }), {
+                          stopBy: "root",
+                        }),
+                      ),
                       Query.collect,
                     )
                     expect(outerRoot.length).toBe(1)
@@ -198,8 +208,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const consumerFile = yield* project.sourceFile("src/consumer.ts")
                 expect(consumerFile).toBeDefined()
 
@@ -220,25 +229,37 @@ describe("declarative transformations API (@effect/vitest)", () => {
 
                     const callsFollowingInit = yield* Query.calls(overlayProject).pipe(
                       Query.where(Query.textMatches("doAction")),
-                      Query.follows(Pattern.variableStatement({ name: "initialized" })),
+                      Query.where(
+                        Query.Criterion.follows(Pattern.variableStatement({ name: "initialized" })),
+                      ),
                       Query.collect,
                     )
                     expect(callsFollowingInit.length).toBe(1)
 
                     const callsImmediatelyFollowingInit = yield* Query.calls(overlayProject).pipe(
                       Query.where(Query.textMatches("doAction")),
-                      Query.follows(Pattern.variableStatement({ name: "initialized" }), {
-                        immediately: true,
-                      }),
+                      Query.where(
+                        Query.Criterion.follows(
+                          Pattern.variableStatement({ name: "initialized" }),
+                          {
+                            immediately: true,
+                          },
+                        ),
+                      ),
                       Query.collect,
                     )
                     expect(callsImmediatelyFollowingInit.length).toBe(0)
 
                     const callsImmediatelyFollowingInter = yield* Query.calls(overlayProject).pipe(
                       Query.where(Query.textMatches("doAction")),
-                      Query.follows(Pattern.variableStatement({ name: "intermediate" }), {
-                        immediately: true,
-                      }),
+                      Query.where(
+                        Query.Criterion.follows(
+                          Pattern.variableStatement({ name: "intermediate" }),
+                          {
+                            immediately: true,
+                          },
+                        ),
+                      ),
                       Query.collect,
                     )
                     expect(callsImmediatelyFollowingInter.length).toBe(1)
@@ -247,11 +268,13 @@ describe("declarative transformations API (@effect/vitest)", () => {
                       overlayProject,
                     ).pipe(
                       Query.where(Query.textMatches("doAction")),
-                      Query.precedes(
-                        Pattern.callExpression({
-                          expression: Pattern.identifier({ name: "cleanup" }),
-                        }),
-                        { immediately: true },
+                      Query.where(
+                        Query.Criterion.precedes(
+                          Pattern.callExpression({
+                            expression: Pattern.identifier({ name: "cleanup" }),
+                          }),
+                          { immediately: true },
+                        ),
                       ),
                       Query.collect,
                     )
@@ -262,10 +285,12 @@ describe("declarative transformations API (@effect/vitest)", () => {
                       isVariableStatement,
                     ).pipe(
                       Query.where(Query.textMatches("initialized")),
-                      Query.precedes(
-                        Pattern.callExpression({
-                          expression: Pattern.identifier({ name: "cleanup" }),
-                        }),
+                      Query.where(
+                        Query.Criterion.precedes(
+                          Pattern.callExpression({
+                            expression: Pattern.identifier({ name: "cleanup" }),
+                          }),
+                        ),
                       ),
                       Query.collect,
                     )
@@ -273,7 +298,9 @@ describe("declarative transformations API (@effect/vitest)", () => {
 
                     const cleanupFollowingInit = yield* Query.calls(overlayProject).pipe(
                       Query.where(Query.textMatches("cleanup")),
-                      Query.follows(Pattern.variableStatement({ name: "initialized" })),
+                      Query.where(
+                        Query.Criterion.follows(Pattern.variableStatement({ name: "initialized" })),
+                      ),
                       Query.collect,
                     )
                     expect(cleanupFollowingInit.length).toBe(1)
@@ -287,7 +314,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
     )
 
     effect(
-      "composes relational combinators with algebraic Criterion algebra (all, any, not)",
+      "composes relational criteria with all, any, and not",
       () =>
         withFixture((_, app) =>
           Effect.gen(function* () {
@@ -295,8 +322,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const consumerFile = yield* project.sourceFile("src/consumer.ts")
                 expect(consumerFile).toBeDefined()
 
@@ -326,9 +352,9 @@ describe("declarative transformations API (@effect/vitest)", () => {
 
                     const inClassAndLoop = yield* Query.calls(overlayProject).pipe(
                       Query.where(
-                        Criterion.all(
-                          Criterion.inside(Pattern.classDeclaration({ name: "Service" })),
-                          Criterion.inside(Pattern.loop()),
+                        Query.Criterion.all(
+                          Query.Criterion.inside(Pattern.classDeclaration({ name: "Service" })),
+                          Query.Criterion.inside(Pattern.loop()),
                         ),
                       ),
                       Query.collect,
@@ -340,9 +366,9 @@ describe("declarative transformations API (@effect/vitest)", () => {
 
                     const inClassNotLoop = yield* Query.calls(overlayProject).pipe(
                       Query.where(
-                        Criterion.all(
-                          Criterion.inside(Pattern.classDeclaration({ name: "Service" })),
-                          Criterion.not(Criterion.inside(Pattern.loop())),
+                        Query.Criterion.all(
+                          Query.Criterion.inside(Pattern.classDeclaration({ name: "Service" })),
+                          Query.Criterion.not(Query.Criterion.inside(Pattern.loop())),
                         ),
                       ),
                       Query.collect,
@@ -354,9 +380,9 @@ describe("declarative transformations API (@effect/vitest)", () => {
 
                     const inClassOrLoop = yield* Query.calls(overlayProject).pipe(
                       Query.where(
-                        Criterion.any(
-                          Criterion.inside(Pattern.classDeclaration({ name: "Service" })),
-                          Criterion.inside(Pattern.loop()),
+                        Query.Criterion.any(
+                          Query.Criterion.inside(Pattern.classDeclaration({ name: "Service" })),
+                          Query.Criterion.inside(Pattern.loop()),
                         ),
                       ),
                       Query.collect,
@@ -380,8 +406,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const consumerFile = yield* project.sourceFile("src/consumer.ts")
                 expect(consumerFile).toBeDefined()
 
@@ -494,8 +519,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const calls = Query.calls(project)
 
                 const dataFirstWhere = yield* Query.collect(

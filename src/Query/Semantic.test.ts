@@ -103,26 +103,6 @@ describe("Query semantic criteria", () => {
   )
 
   effect(
-    "typeOf inspects the computed type of a node",
-    () =>
-      withProject({ "src/sem.ts": SEM_SOURCE }, (project) =>
-        Effect.gen(function* () {
-          const parameters = yield* Query.identifiers(project).pipe(
-            inSem,
-            Query.filter((selection) => selection.value.text === "value"),
-            Query.collect,
-          )
-          expect(parameters.length).toBe(6) // three parameters plus three uses
-          const nativeType = yield* Query.typeOf(project, parameters[0]!.value)
-          expect(nativeType).toBeDefined()
-          const rendered = yield* project.typeToString(nativeType!)
-          expect(rendered).toBe("number")
-        }),
-      ),
-    60_000,
-  )
-
-  effect(
     "typeAssignableTo admits nodes assignable to an intrinsic type and records the target",
     () =>
       withProject({ "src/sem.ts": SEM_SOURCE }, (project) =>

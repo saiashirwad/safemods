@@ -1,10 +1,3 @@
-/**
- * High-fidelity terminal diff and diagnostic renderer.
- *
- * Produces ANSI-colored unified diffs from before/after text buffers,
- * complete with line numbers, hunk headers, change summaries, and
- * diagnostic delta badges.
- */
 import type { DiagnosticDiff } from "../Policy/index.ts"
 import type { FilePreview, PlanPreview } from "../Verification/index.ts"
 import { ANSI, colorize } from "./Ansi.ts"
@@ -14,7 +7,6 @@ export interface DiffOptions {
   readonly contextLines?: number
 }
 
-/** Compute line-by-line unified diff between two text versions. */
 export const computeUnifiedDiff = (
   fileName: string,
   beforeText: string,
@@ -79,7 +71,6 @@ export const computeUnifiedDiff = (
   return lines.join("\n")
 }
 
-/** Render a formatted terminal report for a FilePreview. */
 export const renderFilePreview = (file: FilePreview, options: DiffOptions = {}): string => {
   const useColor = options.color ?? true
   const badge =
@@ -98,7 +89,6 @@ export const renderFilePreview = (file: FilePreview, options: DiffOptions = {}):
   return `${header}\n${diff}`
 }
 
-/** Render full terminal preview for a PlanPreview. */
 export const renderPlanPreview = (preview: PlanPreview, options: DiffOptions = {}): string => {
   const useColor = options.color ?? true
   const lines: Array<string> = []

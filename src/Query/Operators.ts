@@ -2,6 +2,7 @@
 import { Effect, Function, Predicate, Stream } from "effect"
 import type { CallExpression, Node } from "typescript/unstable/ast"
 import { isProjectFile, type ProjectFile } from "../Workspace/index.ts"
+import { testRegExp } from "../Pattern/Pattern.ts"
 import {
   CriterionBase,
   QueryContractError,
@@ -59,11 +60,6 @@ const textIncludes =
     const text = selection.value.getText(sourceFile)
     return text.includes(pattern) ? { matchedText: text } : undefined
   }
-
-const testRegExp = (pattern: RegExp, value: string): boolean => {
-  const fresh = new RegExp(pattern.source, pattern.flags)
-  return fresh.test(value)
-}
 
 const textMatchesRegExp =
   (pattern: RegExp) =>

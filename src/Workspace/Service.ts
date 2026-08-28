@@ -1,12 +1,13 @@
 /** Workspace service orchestration and layer construction. */
-import { Context, Effect, Layer, Semaphore } from "effect"
+import { Context, Effect, Layer, Semaphore, type Scope } from "effect"
 import type { APIOptions } from "typescript/unstable/async"
+import { openCompiler } from "./internal/NativeCompiler.ts"
+import type { WorkspaceCompilerError } from "./NativeRequest.ts"
 import {
-  layer as nativeCompilerLayer,
-  NativeCompiler,
-  type WorkspaceCompilerError,
-} from "./internal/NativeCompiler.ts"
-import { InvalidProjectRelativePath, parseProjectRelativePath } from "../ProjectPath/index.ts"
+  InvalidProjectRelativePath,
+  isPathContained,
+  parseProjectRelativePath,
+} from "../ProjectPath/index.ts"
 import type { VirtualFsSnapshot } from "../VirtualFs/index.ts"
 import {
   DuplicateConfiguredProject,
@@ -16,22 +17,7 @@ import {
 } from "./ConfiguredProject.ts"
 import { type WorkspaceSnapshot, openSnapshotRegion } from "./SnapshotRegion.ts"
 import { compilerOverlayFor } from "./internal/CompilerOverlay.ts"
-import {
-  attachInputObserver,
-  inputObserverOf,
-  type CompilerObservation,
-} from "./internal/ObservedInputs.ts"
-import { WorkspaceRuntime, type WorkspaceRuntimeService } from "./Runtime.ts"
-
-const isWithinProject = (runtime: WorkspaceRuntimeService, root: string, candidate: string) => {
-  const relative = runtime.relativePath(root, candidate)
-  return (
-    relative !== "" &&
-    relative !== ".." &&
-    !relative.startsWith(`..${runtime.pathSeparator}`) &&
-    !runtime.isAbsolutePath(relative)
-  )
-}
+import { WorkspaceRuntime } from "./Runtime.ts"
 
 export interface WorkspaceService {
   readonly definition: WorkspaceDefinition
@@ -54,55 +40,37 @@ export interface WorkspaceService {
     E | WorkspaceCompilerError | ProjectNotInSnapshot,
     Exclude<R, WorkspaceSnapshot>
   >
-  readonly compilerObservations: () => ReadonlyArray<CompilerObservation>
 }
 
 export class Workspace extends Context.Service<Workspace, WorkspaceService>()(
   // oxlint-disable-next-line effecttsgo/deterministic-keys -- Stable public service identifier.
   "@safemods/Workspace",
 ) {
-  static readonly layerWithoutDependencies = (
-    definition: WorkspaceDefinition,
-    options: APIOptions = {},
-  ): Layer.Layer<
-    Workspace,
-    DuplicateConfiguredProject | InvalidProjectRelativePath,
-    NativeCompiler | WorkspaceRuntime
-  > => layerWithoutDependencies(definition, options)
-
-  static readonly layer = (
-    definition: WorkspaceDefinition,
-    options: APIOptions = {},
-  ): Layer.Layer<
-    Workspace,
-    DuplicateConfiguredProject | InvalidProjectRelativePath,
-    WorkspaceRuntime
-  > => layer(definition, options)
+  // The Node adapter owns public layer construction.
 }
 
-export const make = (
+const make = (
   definition: WorkspaceDefinition,
   apiOptions: APIOptions,
 ): Effect.Effect<
   Workspace["Service"],
   DuplicateConfiguredProject | InvalidProjectRelativePath,
-  NativeCompiler | WorkspaceRuntime
+  Scope.Scope | WorkspaceRuntime
 > =>
   Effect.gen(function* () {
-    const compiler = yield* NativeCompiler
     const runtime = yield* WorkspaceRuntime
+    const compiler = yield* openCompiler(apiOptions)
     const transitionLock = yield* Semaphore.make(1)
-    const root = runtime.resolvePath(apiOptions.cwd ?? ".")
-    const inputObserver = inputObserverOf(apiOptions.fs)
+    const root = runtime.resolve(apiOptions.cwd ?? ".")
 
     const projects = Object.freeze([...definition.projects])
     const resolvedById = new Map<string, string>()
     for (const project of projects) {
       const relativeConfig = parseProjectRelativePath(project.config)
       const candidate =
-        relativeConfig === undefined ? undefined : runtime.resolvePath(root, relativeConfig)
+        relativeConfig === undefined ? undefined : runtime.resolve(root, relativeConfig)
       const configFileName =
-        candidate !== undefined && isWithinProject(runtime, root, candidate) ? candidate : undefined
+        candidate !== undefined && isPathContained(runtime, root, candidate) ? candidate : undefined
       if (configFileName === undefined) {
         return yield* new InvalidProjectRelativePath({ path: project.config })
       }
@@ -117,7 +85,6 @@ export const make = (
     const withSnapshot: WorkspaceService["withSnapshot"] = (transition, program) =>
       transitionLock.withPermit(
         Effect.suspend(() => {
-          inputObserver?.reset()
           const openProjects = opened ? undefined : [...resolvedById.values()]
           return openSnapshotRegion(
             {
@@ -137,21 +104,23 @@ export const make = (
       )
 
     const withIsolatedSnapshot: WorkspaceService["withIsolatedSnapshot"] = (overlay, program) => {
-      const isolated = compilerOverlayFor(runtime, root, apiOptions, overlay)
-      return Effect.gen(function* () {
-        const isolatedCompiler = yield* NativeCompiler
-        return yield* openSnapshotRegion(
-          {
-            regionCompiler: isolatedCompiler,
-            projects,
-            resolvedById,
-            openProjects: [...resolvedById.values()],
-            transition: isolated.transition,
-            runtime,
-          },
-          program,
-        )
-      }).pipe(Effect.provide(nativeCompilerLayer(isolated.options)))
+      const isolated = compilerOverlayFor(runtime, apiOptions, overlay)
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const isolatedCompiler = yield* openCompiler(isolated.options)
+          return yield* openSnapshotRegion(
+            {
+              regionCompiler: isolatedCompiler,
+              projects,
+              resolvedById,
+              openProjects: [...resolvedById.values()],
+              transition: isolated.transition,
+              runtime,
+            },
+            program,
+          )
+        }),
+      )
     }
 
     return Workspace.of({
@@ -159,18 +128,8 @@ export const make = (
       root,
       withSnapshot,
       withIsolatedSnapshot,
-      compilerObservations: () => inputObserver?.snapshot() ?? [],
     })
   })
-
-export const layerWithoutDependencies = (
-  definition: WorkspaceDefinition,
-  options: APIOptions = {},
-): Layer.Layer<
-  Workspace,
-  DuplicateConfiguredProject | InvalidProjectRelativePath,
-  NativeCompiler | WorkspaceRuntime
-> => Layer.effect(Workspace, make(definition, options))
 
 export const layer = (
   definition: WorkspaceDefinition,
@@ -179,14 +138,4 @@ export const layer = (
   Workspace,
   DuplicateConfiguredProject | InvalidProjectRelativePath,
   WorkspaceRuntime
-> =>
-  Layer.unwrap(
-    WorkspaceRuntime.use((runtime) => {
-      const observed = attachInputObserver(options, runtime)
-      return Effect.succeed(
-        layerWithoutDependencies(definition, observed).pipe(
-          Layer.provide(nativeCompilerLayer(observed)),
-        ),
-      )
-    }),
-  )
+> => Layer.effect(Workspace, make(definition, options))

@@ -8,19 +8,17 @@ import {
   type Symbol as NativeSymbol,
   type Type as NativeType,
 } from "typescript/unstable/async"
-import {
-  nativeRequest,
-  WorkspaceCompilerError,
-  type NativeCompilerError,
-} from "./internal/NativeCompiler.ts"
+import { nativeRequest, WorkspaceCompilerError } from "./NativeRequest.ts"
 import {
   InvalidProjectRelativePath,
+  isPathContained,
   parseProjectRelativePath,
+  projectRelative,
   requireProjectRelativePath,
+  resolveContainedProjectPath,
   type ProjectRelativePath,
 } from "../ProjectPath/index.ts"
 import type { ConfiguredProject } from "./ConfiguredProject.ts"
-import { dependencyGraphNavigation } from "./internal/DependencyGraph.ts"
 import type { WorkspaceRuntimeService } from "./Runtime.ts"
 
 export class SnapshotExpired extends Data.TaggedError("SnapshotExpired")<{
@@ -38,15 +36,22 @@ export class FileNotFound extends Data.TaggedError("FileNotFound")<{
 }> {}
 
 export { WorkspaceCompilerError }
-export type { NativeCompilerError }
 export type ProjectSnapshotError = WorkspaceCompilerError | SnapshotExpired
 
-export const ProjectFileTypeSymbol = Symbol.for("@safemods/ProjectFile")
+export type IntrinsicTypeName =
+  | "string"
+  | "number"
+  | "boolean"
+  | "any"
+  | "unknown"
+  | "never"
+  | "void"
 
-export interface DependencyGraphOptions {
-  /** Recursively traverse indirect file references. Defaults to `false`. */
-  readonly transitive?: boolean
-}
+export const isIntrinsicTypeName = (
+  value: NativeType | IntrinsicTypeName,
+): value is IntrinsicTypeName => Predicate.isString(value)
+
+export const ProjectFileTypeSymbol = Symbol.for("@safemods/ProjectFile")
 
 /** A validated reference to an existing source file in a Project Snapshot. */
 export interface ProjectFile {
@@ -66,12 +71,6 @@ export interface ProjectFile {
     position: number,
   ) => Effect.Effect<NativeSymbol | undefined, ProjectSnapshotError>
   readonly typeAt: (position: number) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
-  readonly referencingFiles: (
-    options?: DependencyGraphOptions,
-  ) => Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError>
-  readonly referencedFiles: (
-    options?: DependencyGraphOptions,
-  ) => Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError>
 }
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Type guard boundary for ProjectFile handles.
@@ -89,7 +88,6 @@ export interface ProjectSnapshot {
   readonly resolveFileName: (fileName: string) => string
   /** Convert an absolute file name to slash-separated relative form. External paths can escape. */
   readonly relativeFileName: (fileName: string) => string
-  readonly rootFiles: ReadonlyArray<string>
   readonly sourceFileNames: Effect.Effect<ReadonlyArray<string>, ProjectSnapshotError>
   readonly sourceFile: (
     fileName: string,
@@ -100,11 +98,7 @@ export interface ProjectSnapshot {
   readonly file: (
     fileName: string,
   ) => Effect.Effect<ProjectFile, FileNotFound | InvalidProjectRelativePath | ProjectSnapshotError>
-  readonly findFile: (
-    fileName: string,
-  ) => Effect.Effect<Option.Option<ProjectFile>, InvalidProjectRelativePath | ProjectSnapshotError>
   readonly files: Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError>
-  readonly semanticDiagnosticCount: Effect.Effect<number, ProjectSnapshotError>
   readonly symbolAt: (
     fileName: string,
     position: number,
@@ -134,7 +128,7 @@ export interface ProjectSnapshot {
     toType: NativeType,
   ) => Effect.Effect<boolean, ProjectSnapshotError>
   readonly intrinsicType: (
-    kind: "string" | "number" | "boolean" | "any" | "unknown" | "never" | "void",
+    kind: IntrinsicTypeName,
   ) => Effect.Effect<NativeType, ProjectSnapshotError>
   /** Print an AST node using the snapshot emitter. */
   readonly printNode: (node: Node) => Effect.Effect<string, ProjectSnapshotError>
@@ -160,35 +154,67 @@ export const projectSnapshotFor = ({
   ensureActive,
   runtime,
 }: ProjectSnapshotOptions): ProjectSnapshot => {
-  const isWithinProject = (fileName: string): boolean => {
-    // Native paths (e.g. symbol declaration paths from the compiler) can
-    // differ from the workspace root in letter case on case-insensitive
-    // filesystems, so containment folds case before comparing.
-    const relative = runtime.relativePath(
-      projectRoot.toLowerCase(),
-      runtime.resolvePath(fileName).toLowerCase(),
-    )
-    return (
-      relative !== "" &&
-      relative !== ".." &&
-      !relative.startsWith(`..${runtime.pathSeparator}`) &&
-      !runtime.isAbsolutePath(relative)
-    )
-  }
-  const containsFileName = isWithinProject
-  const resolveFileName = (fileName: string): string => runtime.resolvePath(projectRoot, fileName)
-  const relativeFileName = (fileName: string): string =>
-    runtime.relativePath(projectRoot, runtime.resolvePath(fileName)).replaceAll("\\", "/")
-
-  const requireContainedPath = (fileName: string): string | undefined => {
-    const relative = parseProjectRelativePath(fileName)
-    if (relative !== undefined) {
-      const absolute = runtime.resolvePath(projectRoot, relative)
-      return isWithinProject(absolute) ? absolute : undefined
+  const containmentOptions = { caseInsensitive: true } as const
+  const resolvedProjectRoot = runtime.resolve(projectRoot)
+  const canonicalProjectRoot = runtime.realPath(resolvedProjectRoot) ?? resolvedProjectRoot
+  const comparisonHostPath = (fileName: string): string => {
+    const resolved = runtime.resolve(fileName)
+    const real = runtime.realPath(resolved)
+    if (real !== undefined) return real
+    if (
+      !isPathContained(runtime, resolvedProjectRoot, resolved, {
+        ...containmentOptions,
+        includeRoot: true,
+      })
+    ) {
+      return resolved
     }
-    if (!runtime.isAbsolutePath(fileName)) return undefined
-    const absolute = runtime.resolvePath(fileName)
-    return isWithinProject(absolute) ? absolute : undefined
+    const relative = isPathContained(runtime, resolvedProjectRoot, resolved, {
+      includeRoot: true,
+    })
+      ? runtime.relative(resolvedProjectRoot, resolved)
+      : runtime.relative(resolvedProjectRoot.toLowerCase(), resolved.toLowerCase())
+    return relative === "" ? canonicalProjectRoot : runtime.resolve(canonicalProjectRoot, relative)
+  }
+  const lookupHostPath = (fileName: string): string => {
+    const resolved = runtime.resolve(fileName)
+    if (
+      isPathContained(runtime, resolvedProjectRoot, resolved, {
+        includeRoot: true,
+      })
+    ) {
+      return resolved
+    }
+    const relative = runtime.relative(resolvedProjectRoot.toLowerCase(), resolved.toLowerCase())
+    return relative === "" ? resolvedProjectRoot : runtime.resolve(resolvedProjectRoot, relative)
+  }
+  const isWithinProject = (fileName: string): boolean =>
+    isPathContained(runtime, canonicalProjectRoot, comparisonHostPath(fileName), containmentOptions)
+  const containsFileName = isWithinProject
+  const resolveFileName = (fileName: string): string => runtime.resolve(projectRoot, fileName)
+  const relativeFileName = (fileName: string): string => {
+    const resolved = runtime.resolve(fileName)
+    const real = runtime.realPath(resolved)
+    if (real !== undefined) {
+      const canonicalRelative = projectRelative(runtime, canonicalProjectRoot, real)
+      if (parseProjectRelativePath(canonicalRelative) !== undefined) return canonicalRelative
+    }
+    const lexicalRelative = projectRelative(runtime, resolvedProjectRoot, resolved)
+    if (parseProjectRelativePath(lexicalRelative) !== undefined) return lexicalRelative
+    return projectRelative(runtime, resolvedProjectRoot.toLowerCase(), resolved.toLowerCase())
+  }
+  const requireContainedPath = (fileName: string): string | undefined => {
+    const lexical = resolveContainedProjectPath(runtime, projectRoot, fileName, containmentOptions)
+    if (lexical === undefined) return undefined
+    const lookup = lookupHostPath(lexical)
+    return isPathContained(
+      runtime,
+      canonicalProjectRoot,
+      comparisonHostPath(lookup),
+      containmentOptions,
+    )
+      ? lookup
+      : undefined
   }
 
   const isOwnedSourceFile = (sf: SourceFile, observedName = sf.fileName) =>
@@ -225,7 +251,7 @@ export const projectSnapshotFor = ({
 
   const sourceFileNames = Effect.gen(function* () {
     yield* ensureActive
-    return (yield* ownedSourceFiles).map((file) => runtime.resolvePath(projectRoot, file.relative))
+    return (yield* ownedSourceFiles).map((file) => runtime.resolve(projectRoot, file.relative))
   })
 
   const sourceFile = Effect.fn("ProjectSnapshot.sourceFile")(function* (fileName: string) {
@@ -246,14 +272,6 @@ export const projectSnapshotFor = ({
       return yield* new FileNotFound({ fileName, projectId: configured.id })
     }
     return file.text
-  })
-
-  const semanticDiagnosticCount = Effect.gen(function* () {
-    yield* ensureActive
-    const diagnostics = yield* nativeRequest("getSemanticDiagnostics", () =>
-      nativeProject.program.getSemanticDiagnostics(),
-    )
-    return diagnostics.length
   })
 
   const symbolAt = Effect.fn("ProjectSnapshot.symbolAt")(function* (
@@ -369,7 +387,7 @@ export const projectSnapshotFor = ({
   })
 
   const intrinsicType = Effect.fn("ProjectSnapshot.intrinsicType")(function* (
-    kind: "string" | "number" | "boolean" | "any" | "unknown" | "never" | "void",
+    kind: IntrinsicTypeName,
   ) {
     yield* ensureActive
     return yield* nativeRequest("getIntrinsicType", () => {
@@ -398,13 +416,6 @@ export const projectSnapshotFor = ({
       Effect.suspend(() => use(nativeProject)),
     )
 
-  const navigateDependencyGraph = dependencyGraphNavigation({
-    nativeProject,
-    projectRoot,
-    ensureActive,
-    runtime,
-  })
-
   const makeProjectFile = (relativePath: ProjectRelativePath): ProjectFile => ({
     [ProjectFileTypeSymbol]: true,
     project: snapshotView,
@@ -423,18 +434,6 @@ export const projectSnapshotFor = ({
     findSymbolNamed: (name) => snapshotView.findSymbolNamed(name, { within: relativePath }),
     symbolAt: (position) => snapshotView.symbolAt(relativePath, position),
     typeAt: (position) => snapshotView.typeAt(relativePath, position),
-    referencingFiles: (options) =>
-      navigateDependencyGraph(relativePath, "reverse", options?.transitive ?? false).pipe(
-        Effect.map((paths) =>
-          paths.map((path) => makeProjectFile(requireProjectRelativePath(path))),
-        ),
-      ),
-    referencedFiles: (options) =>
-      navigateDependencyGraph(relativePath, "forward", options?.transitive ?? false).pipe(
-        Effect.map((paths) =>
-          paths.map((path) => makeProjectFile(requireProjectRelativePath(path))),
-        ),
-      ),
   })
 
   const file = Effect.fn("ProjectSnapshot.file")(function* (fileName: string) {
@@ -449,13 +448,6 @@ export const projectSnapshotFor = ({
     return makeProjectFile(requireProjectRelativePath(relativeFileName(found.fileName)))
   })
 
-  const findFile = Effect.fn("ProjectSnapshot.findFile")((fileName: string) =>
-    file(fileName).pipe(
-      Effect.map(Option.some),
-      Effect.catchTag("FileNotFound", () => Effect.succeed(Option.none())),
-    ),
-  )
-
   const files: ProjectSnapshot["files"] = Effect.gen(function* () {
     yield* ensureActive
     return (yield* ownedSourceFiles).map((owned) => makeProjectFile(owned.relative))
@@ -467,14 +459,11 @@ export const projectSnapshotFor = ({
     containsFileName,
     resolveFileName,
     relativeFileName,
-    rootFiles: nativeProject.rootFiles,
     sourceFileNames,
     sourceFile,
     sourceText,
     file,
-    findFile,
     files,
-    semanticDiagnosticCount,
     symbolAt,
     symbolsAt,
     canonicalSymbol,

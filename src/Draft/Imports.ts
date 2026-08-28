@@ -2,12 +2,10 @@ import { Effect } from "effect"
 import type { ImportDeclaration, SourceFile, Statement } from "typescript/unstable/ast"
 import {
   isExpressionStatement,
-  isIdentifier,
   isImportDeclaration,
   isNamedImports,
   isStringLiteral,
 } from "typescript/unstable/ast/is"
-import { textHash } from "../Edit/Hash.ts"
 import {
   isProjectFile,
   type ProjectFile,
@@ -15,7 +13,7 @@ import {
   type ProjectSnapshotError,
   type SnapshotExpired,
 } from "../Workspace/index.ts"
-import { draftForEdit, empty, type Draft } from "./Draft.ts"
+import { draftForRange, empty, type Draft } from "./Draft.ts"
 
 export interface AddNamedImportOptions {
   readonly module: string
@@ -82,15 +80,12 @@ const addNamedToProject = (
                 if (named.elements.length > 0) {
                   const last = named.elements[named.elements.length - 1]!
                   const insertPos = last.getEnd()
-                  return draftForEdit(
-                    {
-                      projectId: project.project.id,
-                      fileName: project.relativeFileName(source.fileName),
-                      start: insertPos,
-                      end: insertPos,
-                      expectedTextHash: textHash(""),
-                      newText: `, ${importName}`,
-                    },
+                  return draftForRange(
+                    project,
+                    source,
+                    insertPos,
+                    insertPos,
+                    `, ${importName}`,
                     `import:addNamed:${options.module}:${options.name}`,
                     { module: options.module, name: options.name },
                   )
@@ -103,15 +98,12 @@ const addNamedToProject = (
         const insertPos = importInsertionPosition(source)
         const importText = `import { ${importName} } from "${options.module}";\n`
 
-        return draftForEdit(
-          {
-            projectId: project.project.id,
-            fileName: project.relativeFileName(source.fileName),
-            start: insertPos,
-            end: insertPos,
-            expectedTextHash: textHash(""),
-            newText: importText,
-          },
+        return draftForRange(
+          project,
+          source,
+          insertPos,
+          insertPos,
+          importText,
           `import:addNamed:${options.module}:${options.name}`,
           { module: options.module, name: options.name },
         )
@@ -167,18 +159,9 @@ export const imports = {
         if (elements.length === 1) {
           const start = clause.name?.getEnd() ?? declaration.getFullStart()
           const end = clause.name === undefined ? declaration.getEnd() : named.getEnd()
-          return draftForEdit(
-            {
-              projectId: project.project.id,
-              fileName: project.relativeFileName(sourceFile.fileName),
-              start,
-              end,
-              expectedTextHash: textHash(sourceFile.text.slice(start, end)),
-              newText: "",
-            },
-            `import:removeNamed:${name}`,
-            { name },
-          )
+          return draftForRange(project, sourceFile, start, end, "", `import:removeNamed:${name}`, {
+            name,
+          })
         }
 
         const target = elements[targetIndex]!
@@ -193,18 +176,9 @@ export const imports = {
           start = prev.getEnd()
         }
 
-        return draftForEdit(
-          {
-            projectId: project.project.id,
-            fileName: project.relativeFileName(sourceFile.fileName),
-            start,
-            end,
-            expectedTextHash: textHash(sourceFile.text.slice(start, end)),
-            newText: "",
-          },
-          `import:removeNamed:${name}`,
-          { name },
-        )
+        return draftForRange(project, sourceFile, start, end, "", `import:removeNamed:${name}`, {
+          name,
+        })
       }),
     ),
 
@@ -226,186 +200,15 @@ export const imports = {
         const start = specifier.getStart(sourceFile)
         const end = specifier.getEnd()
 
-        return draftForEdit(
-          {
-            projectId: project.project.id,
-            fileName: project.relativeFileName(sourceFile.fileName),
-            start,
-            end,
-            expectedTextHash: textHash(sourceFile.text.slice(start, end)),
-            newText: newSpecifierText,
-          },
+        return draftForRange(
+          project,
+          sourceFile,
+          start,
+          end,
+          newSpecifierText,
           `import:update-source:${newModule}`,
           { module: newModule },
         )
       }),
     ),
-
-  /**
-   * Organize simple default/named value imports. Unsupported forms or import
-   * trivia are a no-op so type-only, namespace, and side-effect imports are
-   * never reprinted with changed semantics or style.
-   */
-  organize: (
-    project: ProjectSnapshot,
-    fileName: string,
-  ): Effect.Effect<Draft, ProjectSnapshotError> =>
-    Effect.gen(function* () {
-      const source = yield* project.sourceFile(fileName)
-      if (source === undefined) return empty
-
-      return yield* project.unsafeNative(() =>
-        Effect.sync((): Draft => {
-          const importDecls: Array<ImportDeclaration> = []
-          for (const statement of source.statements) {
-            if (isImportDeclaration(statement)) {
-              importDecls.push(statement)
-            }
-          }
-
-          if (importDecls.length === 0) return empty
-
-          const firstDecl = importDecls[0]!
-          const lastDecl = importDecls[importDecls.length - 1]!
-          const start = firstDecl.getStart(source)
-          const end = lastDecl.getEnd()
-          const firstIndex = source.statements.indexOf(firstDecl)
-          const lastIndex = source.statements.indexOf(lastDecl)
-          const importBlock = source.statements.slice(firstIndex, lastIndex + 1)
-          const lineEnd = source.text.indexOf("\n", end)
-          const trailingLine = source.text.slice(end, lineEnd === -1 ? source.text.length : lineEnd)
-          const hasComment = (text: string): boolean => /\/[/*]/.test(text)
-          const currentImports = source.text.slice(start, end)
-
-          if (
-            importBlock.length !== importDecls.length ||
-            importBlock.some((statement) => !isImportDeclaration(statement)) ||
-            hasComment(source.text.slice(firstDecl.getFullStart(), start)) ||
-            hasComment(currentImports) ||
-            hasComment(trailingLine) ||
-            currentImports.includes("\r")
-          ) {
-            return empty
-          }
-
-          const byModule = new Map<
-            string,
-            { quote: string; defaultImport?: string; namedImports: Set<string> }
-          >()
-          for (const decl of importDecls) {
-            const specifier = decl.moduleSpecifier
-            const clause = decl.importClause
-            if (
-              !isStringLiteral(specifier) ||
-              clause === undefined ||
-              clause.phaseModifier !== undefined
-            ) {
-              return empty
-            }
-            if (
-              (clause.name !== undefined && !isIdentifier(clause.name)) ||
-              (clause.namedBindings !== undefined && !isNamedImports(clause.namedBindings)) ||
-              (clause.name === undefined && clause.namedBindings === undefined)
-            ) {
-              return empty
-            }
-            const named =
-              clause.namedBindings !== undefined && isNamedImports(clause.namedBindings)
-                ? clause.namedBindings
-                : undefined
-            if (
-              (clause.name === undefined && (named === undefined || named.elements.length === 0)) ||
-              named?.elements.some(
-                (element) =>
-                  element.isTypeOnly ||
-                  !isIdentifier(element.name) ||
-                  (element.propertyName !== undefined && !isIdentifier(element.propertyName)),
-              ) === true
-            ) {
-              return empty
-            }
-
-            const specifierText = specifier.getText(source)
-            const quote = specifierText[0]
-            const suffix = source.text.slice(specifier.getEnd(), decl.getEnd())
-            if (
-              (quote !== '"' && quote !== "'") ||
-              specifierText !== `${quote}${specifier.text}${quote}` ||
-              !/^\s*;$/.test(suffix)
-            ) {
-              return empty
-            }
-
-            const mod = specifier.text
-            let existing = byModule.get(mod)
-            if (existing === undefined) {
-              existing = { quote, namedImports: new Set() }
-              byModule.set(mod, existing)
-            } else if (
-              existing.quote !== quote ||
-              (existing.defaultImport !== undefined &&
-                clause.name !== undefined &&
-                existing.defaultImport !== clause.name.text)
-            ) {
-              return empty
-            }
-            if (clause.name) existing.defaultImport = clause.name.text
-            if (named !== undefined) {
-              for (const element of named.elements) {
-                const specText = element.propertyName
-                  ? `${element.propertyName.text} as ${element.name.text}`
-                  : element.name.text
-                existing.namedImports.add(specText)
-              }
-            }
-          }
-
-          const isBuiltin = (m: string) =>
-            m.startsWith("node:") ||
-            ["fs", "path", "crypto", "os", "util", "events", "url"].includes(m)
-          const isRelative = (m: string) =>
-            m.startsWith(".") || m.startsWith("/") || m.startsWith("@/")
-
-          const modules = [...byModule.keys()]
-          const builtins = modules.filter(isBuiltin).sort()
-          const external = modules.filter((m) => !isBuiltin(m) && !isRelative(m)).sort()
-          const internal = modules.filter(isRelative).sort()
-
-          const renderGroup = (mods: Array<string>) =>
-            mods
-              .map((mod) => {
-                const entry = byModule.get(mod)!
-                const parts: Array<string> = []
-                if (entry.defaultImport) parts.push(entry.defaultImport)
-                if (entry.namedImports.size > 0) {
-                  const sortedNamed = [...entry.namedImports].sort()
-                  parts.push(`{ ${sortedNamed.join(", ")} }`)
-                }
-                return `import ${parts.join(", ")} from ${entry.quote}${mod}${entry.quote};`
-              })
-              .join("\n")
-
-          const groups = [
-            renderGroup(builtins),
-            renderGroup(external),
-            renderGroup(internal),
-          ].filter(Boolean)
-          const formattedImports = groups.join("\n\n")
-          if (formattedImports === currentImports) return empty
-
-          return draftForEdit(
-            {
-              projectId: project.project.id,
-              fileName: project.relativeFileName(source.fileName),
-              start,
-              end,
-              expectedTextHash: textHash(currentImports),
-              newText: formattedImports,
-            },
-            "import:organize",
-            { imports: importDecls.length },
-          )
-        }),
-      )
-    }),
 }

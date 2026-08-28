@@ -8,7 +8,6 @@ import {
   type IfStatement,
   type Node,
   type ReturnStatement,
-  type TryStatement,
   type WhileStatement,
 } from "typescript/unstable/ast"
 import {
@@ -18,39 +17,10 @@ import {
   isForStatement,
   isIfStatement,
   isReturnStatement,
-  isTryStatement,
   isWhileStatement,
 } from "typescript/unstable/ast/is"
 import { matchFailure, matchSuccess, predicate, type Pattern } from "./Pattern.ts"
 import { syntaxKindName } from "./SyntaxKindName.ts"
-
-export interface TryStatementPatternOptions {
-  readonly hasCatch?: boolean
-  readonly hasFinally?: boolean
-}
-export const tryStatement = (
-  options?: TryStatementPatternOptions,
-): Pattern<TryStatement, TryStatement> => ({
-  mode: "node",
-  kind: "tryStatement",
-  syntaxKind: SyntaxKind.TryStatement,
-  match: (node) =>
-    Effect.sync(() => {
-      if (
-        !isTryStatement(node) ||
-        (options?.hasCatch !== undefined &&
-          (node.catchClause !== undefined) !== options.hasCatch) ||
-        (options?.hasFinally !== undefined &&
-          (node.finallyBlock !== undefined) !== options.hasFinally)
-      )
-        return matchFailure
-      return matchSuccess(node, {
-        kind: syntaxKindName(node.kind),
-        hasCatch: node.catchClause !== undefined,
-        hasFinally: node.finallyBlock !== undefined,
-      })
-    }),
-})
 
 export type LoopStatement =
   | ForStatement

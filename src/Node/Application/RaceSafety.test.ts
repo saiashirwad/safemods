@@ -1,3 +1,4 @@
+import { executeRecipe } from "../../Execution/index.ts"
 import {
   nodeFsPromises as Fs,
   path as Path,
@@ -11,10 +12,9 @@ import * as Draft from "../../Draft/index.ts"
 import * as Policy from "../../Policy/index.ts"
 import * as Recipe from "../../Recipe/index.ts"
 import * as Verification from "../../Verification/index.ts"
-import { WorkspaceSnapshot } from "../../Workspace/index.ts"
 import { withFixture } from "../../test/declarative-fixture.ts"
+import { fixtureProject } from "../../test/project-fixture.ts"
 import { wrapTargetInput, type WrapTargetInput } from "../../test/wrap-target-input.ts"
-import { applicationLayer, makeApplicationLayerNode } from "./Layer.ts"
 
 const exists = (fileName: string): Effect.Effect<boolean> =>
   Effect.promise(() =>
@@ -33,8 +33,7 @@ describe("Node application race and filesystem safety", () => {
           policies: [Policy.noNewErrors()],
           run: () =>
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               return yield* Draft.files.create(project, "src/raced.ts", "")
             }),
         })
@@ -43,8 +42,8 @@ describe("Node application race and filesystem safety", () => {
         const target = Path.join(root, "src/raced.ts")
         yield* Effect.promise(() => Fs.writeFile(target, "created by another process\n"))
 
-        const result = yield* Application.apply(verified).pipe(
-          Effect.provide(makeApplicationLayerNode(root)),
+        const result = yield* Application.applyVerifiedPlan(verified).pipe(
+          Effect.provide(nodeLayer),
           Effect.result,
         )
         expect(result._tag).toBe("Failure")
@@ -64,8 +63,7 @@ describe("Node application race and filesystem safety", () => {
           policies: [{ diagnostics: "exact-delta" }],
           run: () =>
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               return yield* Draft.files.create(project, "src/toctou.ts", "planned\n")
             }),
         })
@@ -84,13 +82,9 @@ describe("Node application race and filesystem safety", () => {
               .pipe(Effect.flatMap(() => realFs.link(from, to)))
           },
         })
-        const testLayer = Layer.mergeAll(
-          applicationLayer(root),
-          Layer.succeed(FileSystem.FileSystem, racingFs),
-          pathLayer,
-        )
+        const testLayer = Layer.mergeAll(Layer.succeed(FileSystem.FileSystem, racingFs), pathLayer)
 
-        const result = yield* Application.apply(verified).pipe(
+        const result = yield* Application.applyVerifiedPlan(verified).pipe(
           Effect.provide(testLayer),
           Effect.result,
         )
@@ -115,8 +109,7 @@ describe("Node application race and filesystem safety", () => {
           policies: [{ diagnostics: "exact-delta" }],
           run: () =>
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               const create = yield* Draft.files.create(project, "src/created-empty.ts", "")
               const move = yield* Draft.files.move(
                 project,
@@ -128,9 +121,7 @@ describe("Node application race and filesystem safety", () => {
             }),
         })
 
-        const plan = yield* Recipe.run(recipe, undefined)
-        const verified = yield* Verification.verify(plan, recipe, undefined)
-        yield* Application.apply(verified).pipe(Effect.provide(makeApplicationLayerNode(root)))
+        yield* executeRecipe(recipe, undefined, { mode: "apply" }).pipe(Effect.provide(nodeLayer))
 
         expect(yield* exists(Path.join(root, "src/created-empty.ts"))).toBe(true)
         expect(
@@ -183,13 +174,9 @@ describe("Node application race and filesystem safety", () => {
               : realFs.rename(from, to)
           },
         })
-        const testLayer = Layer.mergeAll(
-          applicationLayer(root),
-          Layer.succeed(FileSystem.FileSystem, failingFs),
-          pathLayer,
-        )
+        const testLayer = Layer.mergeAll(Layer.succeed(FileSystem.FileSystem, failingFs), pathLayer)
 
-        const result = yield* Application.apply(verified).pipe(
+        const result = yield* Application.applyVerifiedPlan(verified).pipe(
           Effect.provide(testLayer),
           Effect.result,
         )

@@ -112,7 +112,6 @@ Start with the author-facing modules. Read adapters and low-level formats only w
 | `Plan`         | Durable transformation format and validation                             |
 | `Verification` | Preview, revalidation, diagnostics, policies, and Verified Plan issuance |
 | `Application`  | The only write authority                                                 |
-| `Precondition` | Assertions attached to proposed work                                     |
 
 ### Low-level mechanics
 
@@ -132,7 +131,7 @@ Start with the author-facing modules. Read adapters and low-level formats only w
 | `AgentTool` | Structured tool interface for agent hosts                            |
 | `Execution` | Internal shared orchestration used by CLI and AgentTool              |
 
-`Application`, `AgentTool`, `Cli`, `Draft`, `Edit`, `Evidence`, `Overlay`, `Pattern`, `Plan`, `Policy`, `Precondition`, `Query`, `Recipe`, `Verification`, `VirtualFs`, `Workspace`, and `Node` are published package subpaths. `Execution` and `ProjectPath` are internal source owners, not published subpaths.
+`Application`, `AgentTool`, `Cli`, `Draft`, `Edit`, `Evidence`, `Overlay`, `Pattern`, `Plan`, `Policy`, `ProjectPath`, `Query`, `Recipe`, `Verification`, `VirtualFs`, `Workspace`, and `Node` are published package subpaths. `Execution` is an internal source owner.
 
 ## Dependency rules
 
@@ -140,7 +139,7 @@ Start with the author-facing modules. Read adapters and low-level formats only w
 
 1. `Edit`, `Evidence`, `Plan`, `Policy`, `ProjectPath`, `VirtualFs`, generated values
 2. `Pattern`, `Query`, `Workspace`
-3. `Draft`, `Overlay`, `Precondition`
+3. `Draft`, `Overlay`
 4. `Application`, `Execution`, `Recipe`, `Verification`
 5. `Node`, platform adapters
 6. `AgentTool`, `Cli`, `bin`

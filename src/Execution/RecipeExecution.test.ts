@@ -2,12 +2,12 @@ import { nodeFsPromises as Fs, path as Path } from "../platform/node.ts"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../Draft/index.ts"
-import { applicationLayerNode } from "../Node/index.ts"
+import { layer as nodeLayer } from "../Node/index.ts"
 import type { TransformationPlan } from "../Plan/index.ts"
 import * as Recipe from "../Recipe/index.ts"
 import type { PlanPreview } from "../Verification/index.ts"
-import { WorkspaceSnapshot } from "../Workspace/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 import { executeRecipe } from "./RecipeExecution.ts"
 
 describe("recipe execution workflow", () => {
@@ -57,8 +57,7 @@ describe("recipe execution workflow", () => {
           version: "1.0.0",
           run: () =>
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               return yield* Draft.files.create(
                 project,
                 "src/executed.ts",
@@ -73,7 +72,7 @@ describe("recipe execution workflow", () => {
             onPreview: () => Effect.sync(() => stages.push("preview")),
             onVerified: () => Effect.sync(() => stages.push("verify")),
           },
-        }).pipe(Effect.provide(applicationLayerNode))
+        }).pipe(Effect.provide(nodeLayer))
 
         expect(execution.mode).toBe("apply")
         expect(stages).toEqual(["preview", "verify"])

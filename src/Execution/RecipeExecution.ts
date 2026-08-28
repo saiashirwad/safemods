@@ -1,10 +1,8 @@
-/** Shared recipe execution from planning through optional application. */
 import { Effect, type FileSystem, type Path } from "effect"
-import { apply, type ApplicationReceipt, type PlanApplication } from "../Application/index.ts"
+import { applyVerifiedPlan, type ApplicationReceipt } from "../Application/index.ts"
 import type { ApplicationFailure, ApplicationIndeterminate } from "../Application/Application.ts"
-import type { DraftEvidenceConflict } from "../Draft/index.ts"
+import type { DraftEvidenceConflict } from "../Evidence/index.ts"
 import type { PlanBuildError, PlanDecodeError, TransformationPlan } from "../Plan/index.ts"
-import type { DiagnosticDiff } from "../Policy/index.ts"
 import { run, type Recipe, type RecipeInputError } from "../Recipe/index.ts"
 import {
   of,
@@ -29,14 +27,12 @@ import type {
 
 export type RecipeExecutionMode = "plan" | "preview" | "verify" | "apply"
 
-type VerifiedExecutionPlan = VerifiedPlan & { readonly diagnosticDiff: DiagnosticDiff }
-
 export interface RecipeExecutionHooks {
   readonly onPreview?: (plan: TransformationPlan, preview: PlanPreview) => Effect.Effect<void>
   readonly onVerified?: (
     plan: TransformationPlan,
     preview: PlanPreview,
-    verified: VerifiedExecutionPlan,
+    verified: VerifiedPlan,
   ) => Effect.Effect<void>
 }
 
@@ -55,14 +51,14 @@ export interface VerifiedExecution {
   readonly mode: "verify"
   readonly plan: TransformationPlan
   readonly preview: PlanPreview
-  readonly verified: VerifiedExecutionPlan
+  readonly verified: VerifiedPlan
 }
 
 export interface AppliedExecution {
   readonly mode: "apply"
   readonly plan: TransformationPlan
   readonly preview: PlanPreview
-  readonly verified: VerifiedExecutionPlan
+  readonly verified: VerifiedPlan
   readonly receipt: ApplicationReceipt
 }
 
@@ -126,7 +122,7 @@ type RecipeRequirements<R> =
   | Path.Path
   | Exclude<R, WorkspaceSnapshot>
 type VerificationRequirements<R> = RecipeRequirements<R>
-type ApplyRequirements<R> = VerificationRequirements<R> | PlanApplication
+type ApplyRequirements<R> = VerificationRequirements<R>
 
 export function executeRecipe<Input, E, R>(
   recipe: Recipe<Input, E, R>,
@@ -151,19 +147,36 @@ export function executeRecipe<Input, E, R>(
 export function executeRecipe<Input, E, R>(
   recipe: Recipe<Input, E, R>,
   input: Input,
+  options: VerifyExecutionOptions | ApplyExecutionOptions,
+): Effect.Effect<
+  VerifiedExecution | AppliedExecution,
+  RecipeApplicationError<E>,
+  ApplyRequirements<R>
+>
+export function executeRecipe<Input, E, R>(
+  recipe: Recipe<Input, E, R>,
+  input: Input,
   options: RecipeExecutionOptions,
-) {
+): Effect.Effect<RecipeExecutionResult, RecipeApplicationError<E>, ApplyRequirements<R>> {
   return Effect.gen(function* () {
     const plan = yield* run(recipe, input)
     if (options.mode === "plan") return { mode: "plan" as const, plan }
 
-    const preview = yield* of(plan)
-    if (options.hooks?.onPreview !== undefined) {
-      yield* options.hooks.onPreview(plan, preview)
+    if (options.mode === "preview") {
+      const preview = yield* of(plan)
+      if (options.hooks?.onPreview !== undefined) {
+        yield* options.hooks.onPreview(plan, preview)
+      }
+      return { mode: "preview" as const, plan, preview }
     }
-    if (options.mode === "preview") return { mode: "preview" as const, plan, preview }
 
-    const verified = yield* verify(plan, recipe, input, { preview })
+    const verified = yield* verify(plan, recipe, input, {
+      onPreview: (preview) =>
+        options.hooks?.onPreview === undefined
+          ? Effect.void
+          : options.hooks.onPreview(plan, preview),
+    })
+    const preview = verified.preview
     if (options.hooks?.onVerified !== undefined) {
       yield* options.hooks.onVerified(plan, preview, verified)
     }
@@ -171,7 +184,7 @@ export function executeRecipe<Input, E, R>(
       return { mode: "verify" as const, plan, preview, verified }
     }
 
-    const receipt = yield* apply(verified)
+    const receipt = yield* applyVerifiedPlan(verified)
     return { mode: "apply" as const, plan, preview, verified, receipt }
   })
 }

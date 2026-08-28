@@ -6,8 +6,8 @@ import * as Recipe from "../Recipe/index.ts"
 import * as Verification from "../Verification/index.ts"
 import type { Json } from "../Evidence/index.ts"
 import { finalizePlan, type TransformationPlan } from "../Plan/index.ts"
-import { WorkspaceSnapshot } from "../Workspace/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 const didMutate = (write: () => void): boolean => {
   try {
@@ -34,8 +34,7 @@ describe("issued verified plans and project identity", () => {
             policies: [{ diagnostics: "exact-delta" }],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(project, "src/created.ts", "export {}\n")
               }),
           })
@@ -69,8 +68,7 @@ describe("issued verified plans and project identity", () => {
             policies: [{ diagnostics: "exact-delta" }],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(project, "src/created.ts", "export {}\n")
               }),
           })
@@ -131,8 +129,7 @@ describe("issued verified plans and project identity", () => {
             policies: [{ diagnostics: "exact-delta" }],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(project, "src/created.ts", "export {}\n")
               }),
           })
@@ -170,8 +167,7 @@ describe("issued verified plans and project identity", () => {
             policies: [{ diagnostics: "exact-delta" }],
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(project, "src/created.ts", "export {}\n")
               }),
           })

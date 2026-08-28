@@ -3,8 +3,9 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../Draft/index.ts"
 import { applyFileEdits } from "../Edit/index.ts"
-import { Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"
+import { Workspace } from "../Workspace/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("Draft.imports API (@effect/vitest)", () => {
   effect(
@@ -30,8 +31,7 @@ describe("Draft.imports API (@effect/vitest)", () => {
           yield* workspace.withSnapshot(
             {},
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               const source = yield* project.sourceFile("src/import-boundaries.ts")
               expect(source).toBeDefined()
               if (source === undefined) return

@@ -3,18 +3,13 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, it } from "vitest"
-import {
-  checkArchitectureBoundaries,
-  dependencyFailure,
-  temporaryAdapterImports,
-} from "./check-boundaries.mjs"
+import { checkArchitectureBoundaries, dependencyFailure } from "./check-boundaries.mjs"
 
 describe("architecture boundaries", () => {
   it("allows downward dependencies and rejects removed adapter migrations", () => {
     assert.equal(dependencyFailure("Draft", "Query"), undefined)
     assert.equal(dependencyFailure("Verification", "Plan"), undefined)
     assert.equal(dependencyFailure("Workspace", "Node"), "Workspace must not depend on Node")
-    assert.equal(temporaryAdapterImports.has("Workspace"), false)
   })
 
   it("rejects upward and restricted semantic dependencies", () => {
@@ -31,7 +26,7 @@ describe("architecture boundaries", () => {
     )
   })
 
-  it("checks static, dynamic, private, root, and package imports", async () => {
+  it("checks static, dynamic, private, and package imports", async () => {
     const root = await mkdtemp(join(tmpdir(), "safemods-boundaries-"))
     try {
       await Promise.all([
@@ -49,13 +44,8 @@ describe("architecture boundaries", () => {
       ])
       await Promise.all([
         writeFile(join(root, "bin", "safemods.ts"), 'import "../src/Cli/index.ts"\n'),
-        writeFile(join(root, "src", "index.ts"), 'export * as Query from "./Query/index.ts"\n'),
         writeFile(join(root, "src", "Query", "index.ts"), "export {}\n"),
         writeFile(join(root, "src", "Workspace", "index.ts"), "export {}\n"),
-        writeFile(
-          join(root, "src", "Workspace", "ProjectPath.ts"),
-          'export { projectRelativePath } from "../Node/ProjectPath.ts"\n',
-        ),
         writeFile(join(root, "src", "Workspace", "Bad.ts"), 'import "../Node/ProjectPath.ts"\n'),
         writeFile(join(root, "src", "Node", "ProjectPath.ts"), "export {}\n"),
         writeFile(
@@ -68,7 +58,7 @@ describe("architecture boundaries", () => {
         ),
         writeFile(
           join(root, "src", "Recipe", "Bad.ts"),
-          'import("../Cli/index.ts")\nimport "../Application/index.ts"\nimport "../index.ts"\n',
+          'import("../Cli/index.ts")\nimport "../Application/index.ts"\n',
         ),
         writeFile(
           join(root, "src", "Verification", "Bad.ts"),
@@ -90,13 +80,8 @@ describe("architecture boundaries", () => {
       assert.ok(
         failures.some((failure) => failure.includes("Verification must not depend on Application")),
       )
-      assert.ok(failures.some((failure) => failure.includes("imports the root façade")))
       assert.equal(
         failures.some((failure) => failure.includes("Draft/Good.ts")),
-        false,
-      )
-      assert.equal(
-        failures.some((failure) => failure.includes("Workspace/ProjectPath.ts")),
         false,
       )
       assert.ok(

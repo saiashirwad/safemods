@@ -1,18 +1,16 @@
+import { executeRecipe } from "../Execution/index.ts"
 import { path as Path, nodeFsPromises as Fs } from "../platform/node.ts"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import * as Application from "../Application/index.ts"
 import * as Draft from "../Draft/index.ts"
-import { applicationLayerNode } from "../Node/index.ts"
-import * as Policy from "../Policy/index.ts"
+import { layer as nodeLayer } from "../Node/index.ts"
 import * as Query from "../Query/index.ts"
 import * as Recipe from "../Recipe/index.ts"
-import * as Verification from "../Verification/index.ts"
-import { WorkspaceSnapshot } from "../Workspace/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("declarative transformations API (@effect/vitest)", () => {
-  describe("syntactic draft combinators and rename", () => {
+  describe("syntactic draft combinators", () => {
     effect(
       "manipulates imports, call arguments, and object fields preserving formatting",
       () =>
@@ -22,8 +20,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
               version: "1.0.0",
               run: () =>
                 Effect.gen(function* () {
-                  const snapshot = yield* WorkspaceSnapshot
-                  const project = yield* snapshot.project(app)
+                  const project = yield* fixtureProject(app)
 
                   const d1 = yield* Draft.imports.addNamed(project, "src/consumer.ts", {
                     module: "./library.js",
@@ -42,60 +39,15 @@ describe("declarative transformations API (@effect/vitest)", () => {
                 }),
             })
 
-            const plan = yield* Recipe.run(draftTestRecipe, undefined)
-            const verified = yield* Verification.verify(plan, draftTestRecipe, undefined)
-            yield* Application.apply(verified).pipe(Effect.provide(applicationLayerNode))
+            yield* executeRecipe(draftTestRecipe, undefined, { mode: "apply" }).pipe(
+              Effect.provide(nodeLayer),
+            )
 
             const consumerContent = yield* Effect.tryPromise(() =>
               Fs.readFile(Path.join(root, "src/consumer.ts"), "utf8"),
             )
             expect(consumerContent).toContain("TargetInput")
             expect(consumerContent).toContain("/* keep this comment */ /* wrapped */ { value: 1 }")
-          }),
-        ),
-      60_000,
-    )
-
-    effect(
-      "renames symbols across all declarations, imports, and usages with Draft.renameSymbol",
-      () =>
-        withFixture((root, app) =>
-          Effect.gen(function* () {
-            const renameRecipe = Recipe.define("rename-other-symbol", {
-              version: "1.0.0",
-              policies: [Policy.noNewErrors()],
-              run: () =>
-                Effect.gen(function* () {
-                  const snapshot = yield* WorkspaceSnapshot
-                  const project = yield* snapshot.project(app)
-                  const otherSymbol = yield* project.symbolNamed("other", {
-                    within: "src/library.ts",
-                  })
-
-                  return yield* Draft.renameSymbol(project, otherSymbol, "transformedOther")
-                }),
-            })
-
-            const plan = yield* Recipe.run(renameRecipe, undefined)
-            expect(plan.edits.length).toBeGreaterThanOrEqual(2)
-
-            const verified = yield* Verification.verify(plan, renameRecipe, undefined)
-            yield* Application.apply(verified).pipe(Effect.provide(applicationLayerNode))
-
-            const libContent = yield* Effect.tryPromise(() =>
-              Fs.readFile(Path.join(root, "src/library.ts"), "utf8"),
-            )
-            const consumerContent = yield* Effect.tryPromise(() =>
-              Fs.readFile(Path.join(root, "src/consumer.ts"), "utf8"),
-            )
-
-            expect(libContent).toContain("function transformedOther(value: number)")
-            // The consumer's plain named import keeps its local binding via an
-            // alias, so its usages stay untouched.
-            expect(consumerContent).toContain(
-              "import { transformedOther as other, target as renamed }",
-            )
-            expect(consumerContent).toContain("other(2)")
           }),
         ),
       60_000,

@@ -1,14 +1,13 @@
 import { readdir, readFile } from "node:fs/promises"
 import { dirname, relative, resolve, sep } from "node:path"
 
-const ROOT_FACADE = "$root"
 const TYPESCRIPT_SOURCE = /\.(?:[cm]?ts|tsx)$/
 const TYPESCRIPT_TEST = /\.test\.(?:[cm]?ts|tsx)$/
 
 export const architectureLayers = [
   ["Edit", "Evidence", "Plan", "Policy", "ProjectPath", "VirtualFs", "generated"],
   ["Pattern", "Query", "Workspace"],
-  ["Draft", "Overlay", "Precondition"],
+  ["Draft", "Overlay"],
   ["Application", "Execution", "Recipe", "Verification"],
   ["Node", "platform"],
   ["AgentTool", "Cli", "bin"],
@@ -18,39 +17,10 @@ const layerByOwner = new Map(
   architectureLayers.flatMap((owners, layer) => owners.map((owner) => [owner, layer])),
 )
 
-const rootFacadeDependencies = new Set([
-  "Application",
-  "Draft",
-  "Edit",
-  "Evidence",
-  "Overlay",
-  "Pattern",
-  "Plan",
-  "Policy",
-  "Precondition",
-  "Query",
-  "Recipe",
-  "Verification",
-  "VirtualFs",
-  "Workspace",
-])
-
-/**
- * Temporary imports that cross upward into Node adapters. Remove each edge
- * when its owner uses injected filesystem and path services.
- */
-export const temporaryAdapterImports = new Map()
-
-/**
- * Historical public façades may retain one documented adapter re-export.
- * This is deliberately file-scoped so other files in the owner stay strict.
- */
-const compatibilityFacadeImports = new Map([["src/Workspace/ProjectPath.ts", new Set(["Node"])]])
-
 const exactDependencies = new Map([
   ["Pattern", new Set(["Evidence", "Workspace"])],
   ["Query", new Set(["Evidence", "Pattern", "ProjectPath", "Workspace"])],
-  ["Workspace", new Set(["ProjectPath", "VirtualFs"])],
+  ["Workspace", new Set(["Edit", "ProjectPath", "VirtualFs"])],
   [
     "Recipe",
     new Set([
@@ -79,10 +49,19 @@ const exactDependencies = new Map([
       "Workspace",
     ]),
   ],
-  ["Application", new Set(["Verification"])],
+  ["Application", new Set(["Edit", "Plan", "ProjectPath", "Verification", "Workspace"])],
   [
     "Execution",
-    new Set(["Application", "Draft", "Plan", "Policy", "Recipe", "Verification", "Workspace"]),
+    new Set([
+      "Application",
+      "Draft",
+      "Evidence",
+      "Plan",
+      "Policy",
+      "Recipe",
+      "Verification",
+      "Workspace",
+    ]),
   ],
   ["bin", new Set(["Cli"])],
 ])
@@ -109,7 +88,6 @@ const ownerOf = (repositoryRoot, file) => {
   const sourceRoot = resolve(repositoryRoot, "src")
   const sourceRelative = relative(sourceRoot, file)
   if (!sourceRelative.startsWith(`..${sep}`) && sourceRelative !== "..") {
-    if (sourceRelative === "index.ts") return ROOT_FACADE
     return sourceRelative.split(sep)[0]
   }
   const binRoot = resolve(repositoryRoot, "bin")
@@ -124,7 +102,7 @@ const targetDetails = (repositoryRoot, file, specifier) => {
   const sourceRelative = relative(sourceRoot, target)
   if (!sourceRelative.startsWith(`..${sep}`) && sourceRelative !== "..") {
     return {
-      owner: sourceRelative === "index.ts" ? ROOT_FACADE : sourceRelative.split(sep)[0],
+      owner: sourceRelative.split(sep)[0],
       parts: sourceRelative.split(sep),
     }
   }
@@ -138,18 +116,11 @@ const targetDetails = (repositoryRoot, file, specifier) => {
 
 export const dependencyFailure = (owner, targetOwner) => {
   if (owner === targetOwner) return undefined
-  if (targetOwner === ROOT_FACADE) return "imports the root façade"
-  if (owner === ROOT_FACADE) {
-    return rootFacadeDependencies.has(targetOwner)
-      ? undefined
-      : `root façade imports non-public owner ${targetOwner}`
-  }
 
   const exact = exactDependencies.get(owner)
   if (exact !== undefined && !exact.has(targetOwner)) {
     return `${owner} must not depend on ${targetOwner}`
   }
-  if (temporaryAdapterImports.get(owner)?.has(targetOwner) === true) return undefined
 
   const ownerLayer = layerByOwner.get(owner)
   const targetLayer = layerByOwner.get(targetOwner)
@@ -157,11 +128,6 @@ export const dependencyFailure = (owner, targetOwner) => {
   if (targetLayer === undefined) return `imports unclassified owner ${targetOwner}`
   return targetLayer <= ownerLayer ? undefined : `${owner} imports higher layer ${targetOwner}`
 }
-
-const fileDependencyFailure = (displayFile, owner, targetOwner) =>
-  compatibilityFacadeImports.get(displayFile)?.has(targetOwner) === true
-    ? undefined
-    : dependencyFailure(owner, targetOwner)
 
 export const checkArchitectureBoundaries = async (repositoryRoot) => {
   const failures = []
@@ -175,7 +141,7 @@ export const checkArchitectureBoundaries = async (repositoryRoot) => {
     const owner = ownerOf(repositoryRoot, file)
     if (owner === "test") continue
     const displayFile = relative(repositoryRoot, file)
-    if (owner === undefined || (owner !== ROOT_FACADE && !layerByOwner.has(owner))) {
+    if (owner === undefined || !layerByOwner.has(owner)) {
       failures.push(`${displayFile}: unclassified source owner ${owner ?? "outside roots"}`)
       continue
     }
@@ -196,7 +162,7 @@ export const checkArchitectureBoundaries = async (repositoryRoot) => {
         failures.push(`${displayFile}: imports private ${specifier}`)
         continue
       }
-      const failure = fileDependencyFailure(displayFile, owner, target.owner)
+      const failure = dependencyFailure(owner, target.owner)
       if (failure !== undefined) failures.push(`${displayFile}: ${failure} (${specifier})`)
     }
   }

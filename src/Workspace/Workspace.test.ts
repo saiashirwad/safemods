@@ -2,45 +2,17 @@ import { nodeFsPromises as Fs, path as Path } from "../platform/node.ts"
 import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import { emptySnapshot } from "../VirtualFs/index.ts"
+import { ConfiguredProject, Workspace } from "./index.ts"
 import {
-  ConfiguredProject,
   InvalidProjectRelativePath,
-  isWithinProject,
-  projectRelativePath,
-  Workspace,
-  WorkspaceSnapshot,
-} from "./index.ts"
+  isPathContained,
+  projectRelative,
+} from "../ProjectPath/index.ts"
 import { workspaceLayerNode } from "../Node/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 const stressFixture = fileURLToPath(new URL("../../fixtures/stress/", import.meta.url))
-
-const withCopiedFixture = <A, E, R>(
-  fixturePath: string,
-  use: (root: string, app: ConfiguredProject) => Effect.Effect<A, E, R>,
-  options?: { readonly fs?: NonNullable<Parameters<typeof Workspace.layer>[1]>["fs"] },
-): Effect.Effect<A, unknown, Exclude<R, Workspace>> =>
-  Effect.acquireUseRelease(
-    Effect.tryPromise(async () => {
-      const root = await Fs.mkdtemp("/tmp/safemods-workspace-")
-      await Fs.cp(fixturePath, root, { recursive: true })
-      return root
-    }),
-    (root) => {
-      const app = ConfiguredProject.make({ id: "app", config: "tsconfig.json" })
-      return use(root, app).pipe(
-        Effect.provide(
-          workspaceLayerNode(
-            { projects: [app] },
-            options?.fs === undefined ? { cwd: root } : { cwd: root, fs: options.fs },
-          ),
-        ),
-      )
-    },
-    (root) =>
-      Effect.tryPromise(() => Fs.rm(root, { recursive: true, force: true })).pipe(Effect.ignore),
-  )
 
 describe("workspace path confinement, overlay FS, and symbol lookup", () => {
   effect("rejects absolute and escaping project configs", () =>
@@ -71,14 +43,12 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
           yield* workspace.withSnapshot(
             {},
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               const library = Path.join(project.root, "src/library.ts")
               expect(project.resolveFileName("src/library.ts")).toBe(library)
               expect(project.relativeFileName(library)).toBe("src/library.ts")
               expect(project.containsFileName(library)).toBe(true)
-              // Native paths can differ from the root in letter case on
-              // case-insensitive filesystems; containment folds case.
+              // Compiler-returned paths may vary in case on case-insensitive hosts.
               const rootBase = Path.basename(project.root)
               const flippedBase = rootBase.replace(/[a-z]/i, (char) =>
                 char === char.toLowerCase() ? char.toUpperCase() : char.toLowerCase(),
@@ -90,6 +60,8 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
                 "src/library.ts",
               )
               expect(project.containsFileName(caseVariant)).toBe(true)
+              expect(project.relativeFileName(caseVariant)).toBe("src/library.ts")
+              expect(yield* project.sourceFile(caseVariant)).toBeDefined()
               expect(project.containsFileName(Path.resolve(project.root, "../outside.ts"))).toBe(
                 false,
               )
@@ -118,10 +90,12 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
       const projectRoot = "/tmp/SafeModsCase/Project"
       const inside = "/tmp/SafeModsCase/Project/src/index.ts"
       const mixedCaseSibling = "/tmp/SafeModsCase/project/src/index.ts"
-      expect(isWithinProject(projectRoot, inside)).toBe(true)
-      expect(isWithinProject(projectRoot, mixedCaseSibling)).toBe(false)
-      expect(isWithinProject(projectRoot, "/tmp/SafeModsCase/Project/../Other/x.ts")).toBe(false)
-      expect(projectRelativePath(projectRoot, mixedCaseSibling).startsWith("..")).toBe(true)
+      expect(isPathContained(Path, projectRoot, inside)).toBe(true)
+      expect(isPathContained(Path, projectRoot, mixedCaseSibling)).toBe(false)
+      expect(isPathContained(Path, projectRoot, "/tmp/SafeModsCase/Project/../Other/x.ts")).toBe(
+        false,
+      )
+      expect(projectRelative(Path, projectRoot, mixedCaseSibling).startsWith("..")).toBe(true)
     }),
   )
 
@@ -130,8 +104,7 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
     () => {
       const marker = "export const fromCallback = 1;\n"
       const recipeFixture = fileURLToPath(new URL("../../fixtures/recipe/", import.meta.url))
-      return withCopiedFixture(
-        recipeFixture,
+      return withFixture(
         (root, app) =>
           Effect.gen(function* () {
             const disk = yield* Effect.tryPromise(() =>
@@ -139,10 +112,9 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
             )
             const workspace = yield* Workspace
             yield* workspace.withIsolatedSnapshot(
-              emptySnapshot(),
+              { files: new Map(), created: new Set(), deleted: new Set() },
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const text = yield* project.sourceText("src/library.ts")
                 expect(text).toBe(marker)
                 expect(disk).not.toBe(marker)
@@ -150,6 +122,8 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
             )
           }),
         {
+          fixturePath: recipeFixture,
+          temporaryPrefix: "/tmp/safemods-workspace-",
           fs: {
             readFile: (fileName) => {
               const normalized = fileName.replaceAll("\\", "/")
@@ -169,30 +143,31 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
   effect(
     "resolves aliased and re-exported names with symbolNamed",
     () =>
-      withCopiedFixture(stressFixture, (_, app) =>
-        Effect.gen(function* () {
-          const workspace = yield* Workspace
-          yield* workspace.withSnapshot(
-            {},
-            Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
-              const original = yield* project.symbolNamed("oldName", { within: "src/symbol.ts" })
-              const aliased = yield* project.symbolNamed("localName", {
-                within: "src/symbol-aliased.ts",
-              })
-              const reexported = yield* project.symbolNamed("publicName", {
-                within: "src/symbol-barrel.ts",
-              })
-              const throughBarrel = yield* project.symbolNamed("publicName", {
-                within: "src/symbol-reexport-consumer.ts",
-              })
-              expect(aliased).toBe(original)
-              expect(reexported).toBe(original)
-              expect(throughBarrel).toBe(original)
-            }),
-          )
-        }),
+      withFixture(
+        (_, app) =>
+          Effect.gen(function* () {
+            const workspace = yield* Workspace
+            yield* workspace.withSnapshot(
+              {},
+              Effect.gen(function* () {
+                const project = yield* fixtureProject(app)
+                const original = yield* project.symbolNamed("oldName", { within: "src/symbol.ts" })
+                const aliased = yield* project.symbolNamed("localName", {
+                  within: "src/symbol-aliased.ts",
+                })
+                const reexported = yield* project.symbolNamed("publicName", {
+                  within: "src/symbol-barrel.ts",
+                })
+                const throughBarrel = yield* project.symbolNamed("publicName", {
+                  within: "src/symbol-reexport-consumer.ts",
+                })
+                expect(aliased).toBe(original)
+                expect(reexported).toBe(original)
+                expect(throughBarrel).toBe(original)
+              }),
+            )
+          }),
+        { fixturePath: stressFixture, temporaryPrefix: "/tmp/safemods-workspace-" },
       ),
     60_000,
   )
@@ -206,8 +181,7 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
           yield* workspace.withSnapshot(
             {},
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               const original = yield* project.symbolNamed("target", { within: "src/library.ts" })
               const aliased = yield* project.symbolNamed("renamed", { within: "src/consumer.ts" })
               const reexported = yield* project.symbolNamed("publicTarget", {
@@ -235,8 +209,7 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
           yield* workspace.withSnapshot(
             {},
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               const source = yield* project.sourceFile("src/library.ts")
               expect(source).toBeDefined()
               if (source === undefined) return

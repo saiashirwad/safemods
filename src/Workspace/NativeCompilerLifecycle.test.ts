@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Data, Deferred, Effect, Fiber } from "effect"
 import type { Snapshot } from "typescript/unstable/async"
-import { make as makeNativeCompiler } from "./internal/NativeCompiler.ts"
+import { openCompiler } from "./internal/NativeCompiler.ts"
 
 class TestFailure extends Data.TaggedError("TestFailure")<{
   readonly message: string
@@ -33,7 +33,7 @@ describe("NativeCompiler lifecycle and resource disposal", () => {
 
       yield* Effect.scoped(
         Effect.gen(function* () {
-          const compiler = yield* makeNativeCompiler({ fs: dummyFs })
+          const compiler = yield* openCompiler({ fs: dummyFs })
 
           yield* Effect.scoped(
             Effect.gen(function* () {
@@ -57,7 +57,7 @@ describe("NativeCompiler lifecycle and resource disposal", () => {
 
       const failure = yield* Effect.scoped(
         Effect.gen(function* () {
-          const compiler = yield* makeNativeCompiler({ fs: dummyFs })
+          const compiler = yield* openCompiler({ fs: dummyFs })
 
           return yield* Effect.scoped(
             Effect.gen(function* () {
@@ -84,7 +84,7 @@ describe("NativeCompiler lifecycle and resource disposal", () => {
 
         const fiber = yield* Effect.scoped(
           Effect.gen(function* () {
-            const compiler = yield* makeNativeCompiler({ fs: dummyFs })
+            const compiler = yield* openCompiler({ fs: dummyFs })
             return yield* Effect.scoped(
               Effect.gen(function* () {
                 const snapshot = yield* compiler.openSnapshot()

@@ -1,15 +1,16 @@
-/** Collapse two sequential Drafts into one Draft against the original snapshot. */
 import { Effect } from "effect"
 import type { Draft as DraftModel } from "../Draft/index.ts"
 import {
   applyFileEdits,
-  textHash,
+  sha256,
   type EditConflict,
   type InvalidEdit,
   type TextEdit,
 } from "../Edit/index.ts"
+import { textEdit } from "../Edit/TextEdit.ts"
 import { mergeEvidenceEffect, type DraftEvidenceConflict } from "../Evidence/index.ts"
 import type { PlannedFileOperation } from "../Plan/index.ts"
+import { virtualFileKey } from "../VirtualFs/index.ts"
 import {
   ProjectNotInSnapshot,
   type FileNotFound,
@@ -36,7 +37,6 @@ export const requireDraftProjects = (
     }
   })
 
-/** Collapse two sequential Drafts into one Draft against the original snapshot. */
 export const rebaseDrafts = (
   snapshot: WorkspaceSnapshotService,
   accumulated: DraftModel,
@@ -70,8 +70,12 @@ export const rebaseDrafts = (
     if (!accumulatedChanged) return { ...next, ...retained }
     if (!nextChanged) return { ...accumulated, ...retained }
 
-    const accumulatedByFile = Map.groupBy(accumulated.edits, (e) => `${e.projectId}\0${e.fileName}`)
-    const nextByFile = Map.groupBy(next.edits, (e) => `${e.projectId}\0${e.fileName}`)
+    const accumulatedByFile = Map.groupBy(accumulated.edits, (edit) =>
+      virtualFileKey(edit.projectId, edit.fileName),
+    )
+    const nextByFile = Map.groupBy(next.edits, (edit) =>
+      virtualFileKey(edit.projectId, edit.fileName),
+    )
     const allKeys = new Set([...accumulatedByFile.keys(), ...nextByFile.keys()])
     const combinedEdits: Array<TextEdit> = []
 
@@ -104,40 +108,44 @@ export const rebaseDrafts = (
           end2--
         }
 
-        combinedEdits.push({
-          projectId,
-          fileName,
-          start,
-          end: end0,
-          expectedTextHash: textHash(t0.slice(start, end0)),
-          newText: t2.slice(start, end2),
-          evidenceIds: [
-            ...new Set([
-              ...accEdits.flatMap((edit) => edit.evidenceIds),
-              ...nxtEdits.flatMap((edit) => edit.evidenceIds),
-            ]),
-          ],
-        })
+        combinedEdits.push(
+          textEdit({
+            projectId,
+            fileName,
+            sourceText: t0,
+            start,
+            end: end0,
+            newText: t2.slice(start, end2),
+            evidenceIds: [
+              ...new Set([
+                ...accEdits.flatMap((edit) => edit.evidenceIds),
+                ...nxtEdits.flatMap((edit) => edit.evidenceIds),
+              ]),
+            ],
+          }),
+        )
       }
     }
 
     const fileOperations = [...(accumulated.fileOperations ?? []), ...(next.fileOperations ?? [])]
-    const consumed = new Set<string>()
+    const consumedEdits = new Set<TextEdit>()
     const normalizedOperations: Array<PlannedFileOperation> = []
     for (const operation of fileOperations) {
-      const sourceKey = `${operation.projectId}\0${operation.path}`
+      const sourceKey = virtualFileKey(operation.projectId, operation.path)
       const targetKey =
-        operation.kind === "move" ? `${operation.projectId}\0${operation.toPath}` : undefined
+        operation.kind === "move"
+          ? virtualFileKey(operation.projectId, operation.toPath)
+          : undefined
       const operationEditKey = operation.kind === "move" ? targetKey : sourceKey
       const operationEdits =
         operationEditKey === undefined
           ? undefined
           : combinedEdits.filter(
-              (edit) => `${edit.projectId}\0${edit.fileName}` === operationEditKey,
+              (edit) => virtualFileKey(edit.projectId, edit.fileName) === operationEditKey,
             )
       let normalized = operation
       if (operationEdits !== undefined && operationEdits.length > 0) {
-        consumed.add(operationEditKey!)
+        for (const edit of operationEdits) consumedEdits.add(edit)
         if (operation.kind === "create" || operation.kind === "move") {
           const content = yield* applyFileEdits(operation.content ?? "", operationEdits)
           normalized = { ...operation, content }
@@ -156,7 +164,11 @@ export const rebaseDrafts = (
           const evidenceIds = [
             ...new Set([...(producer.evidenceIds ?? []), ...(operation.evidenceIds ?? [])]),
           ]
-          consumed.add(sourceKey)
+          for (const edit of combinedEdits) {
+            if (virtualFileKey(edit.projectId, edit.fileName) === sourceKey) {
+              consumedEdits.add(edit)
+            }
+          }
           if (operation.kind === "delete") {
             if (producer.kind === "create") {
               normalizedOperations.splice(producerIndex, 1)
@@ -168,11 +180,20 @@ export const rebaseDrafts = (
                 initialHash: producer.initialHash,
                 evidenceIds,
               }
-              // The destination never remains, so specifier rewrites that
-              // retargeted it must not stay as Text Edits.
-              consumed.add(`${producer.projectId}\0${producer.toPath}`)
-              for (const edit of accumulated.edits) {
-                consumed.add(`${edit.projectId}\0${edit.fileName}`)
+              const obsoleteEvidenceIds = new Set(
+                accumulated.evidence
+                  .filter(
+                    (item) =>
+                      item.kind === "file-import-rewrite" &&
+                      item.facts.projectId === producer.projectId &&
+                      item.facts.target === producer.toPath,
+                  )
+                  .map((item) => item.id),
+              )
+              for (const edit of combinedEdits) {
+                if (edit.evidenceIds.some((id) => obsoleteEvidenceIds.has(id))) {
+                  consumedEdits.add(edit)
+                }
               }
             }
           } else if (producer.kind === "create") {
@@ -200,7 +221,13 @@ export const rebaseDrafts = (
               evidenceIds,
             }
           }
-          if (operation.kind === "move") consumed.add(targetKey!)
+          if (operation.kind === "move") {
+            for (const edit of combinedEdits) {
+              if (virtualFileKey(edit.projectId, edit.fileName) === targetKey) {
+                consumedEdits.add(edit)
+              }
+            }
+          }
           continue
         }
       }
@@ -209,14 +236,20 @@ export const rebaseDrafts = (
         const configuredProjectForOperation = yield* configuredProject(normalized.projectId)
         const project = yield* snapshot.project(configuredProjectForOperation)
         const original = yield* project.sourceText(normalized.path)
-        normalized = { ...normalized, initialHash: textHash(original) }
+        normalized = { ...normalized, initialHash: sha256(original) }
       }
-      if (operation.kind === "delete" || operation.kind === "move") consumed.add(sourceKey)
+      if (operation.kind === "delete" || operation.kind === "move") {
+        for (const edit of combinedEdits) {
+          if (virtualFileKey(edit.projectId, edit.fileName) === sourceKey) {
+            consumedEdits.add(edit)
+          }
+        }
+      }
       normalizedOperations.push(normalized)
     }
 
     return {
-      edits: combinedEdits.filter((edit) => !consumed.has(`${edit.projectId}\0${edit.fileName}`)),
+      edits: combinedEdits.filter((edit) => !consumedEdits.has(edit)),
       fileOperations: normalizedOperations,
       evidence: yield* mergeEvidenceEffect([...accumulated.evidence, ...next.evidence]),
       matches: accumulated.matches + next.matches,

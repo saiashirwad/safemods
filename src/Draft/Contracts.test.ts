@@ -3,11 +3,13 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../Draft/index.ts"
 import { applyFileEdits } from "../Edit/index.ts"
-import { requireProjectRelativePath } from "../Plan/index.ts"
+import * as Evidence from "../Evidence/index.ts"
+import { requireProjectRelativePath } from "../ProjectPath/index.ts"
 import * as Query from "../Query/index.ts"
-import { Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"
+import { Workspace } from "../Workspace/index.ts"
 import { workspaceLayerNode } from "../Node/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 const expectCompleteEvidence = (draft: Draft.Draft): void => {
   const evidenceIds = draft.evidence.map((record) => record.id)
@@ -44,8 +46,7 @@ describe("Draft helper contracts", () => {
           yield* workspace.withSnapshot(
             {},
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               const calls = yield* Query.calls(project).pipe(
                 Query.within("src/arguments.ts"),
                 Query.collect,
@@ -115,7 +116,7 @@ describe("Draft helper contracts", () => {
                     },
                   ],
                 }),
-              ).toThrow(Draft.DraftEvidenceConflict)
+              ).toThrow(Evidence.DraftEvidenceConflict)
 
               const sameRange = calls[0]!
               const firstAudit = Draft.audit([sameRange])
@@ -124,7 +125,7 @@ describe("Draft helper contracts", () => {
                 evidence: [{ criterion: "other", facts: { extra: true } }],
               }
               expect(() => Draft.audit([sameRange, secondSelection])).toThrow(
-                Draft.DraftEvidenceConflict,
+                Evidence.DraftEvidenceConflict,
               )
               const sameAudit = Draft.audit([sameRange, sameRange])
               expect(sameAudit.matches).toBe(1)
@@ -143,59 +144,6 @@ describe("Draft helper contracts", () => {
                 matches: 1,
               })).pipe(Effect.flip)
               expect(conflictingEach._tag).toBe("DraftEvidenceConflict")
-            }),
-          )
-        }),
-      ),
-    60_000,
-  )
-
-  effect(
-    "does not reprint unsupported imports and preserves supported quote style",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          const sources = new Map([
-            [
-              "type-only.ts",
-              'import type { Shape } from "./types.js";\nexport type Value = Shape\n',
-            ],
-            ["side-effect.ts", 'import "./setup.js";\nexport const value = 1\n'],
-            ["namespace.ts", 'import * as values from "./values.js";\nexport { values }\n'],
-            ["trivia.ts", 'import { /* keep */ value } from "./values.js";\nexport { value }\n'],
-          ])
-          for (const [fileName, source] of sources) {
-            yield* Effect.tryPromise(() => Fs.writeFile(Path.join(root, "src", fileName), source))
-          }
-          const quotedSource = [
-            "import { zed } from './zed.js';",
-            "import { alpha } from './alpha.js';",
-            "",
-            "export { alpha, zed }",
-            "",
-          ].join("\n")
-          yield* Effect.tryPromise(() =>
-            Fs.writeFile(Path.join(root, "src/quoted.ts"), quotedSource),
-          )
-
-          const workspace = yield* Workspace
-          yield* workspace.withSnapshot(
-            {},
-            Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
-              for (const fileName of sources.keys()) {
-                expect(yield* Draft.imports.organize(project, `src/${fileName}`)).toEqual(
-                  Draft.empty,
-                )
-              }
-
-              const quoted = yield* Draft.imports.organize(project, "src/quoted.ts")
-              expectCompleteEvidence(quoted)
-              const output = yield* applyFileEdits(quotedSource, quoted.edits)
-              expect(output).toContain("import { alpha } from './alpha.js';")
-              expect(output).toContain("import { zed } from './zed.js';")
-              expect(output.endsWith("export { alpha, zed }\n")).toBe(true)
             }),
           )
         }),
@@ -230,8 +178,7 @@ describe("Draft helper contracts", () => {
           const output = yield* workspace.withSnapshot(
             {},
             Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              const project = yield* snapshot.project(app)
+              const project = yield* fixtureProject(app)
               const draft = yield* Draft.cleanUnused(project)
               expectCompleteEvidence(draft)
               return yield* applyFileEdits(
@@ -249,8 +196,7 @@ describe("Draft helper contracts", () => {
             return yield* refreshedWorkspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.cleanUnused(project)
               }),
             )

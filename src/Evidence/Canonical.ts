@@ -1,4 +1,3 @@
-/** Canonical JSON text for durable evidence and plan values. */
 import { Predicate } from "effect"
 import type { Json } from "./Evidence.ts"
 
@@ -14,5 +13,4 @@ const canonicalize = (value: Json): Json => {
   return value
 }
 
-/** Serialize JSON with object keys in recursive lexical order. */
 export const canonicalJson = (value: Json): string => JSON.stringify(canonicalize(value))

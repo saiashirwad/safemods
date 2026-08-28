@@ -11,7 +11,8 @@ import type {
   ProjectSnapshotError,
   SnapshotExpired,
 } from "../Workspace/index.ts"
-import { textHash } from "../Edit/Hash.ts"
+import { sha256 } from "../Edit/Hash.ts"
+import { textEdit } from "../Edit/TextEdit.ts"
 import {
   applySpecifierReplacements,
   specifierReplacements,
@@ -68,7 +69,7 @@ export const files = {
               kind: "delete",
               projectId: project.project.id,
               path,
-              initialHash: textHash(source),
+              initialHash: sha256(source),
               evidenceIds: [`file:delete:${project.project.id}:${path}`],
             },
           ],
@@ -112,7 +113,7 @@ export const files = {
             path: sourcePath,
             toPath: targetPath,
             content: source,
-            initialHash: textHash(source),
+            initialHash: sha256(source),
             evidenceIds: [moveEvidence],
           },
         ],
@@ -154,15 +155,17 @@ export const files = {
         }
         for (const replacement of replacements) {
           const importEvidenceId = `import:move-target:${project.project.id}:${relFile}:${replacement.start}-${replacement.end}`
-          importEdits.push({
-            projectId: project.project.id,
-            fileName: relFile,
-            start: replacement.start,
-            end: replacement.end,
-            expectedTextHash: textHash(file.text.slice(replacement.start, replacement.end)),
-            newText: replacement.newText,
-            evidenceIds: [importEvidenceId],
-          })
+          importEdits.push(
+            textEdit({
+              projectId: project.project.id,
+              fileName: relFile,
+              sourceText: file.text,
+              start: replacement.start,
+              end: replacement.end,
+              newText: replacement.newText,
+              evidenceIds: [importEvidenceId],
+            }),
+          )
         }
       }
 

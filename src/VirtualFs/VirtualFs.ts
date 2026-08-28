@@ -1,7 +1,7 @@
 import { Data, Effect } from "effect"
 import {
   applyFileEdits,
-  textHash,
+  sha256,
   type EditConflict,
   type InvalidEdit,
   type TextEdit,
@@ -42,12 +42,6 @@ export interface VirtualFsMaterializeOptions<E> {
 
 export const virtualFileKey = (projectId: string, fileName: string): string =>
   `${projectId}\0${fileName}`
-
-export const emptySnapshot = (): VirtualFsSnapshot => ({
-  files: new Map(),
-  created: new Set(),
-  deleted: new Set(),
-})
 
 interface VirtualFile {
   readonly projectId: string
@@ -121,7 +115,7 @@ export const materialize = <E>(
       }
 
       const current = yield* requireExisting(operation.projectId, operation.path)
-      const actualHash = textHash(current.content)
+      const actualHash = sha256(current.content)
       if (actualHash !== operation.initialHash) {
         return yield* new VirtualFsError({
           reason: "source-mismatch",

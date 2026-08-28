@@ -1,18 +1,9 @@
-import { Effect, Predicate } from "effect"
+import { Effect } from "effect"
 import type { Node } from "typescript/unstable/ast"
 import type { Type as NativeType } from "typescript/unstable/async"
+import { isIntrinsicTypeName, type IntrinsicTypeName } from "../Workspace/ProjectSnapshot.ts"
 import { matchFailure, matchSuccess, matchesName, type Pattern } from "./Pattern.ts"
 
-export type IntrinsicTypeName =
-  | "string"
-  | "number"
-  | "boolean"
-  | "any"
-  | "unknown"
-  | "never"
-  | "void"
-const isIntrinsic = (value: NativeType | IntrinsicTypeName): value is IntrinsicTypeName =>
-  Predicate.isString(value)
 export const typed = (options?: {
   readonly assignableTo?: NativeType | IntrinsicTypeName
   readonly typeString?: string | RegExp
@@ -33,7 +24,7 @@ export const typed = (options?: {
       )
         return matchFailure
       if (options?.assignableTo !== undefined) {
-        const target = isIntrinsic(options.assignableTo)
+        const target = isIntrinsicTypeName(options.assignableTo)
           ? yield* project.intrinsicType(options.assignableTo)
           : options.assignableTo
         if (!(yield* project.isTypeAssignableTo(type, target))) return matchFailure

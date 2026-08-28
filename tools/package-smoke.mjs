@@ -19,8 +19,7 @@ try {
 
   const imports = Object.keys(packageJson.exports)
     .map((subpath, index) => {
-      const specifier =
-        subpath === "." ? packageJson.name : `${packageJson.name}/${subpath.slice(2)}`
+      const specifier = `${packageJson.name}/${subpath.slice(2)}`
       return `import * as entry${index} from ${JSON.stringify(specifier)}\nvoid entry${index}`
     })
     .join("\n")
@@ -80,37 +79,68 @@ void stateValue
   await writeFile(
     join(fixture, "compatibility-smoke.mjs"),
     `
-import * as Root from "safemods"
+import * as ApplicationEntry from "safemods/Application"
+import * as DraftEntry from "safemods/Draft"
+import * as OverlayEntry from "safemods/Overlay"
+import * as PolicyEntry from "safemods/Policy"
+import * as QueryEntry from "safemods/Query"
+import * as RecipeEntry from "safemods/Recipe"
 import * as VerificationEntry from "safemods/Verification"
 
 const forbidden = [
-  [Root.Application, "Application"],
-  [Root.Draft, "Draft"],
-  [Root.Draft, "arguments"],
-  [Root.Overlay, "overlay"],
-  [Root.Overlay, "computeOverlayMap"],
-  [Root.Plan, "parse"],
-  [Root.Plan, "serialize"],
-  [Root.Policy, "Policy"],
-  [Root.Precondition, "Precondition"],
-  [Root.Query, "Query"],
-  [Root.Query, "preceding"],
-  [Root.Query, "following"],
-  [Root.Recipe, "Recipe"],
-  [Root.Verification, "Preview"],
-  [Root.Verification, "Verification"],
+  [ApplicationEntry, "Application"],
+  [DraftEntry, "Draft"],
+  [DraftEntry, "arguments"],
+  [OverlayEntry, "overlay"],
+  [OverlayEntry, "computeOverlayMap"],
+  [PolicyEntry, "Policy"],
+  [QueryEntry, "Query"],
+  [QueryEntry, "preceding"],
+  [QueryEntry, "following"],
+  [QueryEntry, "inside"],
+  [QueryEntry, "has"],
+  [QueryEntry, "precedes"],
+  [QueryEntry, "follows"],
+  [RecipeEntry, "Recipe"],
+  [VerificationEntry, "Preview"],
+  [VerificationEntry, "Verification"],
 ]
 
 for (const [domain, name] of forbidden) {
   if (name in domain) throw new Error(\`Legacy export still present: \${name}\`)
 }
 
-if ("Preview" in Root) {
-  throw new Error("Preview module is still exported on Root")
+if (
+  typeof QueryEntry.Criterion?.inside !== "function" ||
+  typeof QueryEntry.Criterion?.has !== "function" ||
+  typeof QueryEntry.Criterion?.precedes !== "function" ||
+  typeof QueryEntry.Criterion?.follows !== "function"
+) {
+  throw new Error("Query Criterion does not export the canonical relations")
 }
 
-if (typeof Root.Verification.of !== "function" || typeof VerificationEntry.of !== "function") {
+if (typeof VerificationEntry.of !== "function") {
   throw new Error("Verification entry point does not export of")
+}
+
+const removedEntryPoints = [
+  "safemods",
+  "safemods/Cli",
+  "safemods/Edit",
+  "safemods/Evidence",
+  "safemods/Plan",
+  "safemods/ProjectPath",
+  "safemods/VirtualFs",
+]
+
+for (const specifier of removedEntryPoints) {
+  try {
+    await import(specifier)
+  } catch (error) {
+    if (error?.code === "ERR_PACKAGE_PATH_NOT_EXPORTED") continue
+    throw error
+  }
+  throw new Error(\`Removed entry point is still importable: \${specifier}\`)
 }
 `,
   )

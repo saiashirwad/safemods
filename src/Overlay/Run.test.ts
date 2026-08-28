@@ -1,11 +1,12 @@
 import { path as Path, nodeFsPromises as Fs } from "../platform/node.ts"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import { textHash } from "../Edit/index.ts"
+import { sha256 } from "../Edit/index.ts"
 import * as Draft from "../Draft/index.ts"
 import * as Overlay from "../Overlay/index.ts"
 import { Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("declarative transformations API (@effect/vitest)", () => {
   describe("in-memory snapshot transitions", () => {
@@ -18,8 +19,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             yield* workspace.withSnapshot(
               {},
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
 
                 const libFile = yield* project.sourceFile("src/library.ts")
                 expect(libFile).toBeDefined()
@@ -62,7 +62,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
               {},
               Effect.gen(function* () {
                 const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
 
                 const createdText = "export const value = 1;\n"
                 const createDraft = yield* Draft.files.create(
@@ -78,16 +78,16 @@ describe("declarative transformations API (@effect/vitest)", () => {
                       fileName: "src/generated.ts",
                       start: createdText.indexOf("1"),
                       end: createdText.indexOf("1") + 1,
-                      expectedTextHash: textHash("1"),
+                      expectedTextHash: sha256("1"),
                       newText: "2",
                       evidenceIds: [],
                     },
                   ],
                   createDraft.fileOperations,
                 )
-                expect(createdOverlay[Path.resolve(project.root, "src/generated.ts")]).toContain(
-                  "value = 2",
-                )
+                expect(
+                  createdOverlay.files.get(Path.resolve(project.root, "src/generated.ts")),
+                ).toContain("value = 2")
 
                 const source = yield* project.sourceText("src/library.ts")
                 const moveDraft = yield* Draft.files.move(
@@ -103,16 +103,16 @@ describe("declarative transformations API (@effect/vitest)", () => {
                       fileName: "src/shared/core.ts",
                       start: 0,
                       end: 0,
-                      expectedTextHash: textHash(""),
+                      expectedTextHash: sha256(""),
                       newText: "// moved edit\n",
                       evidenceIds: [],
                     },
                   ],
                   moveDraft.fileOperations,
                 )
-                expect(movedOverlay[Path.resolve(project.root, "src/shared/core.ts")]).toContain(
-                  "moved edit",
-                )
+                expect(
+                  movedOverlay.files.get(Path.resolve(project.root, "src/shared/core.ts")),
+                ).toContain("moved edit")
 
                 const deleteDraft = yield* Draft.files.delete(project, "src/library.ts")
                 const deletedOverlay = yield* Overlay.materialize(
@@ -123,7 +123,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
                       fileName: "src/library.ts",
                       start: 0,
                       end: source.length,
-                      expectedTextHash: textHash(source),
+                      expectedTextHash: sha256(source),
                       newText: "resurrected",
                       evidenceIds: [],
                     },

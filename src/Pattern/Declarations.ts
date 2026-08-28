@@ -3,18 +3,26 @@ import {
   SyntaxKind,
   type ClassDeclaration,
   type FunctionDeclaration,
-  type VariableDeclaration,
   type VariableStatement,
 } from "typescript/unstable/ast"
 import {
   isClassDeclaration,
   isFunctionDeclaration,
   isIdentifier,
-  isVariableDeclaration,
   isVariableStatement,
 } from "typescript/unstable/ast/is"
 import { matchFailure, matchSuccess, matchesName, type Pattern } from "./Pattern.ts"
 import { syntaxKindName } from "./SyntaxKindName.ts"
+
+type ExportableDeclaration = FunctionDeclaration | ClassDeclaration | VariableStatement
+
+const matchesExportModifier = (
+  node: ExportableDeclaration,
+  expected: boolean | undefined,
+): boolean =>
+  expected === undefined ||
+  (node.modifiers?.some((modifier) => modifier.kind === SyntaxKind.ExportKeyword) ?? false) ===
+    expected
 
 export interface FunctionDeclarationPatternOptions {
   readonly name?: string | RegExp
@@ -40,12 +48,7 @@ export const functionDeclaration = (
         (node.modifiers?.some((m) => m.kind === SyntaxKind.AsyncKeyword) ?? false) !== options.async
       )
         return matchFailure
-      if (
-        options?.exported !== undefined &&
-        (node.modifiers?.some((m) => m.kind === SyntaxKind.ExportKeyword) ?? false) !==
-          options.exported
-      )
-        return matchFailure
+      if (!matchesExportModifier(node, options?.exported)) return matchFailure
       return matchSuccess(
         node,
         node.name === undefined
@@ -73,12 +76,7 @@ export const classDeclaration = (
         (node.name === undefined || !matchesName(options.name, node.name.text))
       )
         return matchFailure
-      if (
-        options?.exported !== undefined &&
-        (node.modifiers?.some((m) => m.kind === SyntaxKind.ExportKeyword) ?? false) !==
-          options.exported
-      )
-        return matchFailure
+      if (!matchesExportModifier(node, options?.exported)) return matchFailure
       return matchSuccess(
         node,
         node.name === undefined
@@ -101,12 +99,7 @@ export const variableStatement = (
   match: (node) =>
     Effect.sync(() => {
       if (!isVariableStatement(node)) return matchFailure
-      if (
-        options?.exported !== undefined &&
-        (node.modifiers?.some((m) => m.kind === SyntaxKind.ExportKeyword) ?? false) !==
-          options.exported
-      )
-        return matchFailure
+      if (!matchesExportModifier(node, options?.exported)) return matchFailure
       if (
         options?.name !== undefined &&
         !node.declarationList.declarations.some(
@@ -115,31 +108,5 @@ export const variableStatement = (
       )
         return matchFailure
       return matchSuccess(node, { kind: syntaxKindName(node.kind) })
-    }),
-})
-
-export interface VariableDeclarationPatternOptions {
-  readonly name?: string | RegExp
-}
-export const variableDeclaration = (
-  options?: VariableDeclarationPatternOptions,
-): Pattern<VariableDeclaration, VariableDeclaration> => ({
-  mode: "node",
-  kind: "variableDeclaration",
-  syntaxKind: SyntaxKind.VariableDeclaration,
-  match: (node) =>
-    Effect.sync(() => {
-      if (
-        !isVariableDeclaration(node) ||
-        (options?.name !== undefined &&
-          (!isIdentifier(node.name) || !matchesName(options.name, node.name.text)))
-      )
-        return matchFailure
-      return matchSuccess(
-        node,
-        isIdentifier(node.name)
-          ? { kind: syntaxKindName(node.kind), name: node.name.text }
-          : { kind: syntaxKindName(node.kind) },
-      )
     }),
 })

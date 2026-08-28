@@ -1,6 +1,6 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Exit } from "effect"
-import { applyFileEdits, makeTextEdit, normalizeEdits, textHash, type TextEdit } from "./index.ts"
+import { applyFileEdits, textEdit, normalizeEdits, sha256, type TextEdit } from "./index.ts"
 
 const edit = (start: number, end: number, newText: string): TextEdit => ({
   projectId: "app",
@@ -8,7 +8,7 @@ const edit = (start: number, end: number, newText: string): TextEdit => ({
   start,
   end,
   newText,
-  expectedTextHash: textHash("abcdef".slice(start, end)),
+  expectedTextHash: sha256("abcdef".slice(start, end)),
   evidenceIds: [],
 })
 
@@ -40,7 +40,7 @@ describe("Edit", () => {
 
   effect("guards expected source text", () =>
     Effect.gen(function* () {
-      const guarded = makeTextEdit({
+      const guarded = textEdit({
         projectId: "app",
         fileName: "src/index.ts",
         sourceText: "abcdef",

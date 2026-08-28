@@ -1,25 +1,19 @@
 /** Durable workspace input fingerprinting. */
 import { Effect, FileSystem, Path, Predicate } from "effect"
-import { textHash } from "../Edit/index.ts"
+import { hashDirectoryListing, sha256 } from "../Edit/Hash.ts"
 import type { Json } from "../Evidence/index.ts"
-import type { SourceFingerprint } from "../Plan/index.ts"
-import { parseProjectRelativePath, type ProjectRelativePath } from "../ProjectPath/index.ts"
+import { compareSourceFingerprints, type SourceFingerprint } from "../Plan/index.ts"
 import {
-  hashDirectoryListing,
-  type ProjectNotInSnapshot,
-  type SnapshotExpired,
-  type WorkspaceCompilerError,
-  type WorkspaceSnapshotService,
+  parseProjectRelativePath,
+  projectRelative,
+  type ProjectRelativePath,
+} from "../ProjectPath/index.ts"
+import type {
+  ProjectNotInSnapshot,
+  SnapshotExpired,
+  WorkspaceCompilerError,
+  WorkspaceSnapshotService,
 } from "../Workspace/index.ts"
-
-const relativePath = (
-  path: Path.Path,
-  projectRoot: string,
-  absolute: string,
-): ProjectRelativePath | undefined =>
-  parseProjectRelativePath(
-    path.relative(path.resolve(projectRoot), path.resolve(absolute)).split(path.sep).join("/"),
-  )
 
 const observationRelativePath = (
   fs: FileSystem.FileSystem,
@@ -28,13 +22,13 @@ const observationRelativePath = (
   absolute: string,
 ): Effect.Effect<ProjectRelativePath | undefined> =>
   Effect.gen(function* () {
-    const direct = relativePath(path, projectRoot, absolute)
+    const direct = parseProjectRelativePath(projectRelative(path, projectRoot, absolute))
     if (direct !== undefined) return direct
 
     const realRoot = yield* fs.realPath(projectRoot).pipe(Effect.orElseSucceed(() => undefined))
     if (realRoot === undefined) return undefined
     const realAbsolute = yield* fs.realPath(absolute).pipe(Effect.orElseSucceed(() => absolute))
-    return relativePath(path, realRoot, realAbsolute)
+    return parseProjectRelativePath(projectRelative(path, realRoot, realAbsolute))
   })
 
 const parseExtendsSpecifiers = (text: string): ReadonlyArray<string> => {
@@ -145,7 +139,8 @@ export const fingerprintWorkspace = (
     for (const configured of snapshot.projects) {
       const project = yield* snapshot.project(configured)
       const owned = (yield* project.sourceFileNames).filter(
-        (fileName) => relativePath(path, project.root, fileName) !== undefined,
+        (fileName) =>
+          parseProjectRelativePath(projectRelative(path, project.root, fileName)) !== undefined,
       )
       const files = [...new Set(owned)].sort()
       const configFileName = path.resolve(workspaceRoot, configured.config)
@@ -172,7 +167,7 @@ export const fingerprintWorkspace = (
           addFingerprint(sources, {
             projectId: configured.id,
             fileName: relative,
-            hash: textHash(content),
+            hash: sha256(content),
           })
           const directory = path.dirname(absolute)
           if ((yield* observationRelativePath(fs, path, project.root, directory)) !== undefined) {
@@ -183,7 +178,7 @@ export const fingerprintWorkspace = (
             addFingerprint(sources, {
               projectId: configured.id,
               fileName: relative,
-              hash: textHash(resolvedRelative),
+              hash: sha256(resolvedRelative),
               kind: "realpath",
             })
           }
@@ -201,10 +196,5 @@ export const fingerprintWorkspace = (
         })
       }
     }
-    return [...sources.values()].sort(
-      (left, right) =>
-        left.projectId.localeCompare(right.projectId) ||
-        left.fileName.localeCompare(right.fileName) ||
-        (left.kind ?? "file").localeCompare(right.kind ?? "file"),
-    )
+    return [...sources.values()].sort(compareSourceFingerprints)
   })

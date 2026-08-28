@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { InvalidEdit, type EditConflict, type TextEdit } from "./TextEdit.ts"
-import { textHash } from "./Hash.ts"
+import { sha256 } from "./Hash.ts"
 import { normalizeEdits } from "./Validate.ts"
 
 export const applyFileEdits = (
@@ -11,7 +11,7 @@ export const applyFileEdits = (
     const normalized = yield* normalizeEdits(edits)
     for (const edit of normalized) {
       if (edit.end > sourceText.length) return yield* new InvalidEdit({ edit, reason: "range" })
-      if (textHash(sourceText.slice(edit.start, edit.end)) !== edit.expectedTextHash) {
+      if (sha256(sourceText.slice(edit.start, edit.end)) !== edit.expectedTextHash) {
         return yield* new InvalidEdit({ edit, reason: "source-mismatch" })
       }
     }

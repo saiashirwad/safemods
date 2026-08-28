@@ -25,20 +25,12 @@ export interface BuiltInPolicyInput {
   readonly policies: PlanPolicies
   readonly actualMatches?: number | undefined
   readonly affectedFiles: number
-  readonly baselineErrorCount: number
-  readonly proposedErrorCount: number
   readonly diagnosticDiff: DiagnosticDiff
   readonly secondPlanChangeCount?: number | undefined
   readonly allowedErrors?: ReadonlyArray<AllowedError> | undefined
 }
 
 export interface PolicyEvaluation {
-  readonly results: ReadonlyArray<PolicyResult>
-  readonly failure?: PolicyFailure | undefined
-  readonly missingMatchMeasurement: boolean
-}
-
-export interface CustomPolicyEvaluation {
   readonly results: ReadonlyArray<PolicyResult>
   readonly failure?: PolicyFailure | undefined
 }
@@ -100,14 +92,14 @@ export const evaluateBuiltInPolicies = (input: BuiltInPolicyInput): PolicyEvalua
     failure = { policy: "idempotence", detail: "Second recipe run was not empty" }
   }
 
-  return { results, failure, missingMatchMeasurement }
+  return { results, failure }
 }
 
 /** Evaluate custom rules in declaration order and stop at the first failure. */
 export const evaluateCustomRules = (
   rules: ReadonlyArray<VerificationRule>,
   context: PolicyEvaluationContext,
-): CustomPolicyEvaluation => {
+): PolicyEvaluation => {
   const results: Array<PolicyResult> = []
   for (const rule of rules) {
     const result = rule.evaluate(context)
@@ -127,25 +119,4 @@ export const evaluateCustomRules = (
     }
   }
   return { results }
-}
-
-/** Convert a reported failed result into the defensive verification failure. */
-export const failureFromPolicyResults = (
-  results: ReadonlyArray<PolicyResult> | undefined,
-  diagnosticDiff: DiagnosticDiff,
-): PolicyFailure | undefined => {
-  const failed = results?.find((result) => !result.passed)
-  if (failed === undefined) return undefined
-  return {
-    policy:
-      failed.name === "idempotence"
-        ? "idempotence"
-        : failed.name === "match-count"
-          ? "matches"
-          : failed.name === "affected-files"
-            ? "affected-files"
-            : "diagnostics",
-    detail: failed.detail ?? `Policy '${failed.name}' failed`,
-    diagnostics: diagnosticDiff.introduced,
-  }
 }

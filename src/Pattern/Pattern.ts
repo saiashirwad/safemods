@@ -1,4 +1,3 @@
-/** Matcher algebra and shared Pattern domain primitives. */
 import { Effect, Predicate } from "effect"
 import type { Node, SyntaxKind } from "typescript/unstable/ast"
 import { isCallExpression } from "typescript/unstable/ast/is"
@@ -17,15 +16,9 @@ export type PatternResult<Out> = PatternMatchResult<Out> | PatternMismatch
 
 export type SyntaxKindFilter = SyntaxKind | ReadonlyArray<SyntaxKind>
 
-/**
- * A node-level criterion. Query relations consume this same algebra as
- * selection-level criteria; the mode is explicit so relations never need to
- * inspect an arbitrary object to discover how it matches.
- */
 export interface NodeCriterion<N extends Node = Node, Out = N> {
   readonly mode: "node"
   readonly kind?: string
-  /** Optional traversal hint. It is a performance hint, not the full match. */
   readonly syntaxKind?: SyntaxKindFilter
   readonly match: (
     node: Node,
@@ -33,7 +26,6 @@ export interface NodeCriterion<N extends Node = Node, Out = N> {
   ) => Effect.Effect<PatternResult<Out>, ProjectSnapshotError>
 }
 
-/** Backward-compatible name for node criteria. */
 export type Pattern<N extends Node = Node, Out = N> = NodeCriterion<N, Out>
 
 type Binding<K extends string, Out> = { readonly [P in K]: Out }
@@ -50,13 +42,19 @@ export const matchSuccess = <Out>(
 
 export const matchFailure: PatternMismatch = { matched: false }
 
-export const matchesName = (name: string | RegExp, text: string): boolean => {
-  if (Predicate.isString(name)) return text === name
-  // `/g` and `/y` advance lastIndex; clone so two matches against the same
-  // name do not alternate.
-  const pattern = name.global || name.sticky ? new RegExp(name.source, name.flags) : name
-  return pattern.test(text)
+export const testRegExp = (pattern: RegExp, value: string): boolean => {
+  if (!pattern.global && !pattern.sticky) return pattern.test(value)
+  const lastIndex = pattern.lastIndex
+  try {
+    pattern.lastIndex = 0
+    return pattern.test(value)
+  } finally {
+    pattern.lastIndex = lastIndex
+  }
 }
+
+export const matchesName = (name: string | RegExp, text: string): boolean =>
+  Predicate.isString(name) ? text === name : testRegExp(name, text)
 
 const bindingOf = <K extends string, Out>(key: K, value: Out): Binding<K, Out> =>
   // SAFETY: the computed key is the binding name supplied to this pattern.
@@ -68,26 +66,22 @@ const tupleMatchOf = <P extends ReadonlyArray<AnyPattern>>(
   // SAFETY: tuple patterns push one value for every matched pattern in order.
   values as TupleMatch<P>
 
-/** Matches any node and yields it as-is. */
 export const any: Pattern<Node, Node> = {
   mode: "node",
   kind: "any",
   match: (node) => Effect.succeed(matchSuccess(node)),
 }
 
-/** Matches a node against a type predicate and yields the narrowed node. */
 export function predicate<N extends Node = Node, Out extends Node = N>(
   kind: string,
   test: (node: Node) => node is Out,
   syntaxKind?: SyntaxKindFilter,
 ): Pattern<N, Out>
-/** Matches a node against a boolean test and yields the node. */
 export function predicate<N extends Node = Node>(
   kind: string,
   test: (node: Node) => boolean,
   syntaxKind?: SyntaxKindFilter,
 ): Pattern<N, N>
-/** Matches a node against an explicit transform. */
 export function predicate<N extends Node = Node, Out = N>(
   kind: string,
   test: (node: Node) => PatternResult<Out>,
@@ -141,7 +135,6 @@ export const bind = <K extends string, N extends Node, Out>(
   return pattern.syntaxKind === undefined ? result : { ...result, syntaxKind: pattern.syntaxKind }
 }
 
-/** Matches patterns against call arguments, or a singleton node. */
 export const tuple = <P extends ReadonlyArray<AnyPattern>>(
   patterns: P,
 ): Pattern<Node, TupleMatch<P>> => ({

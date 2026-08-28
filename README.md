@@ -115,7 +115,7 @@ Passing verification issues a `VerifiedPlan`. Only the Verification module can c
 
 ### Application
 
-Application is the one module that writes. Its `apply` accepts a `VerifiedPlan` and nothing else, so there is no path from a Draft to disk that skips the checks. A successful write returns a receipt with the output hash of every file.
+Application is the one module that writes. Its `applyVerifiedPlan` function accepts a `VerifiedPlan` and nothing else, so there is no path from a Draft to disk that skips the checks. A successful write returns a receipt with the output hash of every file.
 
 ## Composing recipes
 
@@ -176,7 +176,7 @@ An agent gets the same guarantees a human does. It cannot write without a verifi
 ```ts
 import { Effect, Layer } from "effect"
 import * as Application from "safemods/Application"
-import { applicationLayerNode, workspaceLayerNode } from "safemods/Node"
+import { layer as nodeLayer, workspaceLayerNode } from "safemods/Node"
 import * as Recipe from "safemods/Recipe"
 import * as Verification from "safemods/Verification"
 import { ConfiguredProject } from "safemods/Workspace"
@@ -184,13 +184,13 @@ import recipe from "./rename-old-name.ts"
 
 const app = ConfiguredProject.make({ id: "app", config: "tsconfig.json" })
 const workspace = workspaceLayerNode({ projects: [app] }, { cwd: "/path/to/project" })
-const runtime = applicationLayerNode.pipe(Layer.provideMerge(workspace))
+const runtime = nodeLayer.pipe(Layer.provideMerge(workspace))
 
 const program = Effect.gen(function* () {
   const plan = yield* Recipe.run(recipe, undefined)
   const preview = yield* Verification.of(plan)
   const verified = yield* Verification.verify(plan, recipe, undefined)
-  const receipt = yield* Application.apply(verified)
+  const receipt = yield* Application.applyVerifiedPlan(verified)
   return { preview, receipt }
 })
 

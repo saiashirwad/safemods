@@ -2,10 +2,11 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../Draft/index.ts"
 import type { Draft as DraftModel } from "../Draft/index.ts"
-import { applyFileEdits, textHash, type TextEdit } from "../Edit/index.ts"
+import { applyFileEdits, sha256, type TextEdit } from "../Edit/index.ts"
 import { DraftEvidenceConflict } from "../Evidence/index.ts"
 import { requireProjectRelativePath } from "../ProjectPath/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 import {
   ProjectNotInSnapshot,
   Workspace,
@@ -45,7 +46,7 @@ describe("Overlay.composeDraft", () => {
           fileName: "src/consumer.ts",
           start: firstStart,
           end: firstStart + "renamed".length,
-          expectedTextHash: textHash("renamed"),
+          expectedTextHash: sha256("renamed"),
           newText: "changedAlias",
           evidenceIds: ["first"],
         }
@@ -56,7 +57,7 @@ describe("Overlay.composeDraft", () => {
           fileName: "src/consumer.ts",
           start: secondStart,
           end: secondStart + "other(2)".length,
-          expectedTextHash: textHash("other(2)"),
+          expectedTextHash: sha256("other(2)"),
           newText: "other(20)",
           evidenceIds: ["second"],
         }
@@ -93,7 +94,7 @@ describe("Overlay.composeDraft", () => {
           fileName: "src/moved.ts",
           start: editStart,
           end: editStart + "other(2)".length,
-          expectedTextHash: textHash("other(2)"),
+          expectedTextHash: sha256("other(2)"),
           newText: "other(20)",
           evidenceIds: ["edit"],
         }
@@ -106,7 +107,7 @@ describe("Overlay.composeDraft", () => {
               projectId: app.id,
               path: requireProjectRelativePath("src/consumer.ts"),
               toPath: requireProjectRelativePath("src/moved.ts"),
-              initialHash: textHash(original),
+              initialHash: sha256(original),
               content: original,
               evidenceIds: ["move"],
             },
@@ -143,7 +144,7 @@ describe("Overlay.composeDraft", () => {
           fileName: "src/consumer.ts",
           start: 0,
           end: 0,
-          expectedTextHash: textHash(""),
+          expectedTextHash: sha256(""),
           newText: "first",
           evidenceIds: [],
         }
@@ -208,8 +209,7 @@ describe("Overlay.composeDraft", () => {
   effect("folds a later edit into a created file", () =>
     withSnapshot((_, app) =>
       Effect.gen(function* () {
-        const snapshot = yield* WorkspaceSnapshot
-        const project = yield* snapshot.project(app)
+        const project = yield* fixtureProject(app)
         const created = yield* Draft.files.create(
           project,
           "src/generated.ts",
@@ -240,8 +240,7 @@ describe("Overlay.composeDraft", () => {
   effect("folds a move of a created file into one create", () =>
     withSnapshot((_, app) =>
       Effect.gen(function* () {
-        const snapshot = yield* WorkspaceSnapshot
-        const project = yield* snapshot.project(app)
+        const project = yield* fixtureProject(app)
         const created = yield* Draft.files.create(
           project,
           "src/generated.ts",
@@ -272,8 +271,7 @@ describe("Overlay.composeDraft", () => {
   effect("makes delete of a created file a no-op", () =>
     withSnapshot((_, app) =>
       Effect.gen(function* () {
-        const snapshot = yield* WorkspaceSnapshot
-        const project = yield* snapshot.project(app)
+        const project = yield* fixtureProject(app)
         const created = yield* Draft.files.create(
           project,
           "src/generated.ts",
@@ -296,8 +294,7 @@ describe("Overlay.composeDraft", () => {
   effect("turns delete of a moved file into delete of the source", () =>
     withSnapshot((_, app) =>
       Effect.gen(function* () {
-        const snapshot = yield* WorkspaceSnapshot
-        const project = yield* snapshot.project(app)
+        const project = yield* fixtureProject(app)
         const original = yield* project.sourceText("src/library.ts")
         const moved = yield* Draft.files.move(project, "src/library.ts", "src/moved-library.ts")
         const composed = yield* Overlay.composeDraft(
@@ -312,9 +309,51 @@ describe("Overlay.composeDraft", () => {
         expect(composed.fileOperations?.[0]).toMatchObject({
           kind: "delete",
           path: "src/library.ts",
-          initialHash: textHash(original),
+          initialHash: sha256(original),
         })
         expect(composed.edits).toHaveLength(0)
+      }),
+    ),
+  )
+
+  effect("keeps unrelated edits when deleting a moved file", () =>
+    withSnapshot((_, app) =>
+      Effect.gen(function* () {
+        const project = yield* fixtureProject(app)
+        const original = yield* project.sourceText("src/consumer.ts")
+        const start = original.indexOf("other(2)")
+        const unrelated: DraftModel = {
+          edits: [
+            {
+              projectId: app.id,
+              fileName: "src/consumer.ts",
+              start,
+              end: start + "other(2)".length,
+              expectedTextHash: sha256("other(2)"),
+              newText: "other(20)",
+              evidenceIds: ["unrelated"],
+            },
+          ],
+          evidence: [evidence("unrelated")],
+          matches: 1,
+        }
+        const moved = yield* Draft.files.move(project, "src/library.ts", "src/moved-library.ts")
+        const composed = yield* Overlay.composeDraft(
+          Draft.concat(unrelated, moved),
+          Effect.gen(function* () {
+            const overlaySnapshot = yield* WorkspaceSnapshot
+            const overlayProject = yield* overlaySnapshot.project(app)
+            return yield* Draft.files.delete(overlayProject, "src/moved-library.ts")
+          }),
+        )
+
+        expect(composed.fileOperations).toHaveLength(1)
+        expect(composed.fileOperations?.[0]).toMatchObject({
+          kind: "delete",
+          path: "src/library.ts",
+        })
+        expect(composed.edits).toHaveLength(1)
+        expect(yield* applyFileEdits(original, composed.edits)).toContain("other(20)")
       }),
     ),
   )
@@ -322,8 +361,7 @@ describe("Overlay.composeDraft", () => {
   effect("queries a moved file on the overlay and rebases the edit into the move", () =>
     withSnapshot((_, app) =>
       Effect.gen(function* () {
-        const snapshot = yield* WorkspaceSnapshot
-        const project = yield* snapshot.project(app)
+        const project = yield* fixtureProject(app)
         const moved = yield* Draft.files.move(project, "src/library.ts", "src/moved-library.ts")
         const composed = yield* Overlay.composeDraft(
           moved,
@@ -353,8 +391,7 @@ describe("Overlay.composeDraft", () => {
   effect("makes delete consume earlier edits to the same file", () =>
     withSnapshot((_, app) =>
       Effect.gen(function* () {
-        const snapshot = yield* WorkspaceSnapshot
-        const project = yield* snapshot.project(app)
+        const project = yield* fixtureProject(app)
         const library = yield* project.file("src/library.ts")
         const source = yield* library.sourceFile
         const edited = yield* Draft.replace(project, source, `${source.text}\n// transient edit\n`)

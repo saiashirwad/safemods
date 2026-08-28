@@ -1,5 +1,11 @@
-export { asJson, canonicalJson } from "./Canonical.ts"
-export { parsePlan, serializePlan, validatePlan } from "./Codec.ts"
+export {
+  canonicalJson,
+  compareSourceFingerprints,
+  parsePlan,
+  serializePlan,
+  validatePlan,
+} from "./Codec.ts"
+export type { ValidatedPlan } from "./Codec.ts"
 export { finalizePlan } from "./Finalize.ts"
 export { isContentFingerprint, PlanBuildError, PlanDecodeError } from "./TransformationPlan.ts"
 export type {
@@ -16,10 +22,3 @@ export type {
   TransformationPlan,
 } from "./TransformationPlan.ts"
 export { TransformationPlanSchema } from "./Structure.ts"
-export {
-  isProjectRelativePath,
-  parseProjectRelativePath,
-  requireProjectRelativePath,
-  InvalidProjectRelativePath,
-} from "../ProjectPath/index.ts"
-export type { ProjectRelativePath } from "../ProjectPath/index.ts"

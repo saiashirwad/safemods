@@ -17,21 +17,17 @@ export interface ValidatedRecipeInput<Input> {
 export const validateRecipeInput = <Input, E, R>(
   recipe: Recipe<Input, E, R>,
   input: Input,
-): Effect.Effect<ValidatedRecipeInput<Input>, RecipeInputError> => {
-  if (recipe.schema === undefined) return Effect.succeed({ value: input, encoded: input ?? null })
+): Effect.Effect<ValidatedRecipeInput<Input>, RecipeInputError> =>
+  Effect.gen(function* () {
+    const schema = recipe.schema
+    const candidate = input ?? null
+    if (schema === undefined) {
+      const encoded = yield* Schema.decodeUnknownEffect(Schema.Json)(candidate)
+      return { value: input, encoded }
+    }
 
-  const schema = recipe.schema
-  return Effect.gen(function* () {
-    // SAFETY: Recipe schemas are pure and fail only with SchemaError.
-    const decode = Schema.decodeUnknownEffect(schema) as (
-      value: Input,
-    ) => Effect.Effect<Input, Schema.SchemaError>
-    const value = yield* decode(input)
-    // SAFETY: Recipe schemas encode to the JSON value stored in the Plan.
-    const encode = Schema.encodeUnknownEffect(schema) as (
-      value: Input,
-    ) => Effect.Effect<Json, Schema.SchemaError>
-    const encoded = yield* encode(value)
+    const value = yield* Schema.decodeUnknownEffect(schema)(input)
+    const candidateEncoded = yield* Schema.encodeUnknownEffect(schema)(value)
+    const encoded = yield* Schema.decodeUnknownEffect(Schema.Json)(candidateEncoded ?? null)
     return { value, encoded }
   }).pipe(Effect.mapError((cause) => new RecipeInputError({ recipe: recipe.name, cause })))
-}

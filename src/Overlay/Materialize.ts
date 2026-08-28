@@ -14,18 +14,12 @@ import {
   type WorkspaceSnapshotService,
 } from "../Workspace/index.ts"
 
-/**
- * Materialize changes against one coherent virtual filesystem.
- *
- * The return value is a VirtualFsSnapshot. Absolute-path indexing is retained
- * as a compatibility view for callers of the pre-Phase-1 Overlay API.
- */
 export const materialize = (
   snapshot: WorkspaceSnapshotService,
   edits: ReadonlyArray<TextEdit>,
   fileOperations: ReadonlyArray<PlannedFileOperation> = [],
 ): Effect.Effect<
-  VirtualFsSnapshot & Readonly<Record<string, string>>,
+  VirtualFsSnapshot,
   | ProjectSnapshotError
   | ProjectNotInSnapshot
   | FileNotFound
@@ -57,8 +51,6 @@ export const materialize = (
     const projectForPath = (projectId: string): ProjectSnapshot => {
       const project = snapshots.get(projectId)
       if (project === undefined) {
-        // Every path is resolved after its project is loaded by the canonical
-        // engine; this is an invariant violation if it ever occurs.
         throw new Error(`Project ${projectId} was not loaded before path resolution`)
       }
       return project
@@ -75,7 +67,5 @@ export const materialize = (
       resolvePath: (projectId, fileName) => projectForPath(projectId).resolveFileName(fileName),
     })
 
-    // A non-symbol compatibility view keeps older Overlay.materialize users
-    // working without making lifecycle state implicit again.
-    return Object.assign(Object.fromEntries(result.files), result)
+    return result
   })

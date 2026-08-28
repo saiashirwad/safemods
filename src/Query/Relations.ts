@@ -23,14 +23,9 @@ import type { EvidenceFact } from "../Evidence/Evidence.ts"
 import type { ProjectRelativePath } from "../ProjectPath/index.ts"
 import { syntaxKindName, type NodeCriterion } from "../Pattern/index.ts"
 import type { ProjectSnapshot, ProjectSnapshotError } from "../Workspace/index.ts"
-import type { Criterion, Query, QueryContractError, Selection } from "./Query.ts"
-import { where } from "./Operators.ts"
+import type { Criterion, Selection } from "./Query.ts"
 
-export interface InsideOptions {
-  readonly stopBy?: "boundary" | "root"
-}
-
-export interface HasOptions {
+export interface StopOptions {
   readonly stopBy?: "boundary" | "root"
 }
 
@@ -201,7 +196,7 @@ const evaluateSibling = <Out, E, R>(
 
 const criterionInside = <A extends Node, Out = unknown, E = never, R = never>(
   matcher: RelationalMatcher<Out, E, R>,
-  options?: InsideOptions,
+  options?: StopOptions,
 ): Criterion<A, E | ProjectSnapshotError, R> => ({
   mode: "selection",
   id: `inside(${matcherId(matcher)})`,
@@ -242,7 +237,7 @@ const criterionInside = <A extends Node, Out = unknown, E = never, R = never>(
 
 const criterionHas = <A extends Node, Out = unknown, E = never, R = never>(
   matcher: RelationalMatcher<Out, E, R>,
-  options?: HasOptions,
+  options?: StopOptions,
 ): Criterion<A, E | ProjectSnapshotError, R> => ({
   mode: "selection",
   id: `has(${matcherId(matcher)})`,
@@ -359,50 +354,6 @@ const criterionSibling = <A extends Node, Out = unknown, E = never, R = never>(
       return results
     }),
 })
-
-/** Filter selections to only those nested inside an ancestor matching the given pattern, criterion, or predicate. */
-export const inside =
-  <Out = unknown, E2 = never, R2 = never>(
-    matcher: RelationalMatcher<Out, E2, R2>,
-    options?: InsideOptions,
-  ) =>
-  <A extends Node, E, R>(
-    self: Query<A, E, R>,
-  ): Query<A, E | E2 | ProjectSnapshotError | QueryContractError, R | R2> =>
-    where(criterionInside<A, Out, E2, R2>(matcher, options))(self)
-
-/** Filter selections to only those containing a descendant matching the given pattern, criterion, or predicate. */
-export const has =
-  <Out = unknown, E2 = never, R2 = never>(
-    matcher: RelationalMatcher<Out, E2, R2>,
-    options?: HasOptions,
-  ) =>
-  <A extends Node, E, R>(
-    self: Query<A, E, R>,
-  ): Query<A, E | E2 | ProjectSnapshotError | QueryContractError, R | R2> =>
-    where(criterionHas<A, Out, E2, R2>(matcher, options))(self)
-
-/** Filter selections to only those preceding a sibling matching the given pattern, criterion, or predicate. */
-export const precedes =
-  <Out = unknown, E2 = never, R2 = never>(
-    matcher: RelationalMatcher<Out, E2, R2>,
-    options?: SiblingOptions,
-  ) =>
-  <A extends Node, E, R>(
-    self: Query<A, E, R>,
-  ): Query<A, E | E2 | ProjectSnapshotError | QueryContractError, R | R2> =>
-    where(criterionSibling<A, Out, E2, R2>("precedes", matcher, options))(self)
-
-/** Filter selections to only those following a sibling matching the given pattern, criterion, or predicate. */
-export const follows =
-  <Out = unknown, E2 = never, R2 = never>(
-    matcher: RelationalMatcher<Out, E2, R2>,
-    options?: SiblingOptions,
-  ) =>
-  <A extends Node, E, R>(
-    self: Query<A, E, R>,
-  ): Query<A, E | E2 | ProjectSnapshotError | QueryContractError, R | R2> =>
-    where(criterionSibling<A, Out, E2, R2>("follows", matcher, options))(self)
 
 export const RelationCriterion = {
   inside: criterionInside,

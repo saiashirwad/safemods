@@ -1,83 +1,15 @@
-import { path as Path, nodeFsPromises as Fs } from "../platform/node.ts"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import * as Application from "../Application/index.ts"
 import * as Draft from "../Draft/index.ts"
-import { applicationLayerNode } from "../Node/index.ts"
 import * as Pattern from "../Pattern/index.ts"
 import * as Policy from "../Policy/index.ts"
-import * as Precondition from "../Precondition/index.ts"
 import * as Query from "../Query/index.ts"
 import * as Recipe from "../Recipe/index.ts"
 import * as Verification from "../Verification/index.ts"
-import { WorkspaceSnapshot } from "../Workspace/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
+import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("recipe policy and concurrent composition", () => {
-  effect(
-    "Preconditions respect Recipe.pipe overlays when evaluating chained transformations",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          const step1 = Recipe.define("step1-add-barrel-import", {
-            version: "1.0.0",
-            run: () =>
-              Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
-                return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
-                  module: "./barrel.js",
-                  name: "publicTarget",
-                })
-              }),
-          })
-
-          const step2 = Recipe.define("step2-transform-matching", {
-            version: "1.0.0",
-            run: () =>
-              Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
-
-                const barrelFiles = yield* Precondition.filesMatching(
-                  project,
-                  Precondition.hasImport("./barrel.js"),
-                )
-                expect(barrelFiles.map((f) => f.path)).toEqual([
-                  "src/consumer.ts",
-                  "src/reexport-consumer.ts",
-                ])
-
-                const libraryFile = yield* project.file("src/library.ts")
-                const targetSymbol = yield* libraryFile.symbolNamed("target")
-
-                const targetCalls = yield* Query.calls(barrelFiles).pipe(
-                  Query.where(Query.resolvesTo(targetSymbol, { location: (c) => c.expression })),
-                  Query.collect,
-                )
-
-                return yield* Draft.replaceEach(targetCalls, ({ value: call }) => {
-                  const arg = call.arguments[0]!
-                  return { node: arg, text: `publicTarget(${arg.getText()})` }
-                })
-              }),
-          })
-
-          const pipeline = Recipe.pipe(step1, step2)
-          const plan = yield* Recipe.run(pipeline, undefined)
-          const verified = yield* Verification.verify(plan, pipeline, undefined)
-          yield* Application.apply(verified).pipe(Effect.provide(applicationLayerNode))
-
-          const consumerContent = yield* Effect.tryPromise(() =>
-            Fs.readFile(Path.join(root, "src/consumer.ts"), "utf8"),
-          )
-          expect(consumerContent).toContain("publicTarget")
-          expect(consumerContent).toContain("renamed(/* keep this comment */ publicTarget(1))")
-        }),
-      ),
-    60_000,
-  )
-
   effect(
     "composes concurrent recipes with Recipe.all and executes conditionally with Recipe.branch",
     () =>
@@ -87,8 +19,7 @@ describe("recipe policy and concurrent composition", () => {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
                   module: "effect",
                   name: "Chunk",
@@ -100,8 +31,7 @@ describe("recipe policy and concurrent composition", () => {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.imports.addNamed(project, "src/reexport-consumer.ts", {
                   module: "effect",
                   name: "HashSet",
@@ -141,11 +71,11 @@ describe("recipe policy and concurrent composition", () => {
       > = [
         [Recipe.pipe(guarded, bounded), 3],
         [Recipe.all([guarded, bounded]), 3],
-        [Recipe.branch(() => true, guarded, bounded), 3],
-        [Recipe.when(() => true, guarded), undefined],
+        [Recipe.branch(() => true, guarded, bounded), 0],
+        [Recipe.when(() => true, guarded), 0],
       ]
       for (const [composed, expectedMin] of composedCases) {
-        expect(composed.policies.maxAffectedFiles).toBe(2)
+        expect(composed.policies.maxAffectedFiles).toBeUndefined()
         expect(composed.policies.matchCount.min).toBe(expectedMin)
         expect(composed.policies.idempotence).toBe("required")
         expect(composed.rules.map((rule) => rule.name)).toContain("fixes-error:TS999")
@@ -153,9 +83,9 @@ describe("recipe policy and concurrent composition", () => {
     }),
   )
 
-  effect("Recipe.pipe, all, and branch keep the stricter child policy", () =>
+  effect("composes bounds for recipes that all run or choose one branch", () =>
     Effect.sync(() => {
-      const stricter = Recipe.define("stricter-policy", {
+      const narrower = Recipe.define("narrower-policy", {
         version: "1.0.0",
         policies: [
           Policy.atMostFiles(2),
@@ -165,7 +95,7 @@ describe("recipe policy and concurrent composition", () => {
         ],
         run: () => Effect.succeed(Draft.empty),
       })
-      const looser = Recipe.define("looser-policy", {
+      const wider = Recipe.define("wider-policy", {
         version: "1.0.0",
         policies: [
           Policy.atMostFiles(10),
@@ -175,20 +105,40 @@ describe("recipe policy and concurrent composition", () => {
         run: () => Effect.succeed(Draft.empty),
       })
 
-      const composed = [
-        Recipe.pipe(stricter, looser),
-        Recipe.pipe(looser, stricter),
-        Recipe.all([stricter, looser]),
-        Recipe.branch(() => true, stricter, looser),
-      ]
-      for (const recipe of composed) {
-        expect(recipe.policies.maxAffectedFiles).toBe(stricter.policies.maxAffectedFiles)
-        expect(recipe.policies.matchCount.min).toBe(stricter.policies.matchCount.min)
-        expect(recipe.policies.matchCount.max).toBe(stricter.policies.matchCount.max)
-        expect(recipe.policies.diagnostics).toBe(stricter.policies.diagnostics)
-        expect(recipe.policies.idempotence).toBe(stricter.policies.idempotence)
+      for (const recipe of [Recipe.pipe(narrower, wider), Recipe.all([narrower, wider])]) {
+        expect(recipe.policies.maxAffectedFiles).toBe(12)
+        expect(recipe.policies.matchCount).toEqual({ min: 4, max: 24 })
+        expect(recipe.policies.diagnostics).toBe("no-new-errors")
+        expect(recipe.policies.idempotence).toBe("required")
       }
+
+      const branched = Recipe.branch(() => true, narrower, wider)
+      expect(branched.policies.maxAffectedFiles).toBe(10)
+      expect(branched.policies.matchCount).toEqual({ min: 1, max: 20 })
+      expect(branched.policies.diagnostics).toBe("no-new-errors")
+      expect(branched.policies.idempotence).toBe("required")
     }),
+  )
+
+  effect(
+    "verifies the summed match count of bounded child recipes",
+    () =>
+      withFixture(() =>
+        Effect.gen(function* () {
+          const child = (name: string) =>
+            Recipe.define(name, {
+              version: "1.0.0",
+              policies: [Policy.exactly(2)],
+              run: () => Effect.succeed({ ...Draft.empty, matches: 2 }),
+            })
+          const recipe = Recipe.all([child("first"), child("second")])
+          const plan = yield* Recipe.run(recipe, undefined)
+          expect(plan.measurements?.matches).toBe(4)
+          expect(plan.policies.matchCount).toEqual({ min: 4, max: 4 })
+          yield* Verification.verify(plan, recipe, undefined)
+        }),
+      ),
+    60_000,
   )
 
   effect(
@@ -200,8 +150,7 @@ describe("recipe policy and concurrent composition", () => {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
                   module: "./library.js",
                   name: "TargetInput",
@@ -212,8 +161,7 @@ describe("recipe policy and concurrent composition", () => {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const libraryFile = yield* project.file("src/library.ts")
                 const decls = yield* Query.match(
                   libraryFile,
@@ -256,8 +204,7 @@ describe("recipe policy and concurrent composition", () => {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const calls = yield* Query.calls(project).pipe(
                   Query.within("src/consumer.ts"),
                   Query.withArgCount(1),
@@ -274,8 +221,7 @@ describe("recipe policy and concurrent composition", () => {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* snapshot.project(app)
+                const project = yield* fixtureProject(app)
                 const calls = yield* Query.calls(project).pipe(
                   Query.within("src/consumer.ts"),
                   Query.withArgCount(1),

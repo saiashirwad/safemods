@@ -1,4 +1,3 @@
-/** Query domain types and criterion combinators. */
 import { Data, Effect, type Stream } from "effect"
 import type { SyntaxKind } from "typescript/unstable/ast"
 import type { EvidenceFact, QueryEvidence } from "../Evidence/Evidence.ts"
@@ -12,15 +11,9 @@ export interface TargetFileScope {
   readonly fileName: string
 }
 
-/**
- * An occurrence admitted by a query: the snapshot-scoped native value, its
- * durable project-relative location, the Project Snapshot it belongs to, and
- * the evidence explaining why it qualified.
- */
 export interface Selection<A> {
   readonly value: A
   readonly project: ProjectSnapshot
-  /** Project-relative, case-preserving path. Safe for durable evidence. */
   readonly fileName: ProjectRelativePath
   readonly start: number
   readonly end: number
@@ -35,12 +28,6 @@ export class QueryContractError extends Data.TaggedError("QueryContractError")<{
   readonly actual: number
 }> {}
 
-/**
- * A batched semantic criterion. `select` receives a batch of Selections and
- * returns aligned optional evidence facts: `undefined` rejects the candidate,
- * facts admit it and are recorded as Query Evidence. A length mismatch is a
- * QueryContractError.
- */
 export interface Criterion<A, E = never, R = never> {
   readonly mode: "selection"
   readonly id: string
@@ -79,7 +66,6 @@ const criterionPredicate = <A>(
     ),
 })
 
-/** Combinator that admits candidates only when all given criteria admit them. */
 const criterionAll = <A, E, R>(
   ...criteria: ReadonlyArray<Criterion<A, E, R>>
 ): Criterion<A, E, R> => ({
@@ -101,7 +87,6 @@ const criterionAll = <A, E, R>(
     }),
 })
 
-/** Combinator that admits candidates when at least one criterion admits them. */
 const criterionAny = <A, E, R>(
   ...criteria: ReadonlyArray<Criterion<A, E, R>>
 ): Criterion<A, E, R> => ({
@@ -124,7 +109,6 @@ const criterionAny = <A, E, R>(
     }),
 })
 
-/** Inverts a criterion. */
 const criterionNot = <A, E, R>(criterion: Criterion<A, E, R>): Criterion<A, E, R> => ({
   mode: "selection",
   id: `not(${criterion.id})`,

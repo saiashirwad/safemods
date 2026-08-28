@@ -1,15 +1,10 @@
-/**
- * AgentTool domain — bridge recipes into LLM-callable tools.
- *
- * Turns any `Recipe` into a typed, validated agent tool conforming
- * to standard LLM function-calling protocols (OpenAI / MCP / Anthropic).
- */
-import { Data, Effect, Predicate, Schema, SchemaIssue } from "effect"
+import { Data, Effect, type JsonSchema, Predicate, Schema, SchemaIssue } from "effect"
+import type { Json } from "../Evidence/index.ts"
 import { executeRecipe } from "../Execution/index.ts"
-import { applicationLayerNode, layer as nodeLayer } from "../Node/index.ts"
+import { layer as nodeLayer } from "../Node/index.ts"
+import type { DiagnosticDiff, DiagnosticRecord } from "../Policy/index.ts"
 import { type Recipe as RecipeModel, RecipeInputError } from "../Recipe/index.ts"
 import { StalePlanError, VerificationFailure, type PolicyResult } from "../Verification/index.ts"
-import type { DiagnosticDiff, DiagnosticRecord } from "../Policy/index.ts"
 import type { Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"
 
 export type ToolAction = "create" | "delete" | "modify" | "move"
@@ -17,21 +12,6 @@ export type ToolAction = "create" | "delete" | "modify" | "move"
 export interface ToolFileResult {
   readonly fileName: string
   readonly action: ToolAction
-}
-
-/** A compiler diagnostic in the JSON response format used by agent tools. */
-export type ToolDiagnostic = DiagnosticRecord
-
-export interface ToolDiagnosticReport {
-  readonly introduced: ReadonlyArray<ToolDiagnostic>
-  readonly resolved: ReadonlyArray<ToolDiagnostic>
-  readonly unchanged: ReadonlyArray<ToolDiagnostic>
-}
-
-export interface ToolPolicyResult {
-  readonly name: string
-  readonly passed: boolean
-  readonly detail?: string | undefined
 }
 
 export interface ToolSchemaIssue {
@@ -45,7 +25,7 @@ export type ToolExecutionErrorDetails =
       readonly _tag: "VerificationFailure"
       readonly policy: VerificationFailure["policy"]
       readonly detail: string
-      readonly diagnostics: ReadonlyArray<ToolDiagnostic>
+      readonly diagnostics: ReadonlyArray<DiagnosticRecord>
     }
   | {
       readonly _tag: "StalePlanError"
@@ -69,25 +49,21 @@ export interface AgentToolResult {
   readonly diagnosticDelta: number
   readonly idempotenceChecked: boolean
   readonly files: ReadonlyArray<ToolFileResult>
-  readonly diagnostics: ToolDiagnosticReport
-  readonly policyResults: ReadonlyArray<ToolPolicyResult>
+  readonly diagnostics: DiagnosticDiff
+  readonly policyResults: ReadonlyArray<PolicyResult>
 }
 
-export type JsonPrimitive = null | boolean | number | string
-export type JsonValue = JsonPrimitive | ReadonlyArray<JsonValue> | JsonObject
-export interface JsonObject {
-  readonly [key: string]: JsonValue
+export type AgentToolInputSchema = Exclude<Extract<Json, object>, ReadonlyArray<Json>> & {
+  readonly type: "object"
+  readonly properties: Exclude<Extract<Json, object>, ReadonlyArray<Json>>
 }
-
-export type JsonSchemaDoc = JsonObject
-type SchemaDocument = ReturnType<typeof Schema.toJsonSchemaDocument>
 
 export interface AgentTool<R = never> {
   readonly name: string
   readonly description: string
-  readonly schema: JsonSchemaDoc
+  readonly schema: AgentToolInputSchema
   readonly execute: (
-    input: JsonValue,
+    input: Json,
     options?: { readonly apply?: boolean },
   ) => Effect.Effect<AgentToolResult, ToolExecutionError, Workspace | R>
 }
@@ -98,25 +74,23 @@ export class ToolExecutionError extends Data.TaggedError("ToolExecutionError")<{
   readonly details: ToolExecutionErrorDetails
 }> {}
 
-const emptyObjectSchema: JsonSchemaDoc = { type: "object", properties: {} }
+const emptyObjectSchema: AgentToolInputSchema = { type: "object", properties: {} }
 
-const asJsonObject = (value: JsonValue | SchemaDocument | undefined): JsonObject | undefined => {
-  if (!Predicate.isObject(value) || Array.isArray(value)) return undefined
-  // SAFETY: JsonValue object members are JsonValue by construction.
-  return value as JsonObject
-}
+const isJson = Schema.is(Schema.Json)
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- JSON protocol boundary; Schema.Json performs the runtime parse.
+const isJsonObject = (value: unknown): value is AgentToolInputSchema["properties"] =>
+  isJson(value) && Predicate.isObject(value)
 
-/** LLM tool protocols expect an object `inputSchema` with `type` and `properties`. */
-const protocolInputSchema = (generated: SchemaDocument): JsonSchemaDoc => {
-  const document = asJsonObject(generated)
-  const schemaObject =
-    document !== undefined && "schema" in document ? asJsonObject(document.schema) : document
-  const schema: Record<string, JsonValue> = {}
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- JSON protocol boundary delegated to isJsonObject.
+const asJsonObject = (value: unknown): AgentToolInputSchema["properties"] | undefined =>
+  isJsonObject(value) ? value : undefined
+const protocolInputSchema = (
+  generated: JsonSchema.Document<"draft-2020-12">,
+): AgentToolInputSchema => {
+  const schemaObject = asJsonObject(generated.schema)
+  const schema: Record<string, Json> = {}
   if (schemaObject !== undefined) Object.assign(schema, schemaObject)
-  const definitions =
-    document !== undefined && "definitions" in document
-      ? asJsonObject(document.definitions)
-      : undefined
+  const definitions = asJsonObject(generated.definitions)
   if (
     definitions !== undefined &&
     Object.keys(definitions).length > 0 &&
@@ -124,17 +98,17 @@ const protocolInputSchema = (generated: SchemaDocument): JsonSchemaDoc => {
   ) {
     schema.$defs = definitions
   }
-  if (schema.type !== "object") schema.type = "object"
-  if (asJsonObject(schema.properties) === undefined) schema.properties = {}
-  return schema
+  return {
+    ...schema,
+    type: "object",
+    properties: asJsonObject(schema.properties) ?? {},
+  }
 }
-
-/** Convert a recipe into a structured Agent Tool. */
 export const recipeToAgentTool = <Input = undefined, E = never, R = never>(
   recipe: RecipeModel<Input, E, R>,
   description = `Transform codebase using ${recipe.name}`,
 ): AgentTool<Exclude<R, WorkspaceSnapshot>> => {
-  let jsonSchema: JsonSchemaDoc = emptyObjectSchema
+  let jsonSchema: AgentToolInputSchema = emptyObjectSchema
   if (recipe.schema !== undefined) {
     jsonSchema = protocolInputSchema(Schema.toJsonSchemaDocument(recipe.schema))
   }
@@ -145,17 +119,13 @@ export const recipeToAgentTool = <Input = undefined, E = never, R = never>(
     schema: jsonSchema,
     execute: (rawInput, options = {}) =>
       Effect.gen(function* () {
-        const typedInput = yield* decodeToolInput(recipe, rawInput)
-        const execution =
-          options.apply === true
-            ? yield* executeRecipe(recipe, typedInput, { mode: "apply" }).pipe(
-                Effect.provide(applicationLayerNode),
-                Effect.mapError((cause) => makeToolExecutionError(recipe.name, cause)),
-              )
-            : yield* executeRecipe(recipe, typedInput, { mode: "verify" }).pipe(
-                Effect.provide(nodeLayer),
-                Effect.mapError((cause) => makeToolExecutionError(recipe.name, cause)),
-              )
+        // SAFETY: Recipe.run validates raw tool input against the recipe schema.
+        const typedInput = rawInput as Input
+        const mode = options.apply === true ? "apply" : "verify"
+        const execution = yield* executeRecipe(recipe, typedInput, { mode }).pipe(
+          Effect.provide(nodeLayer),
+          Effect.mapError((cause) => makeToolExecutionError(recipe.name, cause)),
+        )
 
         const files: ReadonlyArray<ToolFileResult> = execution.preview.files.map((file) => ({
           fileName: file.fileName,
@@ -164,58 +134,17 @@ export const recipeToAgentTool = <Input = undefined, E = never, R = never>(
 
         return {
           planId: execution.plan.planId,
-          status: options.apply === true ? ("applied" as const) : ("preview" as const),
+          status: mode === "apply" ? ("applied" as const) : ("preview" as const),
           affectedFiles: execution.preview.files.length,
           diagnosticDelta: execution.verified.receipt.diagnosticDelta,
           idempotenceChecked: execution.verified.receipt.idempotenceChecked,
           files,
-          diagnostics: toDiagnosticReport(execution.verified.diagnosticDiff),
-          policyResults: execution.verified.receipt.policyResults.map(toToolPolicyResult),
+          diagnostics: execution.verified.diagnosticDiff,
+          policyResults: execution.verified.receipt.policyResults,
         }
       }),
   }
 }
-
-const decodeToolInput = <Input, E, R>(
-  recipe: RecipeModel<Input, E, R>,
-  rawInput: JsonValue,
-): Effect.Effect<Input, ToolExecutionError> => {
-  if (recipe.schema === undefined) {
-    // SAFETY: recipes without schemas accept the caller-provided input contract
-    return Effect.succeed(rawInput as Input)
-  }
-  // SAFETY: recipe schemas are pure and fail only with SchemaError.
-  const decode = Schema.decodeUnknownEffect(recipe.schema) as (
-    value: JsonValue,
-  ) => Effect.Effect<Input, Schema.SchemaError>
-  return decode(rawInput).pipe(
-    Effect.mapError((cause) => makeToolExecutionError(recipe.name, cause)),
-  )
-}
-
-const toToolPolicyResult = (result: PolicyResult): ToolPolicyResult =>
-  result.detail === undefined
-    ? { name: result.name, passed: result.passed }
-    : { name: result.name, passed: result.passed, detail: result.detail }
-
-const toToolDiagnostic = (diagnostic: DiagnosticRecord): ToolDiagnostic => {
-  const base = {
-    code: diagnostic.code,
-    message: diagnostic.message,
-    category: diagnostic.category,
-  }
-  const withFileName =
-    diagnostic.fileName === undefined ? base : { ...base, fileName: diagnostic.fileName }
-  const withStart =
-    diagnostic.start === undefined ? withFileName : { ...withFileName, start: diagnostic.start }
-  return diagnostic.length === undefined ? withStart : { ...withStart, length: diagnostic.length }
-}
-
-const toDiagnosticReport = (diff: DiagnosticDiff): ToolDiagnosticReport => ({
-  introduced: diff.introduced.map(toToolDiagnostic),
-  resolved: diff.resolved.map(toToolDiagnostic),
-  unchanged: diff.unchanged.map(toToolDiagnostic),
-})
 
 const schemaIssueFormatter = SchemaIssue.makeFormatterDefault()
 
@@ -264,7 +193,7 @@ const detailsForCause = (cause: unknown): ToolExecutionErrorDetails => {
       _tag: "VerificationFailure",
       policy: cause.policy,
       detail: cause.detail,
-      diagnostics: (cause.diagnostics ?? []).map(toToolDiagnostic),
+      diagnostics: cause.diagnostics ?? [],
     }
   }
   if (cause instanceof StalePlanError) {

@@ -1,13 +1,9 @@
 /** TypeScript semantic and declaration criteria. */
-import { Effect, Predicate } from "effect"
+import { Effect } from "effect"
 import { getJSDocTags, SyntaxKind, type Identifier, type Node } from "typescript/unstable/ast"
 import type { Symbol as NativeSymbol, Type as NativeType } from "typescript/unstable/async"
-import {
-  isProjectFile,
-  type ProjectFile,
-  type ProjectSnapshot,
-  type ProjectSnapshotError,
-} from "../Workspace/index.ts"
+import type { ProjectSnapshotError } from "../Workspace/index.ts"
+import { isIntrinsicTypeName, type IntrinsicTypeName } from "../Workspace/ProjectSnapshot.ts"
 import type { EvidenceFact } from "../Evidence/Evidence.ts"
 import {
   CriterionBase,
@@ -111,30 +107,6 @@ export const referencesTo = (
   symbol: NativeSymbol,
 ): Query<Identifier, ProjectSnapshotError | QueryContractError> =>
   identifiers(target).pipe(where(resolvesTo(symbol)))
-
-/** Inspect the computed TypeScript Type of a node. */
-export const typeOf = (
-  target: ProjectSnapshot | ProjectFile,
-  node: Node,
-): Effect.Effect<NativeType | undefined, ProjectSnapshotError> => {
-  const project = isProjectFile(target) ? target.project : target
-  const sourceFile = node.getSourceFile()
-  const fileName = project.relativeFileName(sourceFile.fileName)
-  const pos = node.getStart(sourceFile)
-  return project.typeAt(fileName, pos)
-}
-
-export type IntrinsicTypeName =
-  | "string"
-  | "number"
-  | "boolean"
-  | "any"
-  | "unknown"
-  | "never"
-  | "void"
-
-const isIntrinsicTypeName = (value: NativeType | IntrinsicTypeName): value is IntrinsicTypeName =>
-  Predicate.isString(value)
 
 /**
  * Compute the TypeScript type of each selection's node in order, skipping
