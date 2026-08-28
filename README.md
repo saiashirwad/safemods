@@ -115,7 +115,7 @@ Passing verification issues a `VerifiedPlan`. Only the Verification module can c
 
 ### Application
 
-Application is the one module that writes. Its `apply` accepts a `VerifiedPlan` and nothing else, so there is no path from a Draft to disk that skips the checks. A successful write returns a receipt with the output hash of every file.
+Application is the one module that writes. Its `applyVerifiedPlan` function accepts a `VerifiedPlan` and nothing else, so there is no path from a Draft to disk that skips the checks. A successful write returns a receipt with the output hash of every file.
 
 ## Composing recipes
 

@@ -7,6 +7,7 @@ import type { VerificationReceipt } from "./VerificationReceipt.ts"
 
 // Process-local token. Symbol.for would be forgeable across the isolate.
 const VerifiedPlanTypeId: unique symbol = Symbol("@safemods/internal/VerifiedPlan")
+const issuedVerifiedPlans = new WeakSet<object>()
 
 export interface VerifiedPlan {
   readonly [VerifiedPlanTypeId]: typeof VerifiedPlanTypeId
@@ -40,11 +41,11 @@ export const issueVerifiedPlan = (
     receipt: freezeDeep(receipt),
     diagnosticDiff: freezeDeep(diagnosticDiff),
   }
-  return Object.freeze(verified)
+  const issued = Object.freeze(verified)
+  issuedVerifiedPlans.add(issued)
+  return issued
 }
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Process-local capability guard at the public application boundary.
 export const isVerifiedPlan = (value: unknown): value is VerifiedPlan =>
-  Predicate.isObject(value) &&
-  VerifiedPlanTypeId in value &&
-  value[VerifiedPlanTypeId] === VerifiedPlanTypeId
+  Predicate.isObject(value) && issuedVerifiedPlans.has(value)

@@ -77,7 +77,7 @@ describe("Node application capability and staleness checks", () => {
     ),
   )
 
-  effect("rejects public-symbol forgeries and unbranded clones", () =>
+  effect("rejects forgeries and copied verified-plan capabilities", () =>
     withFixture((root, app) =>
       Effect.gen(function* () {
         const contents = "export const created = true;\n"
@@ -99,6 +99,8 @@ describe("Node application capability and staleness checks", () => {
           preview: verified.preview,
           receipt: verified.receipt,
         }
+        const spreadForgery = { ...verified }
+        const assignedForgery = Object.assign({}, verified)
         const clonedPreview = structuredClone(verified.preview)
         const clonedForgery: ForgedPlanCapability = {
           plan: structuredClone(verified.plan),
@@ -123,8 +125,18 @@ describe("Node application capability and staleness checks", () => {
           // SAFETY: the test applies a cloned capability without its process-local brand.
           clonedForgery as VerifiedPlan,
         ).pipe(Effect.provide(nodeLayer), Effect.result)
+        const spreadResult = yield* Application.applyVerifiedPlan(spreadForgery).pipe(
+          Effect.provide(nodeLayer),
+          Effect.result,
+        )
+        const assignedResult = yield* Application.applyVerifiedPlan(assignedForgery).pipe(
+          Effect.provide(nodeLayer),
+          Effect.result,
+        )
         expect(publicResult._tag).toBe("Failure")
         expect(clonedResult._tag).toBe("Failure")
+        expect(spreadResult._tag).toBe("Failure")
+        expect(assignedResult._tag).toBe("Failure")
         expect(yield* exists(Path.join(root, "src/created.ts"))).toBe(false)
       }),
     ),
