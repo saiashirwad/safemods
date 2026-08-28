@@ -316,6 +316,48 @@ describe("Overlay.composeDraft", () => {
     ),
   )
 
+  effect("keeps unrelated edits when deleting a moved file", () =>
+    withSnapshot((_, app) =>
+      Effect.gen(function* () {
+        const project = yield* fixtureProject(app)
+        const original = yield* project.sourceText("src/consumer.ts")
+        const start = original.indexOf("other(2)")
+        const unrelated: DraftModel = {
+          edits: [
+            {
+              projectId: app.id,
+              fileName: "src/consumer.ts",
+              start,
+              end: start + "other(2)".length,
+              expectedTextHash: sha256("other(2)"),
+              newText: "other(20)",
+              evidenceIds: ["unrelated"],
+            },
+          ],
+          evidence: [evidence("unrelated")],
+          matches: 1,
+        }
+        const moved = yield* Draft.files.move(project, "src/library.ts", "src/moved-library.ts")
+        const composed = yield* Overlay.composeDraft(
+          Draft.concat(unrelated, moved),
+          Effect.gen(function* () {
+            const overlaySnapshot = yield* WorkspaceSnapshot
+            const overlayProject = yield* overlaySnapshot.project(app)
+            return yield* Draft.files.delete(overlayProject, "src/moved-library.ts")
+          }),
+        )
+
+        expect(composed.fileOperations).toHaveLength(1)
+        expect(composed.fileOperations?.[0]).toMatchObject({
+          kind: "delete",
+          path: "src/library.ts",
+        })
+        expect(composed.edits).toHaveLength(1)
+        expect(yield* applyFileEdits(original, composed.edits)).toContain("other(20)")
+      }),
+    ),
+  )
+
   effect("queries a moved file on the overlay and rebases the edit into the move", () =>
     withSnapshot((_, app) =>
       Effect.gen(function* () {

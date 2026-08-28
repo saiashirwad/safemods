@@ -130,7 +130,7 @@ export const rebaseDrafts = (
     }
 
     const fileOperations = [...(accumulated.fileOperations ?? []), ...(next.fileOperations ?? [])]
-    const consumed = new Set<string>()
+    const consumedEdits = new Set<TextEdit>()
     const normalizedOperations: Array<PlannedFileOperation> = []
     for (const operation of fileOperations) {
       const sourceKey = virtualFileKey(operation.projectId, operation.path)
@@ -147,7 +147,7 @@ export const rebaseDrafts = (
             )
       let normalized = operation
       if (operationEdits !== undefined && operationEdits.length > 0) {
-        consumed.add(operationEditKey!)
+        for (const edit of operationEdits) consumedEdits.add(edit)
         if (operation.kind === "create" || operation.kind === "move") {
           const content = yield* applyFileEdits(operation.content ?? "", operationEdits)
           normalized = { ...operation, content }
@@ -166,7 +166,11 @@ export const rebaseDrafts = (
           const evidenceIds = [
             ...new Set([...(producer.evidenceIds ?? []), ...(operation.evidenceIds ?? [])]),
           ]
-          consumed.add(sourceKey)
+          for (const edit of combinedEdits) {
+            if (virtualFileKey(edit.projectId, edit.fileName) === sourceKey) {
+              consumedEdits.add(edit)
+            }
+          }
           if (operation.kind === "delete") {
             if (producer.kind === "create") {
               normalizedOperations.splice(producerIndex, 1)
@@ -178,11 +182,22 @@ export const rebaseDrafts = (
                 initialHash: producer.initialHash,
                 evidenceIds,
               }
-              // The destination never remains, so specifier rewrites that
-              // retargeted it must not stay as Text Edits.
-              consumed.add(virtualFileKey(producer.projectId, producer.toPath))
-              for (const edit of accumulated.edits) {
-                consumed.add(virtualFileKey(edit.projectId, edit.fileName))
+              // The destination never remains, so only importer rewrites
+              // produced by this move must disappear.
+              const obsoleteEvidenceIds = new Set(
+                accumulated.evidence
+                  .filter(
+                    (item) =>
+                      item.kind === "file-import-rewrite" &&
+                      item.facts.projectId === producer.projectId &&
+                      item.facts.target === producer.toPath,
+                  )
+                  .map((item) => item.id),
+              )
+              for (const edit of combinedEdits) {
+                if (edit.evidenceIds.some((id) => obsoleteEvidenceIds.has(id))) {
+                  consumedEdits.add(edit)
+                }
               }
             }
           } else if (producer.kind === "create") {
@@ -210,7 +225,13 @@ export const rebaseDrafts = (
               evidenceIds,
             }
           }
-          if (operation.kind === "move") consumed.add(targetKey!)
+          if (operation.kind === "move") {
+            for (const edit of combinedEdits) {
+              if (virtualFileKey(edit.projectId, edit.fileName) === targetKey) {
+                consumedEdits.add(edit)
+              }
+            }
+          }
           continue
         }
       }
@@ -221,14 +242,18 @@ export const rebaseDrafts = (
         const original = yield* project.sourceText(normalized.path)
         normalized = { ...normalized, initialHash: sha256(original) }
       }
-      if (operation.kind === "delete" || operation.kind === "move") consumed.add(sourceKey)
+      if (operation.kind === "delete" || operation.kind === "move") {
+        for (const edit of combinedEdits) {
+          if (virtualFileKey(edit.projectId, edit.fileName) === sourceKey) {
+            consumedEdits.add(edit)
+          }
+        }
+      }
       normalizedOperations.push(normalized)
     }
 
     return {
-      edits: combinedEdits.filter(
-        (edit) => !consumed.has(virtualFileKey(edit.projectId, edit.fileName)),
-      ),
+      edits: combinedEdits.filter((edit) => !consumedEdits.has(edit)),
       fileOperations: normalizedOperations,
       evidence: yield* mergeEvidenceEffect([...accumulated.evidence, ...next.evidence]),
       matches: accumulated.matches + next.matches,

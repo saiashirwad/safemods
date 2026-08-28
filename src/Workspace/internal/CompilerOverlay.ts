@@ -19,18 +19,13 @@ interface WorkspaceFileChanges {
 /** Build the compiler overlay without writing to the workspace. */
 export const compilerOverlayFor = (
   runtime: WorkspaceRuntimeService,
-  root: string,
   apiOptions: APIOptions,
   overlay: VirtualFsSnapshot,
 ): CompilerOverlay => {
   const deleted = overlay.deleted
   const created = overlay.created
-  const matchesVirtualPath = (observed: string, planned: string): boolean => {
-    if (observed === planned) return true
-    if (!isPathContained(runtime, root, planned)) return false
-    const relative = runtime.relative(root, planned)
-    return observed.endsWith(`${runtime.sep}${relative}`)
-  }
+  const matchesVirtualPath = (observed: string, planned: string): boolean =>
+    runtime.resolve(observed) === runtime.resolve(planned)
 
   const options: APIOptions = {
     ...apiOptions,

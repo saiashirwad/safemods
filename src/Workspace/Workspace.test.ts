@@ -3,8 +3,11 @@ import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { ConfiguredProject, Workspace } from "./index.ts"
-import { InvalidProjectRelativePath, projectRelative } from "../ProjectPath/index.ts"
-import { isWithinProject } from "../Node/ProjectPath.ts"
+import {
+  InvalidProjectRelativePath,
+  isPathContained,
+  projectRelative,
+} from "../ProjectPath/index.ts"
 import { workspaceLayerNode } from "../Node/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
 import { fixtureProject } from "../test/project-fixture.ts"
@@ -87,9 +90,11 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
       const projectRoot = "/tmp/SafeModsCase/Project"
       const inside = "/tmp/SafeModsCase/Project/src/index.ts"
       const mixedCaseSibling = "/tmp/SafeModsCase/project/src/index.ts"
-      expect(isWithinProject(projectRoot, inside)).toBe(true)
-      expect(isWithinProject(projectRoot, mixedCaseSibling)).toBe(false)
-      expect(isWithinProject(projectRoot, "/tmp/SafeModsCase/Project/../Other/x.ts")).toBe(false)
+      expect(isPathContained(Path, projectRoot, inside)).toBe(true)
+      expect(isPathContained(Path, projectRoot, mixedCaseSibling)).toBe(false)
+      expect(isPathContained(Path, projectRoot, "/tmp/SafeModsCase/Project/../Other/x.ts")).toBe(
+        false,
+      )
       expect(projectRelative(Path, projectRoot, mixedCaseSibling).startsWith("..")).toBe(true)
     }),
   )

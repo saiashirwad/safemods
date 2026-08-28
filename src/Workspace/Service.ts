@@ -17,11 +17,6 @@ import {
 } from "./ConfiguredProject.ts"
 import { type WorkspaceSnapshot, openSnapshotRegion } from "./SnapshotRegion.ts"
 import { compilerOverlayFor } from "./internal/CompilerOverlay.ts"
-import {
-  attachInputObserver,
-  inputObserverOf,
-  type CompilerObservation,
-} from "./internal/ObservedInputs.ts"
 import { WorkspaceRuntime } from "./Runtime.ts"
 
 export interface WorkspaceService {
@@ -45,7 +40,6 @@ export interface WorkspaceService {
     E | WorkspaceCompilerError | ProjectNotInSnapshot,
     Exclude<R, WorkspaceSnapshot>
   >
-  readonly compilerObservations: () => ReadonlyArray<CompilerObservation>
 }
 
 export class Workspace extends Context.Service<Workspace, WorkspaceService>()(
@@ -65,11 +59,9 @@ const make = (
 > =>
   Effect.gen(function* () {
     const runtime = yield* WorkspaceRuntime
-    const observed = attachInputObserver(apiOptions, runtime)
-    const compiler = yield* openCompiler(observed)
+    const compiler = yield* openCompiler(apiOptions)
     const transitionLock = yield* Semaphore.make(1)
-    const root = runtime.resolve(observed.cwd ?? ".")
-    const inputObserver = inputObserverOf(observed.fs)
+    const root = runtime.resolve(apiOptions.cwd ?? ".")
 
     const projects = Object.freeze([...definition.projects])
     const resolvedById = new Map<string, string>()
@@ -93,7 +85,6 @@ const make = (
     const withSnapshot: WorkspaceService["withSnapshot"] = (transition, program) =>
       transitionLock.withPermit(
         Effect.suspend(() => {
-          inputObserver?.reset()
           const openProjects = opened ? undefined : [...resolvedById.values()]
           return openSnapshotRegion(
             {
@@ -113,7 +104,7 @@ const make = (
       )
 
     const withIsolatedSnapshot: WorkspaceService["withIsolatedSnapshot"] = (overlay, program) => {
-      const isolated = compilerOverlayFor(runtime, root, observed, overlay)
+      const isolated = compilerOverlayFor(runtime, apiOptions, overlay)
       return Effect.scoped(
         Effect.gen(function* () {
           const isolatedCompiler = yield* openCompiler(isolated.options)
@@ -137,7 +128,6 @@ const make = (
       root,
       withSnapshot,
       withIsolatedSnapshot,
-      compilerObservations: () => inputObserver?.snapshot() ?? [],
     })
   })
 

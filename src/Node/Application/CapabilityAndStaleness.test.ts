@@ -100,6 +100,7 @@ describe("Node application capability and staleness checks", () => {
           receipt: verified.receipt,
         }
         const spreadForgery = { ...verified }
+        // oxlint-disable-next-line eslint/prefer-object-spread -- Exercise this distinct forgery path.
         const assignedForgery = Object.assign({}, verified)
         const clonedPreview = structuredClone(verified.preview)
         const clonedForgery: ForgedPlanCapability = {

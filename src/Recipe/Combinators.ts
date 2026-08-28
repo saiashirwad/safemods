@@ -68,7 +68,7 @@ export function pipe<Input, E, R>(
 ): Recipe<Input, RecipeCompositionError<E>, R> {
   const name = recipes.map((recipe) => recipe.name).join(" >> ")
   const version = recipes.map((recipe) => recipe.version).join("+")
-  const compiled = compileChildren(recipes)
+  const compiled = compileChildren(recipes, "every-child")
 
   return fromCompiled(
     name,
@@ -101,7 +101,7 @@ export function all<Input, E, R>(
 ): Recipe<Input, RecipeCompositionError<E>, R> {
   const name = `all(${recipes.map((recipe) => recipe.name).join(", ")})`
   const version = recipes.map((recipe) => recipe.version).join("+")
-  const compiled = compileChildren(recipes)
+  const compiled = compileChildren(recipes, "every-child")
 
   return fromCompiled(
     name,
@@ -131,7 +131,7 @@ export const branch = <Input = undefined, E1 = never, R1 = never, E2 = never, R2
   const name = `branch(${ifTrue.name}, ${ifFalse.name})`
   const version = `${ifTrue.version}|${ifFalse.version}`
   const children = [ifTrue, ifFalse]
-  const compiled = compileChildren(children)
+  const compiled = compileChildren(children, "one-child")
 
   return fromCompiled(
     name,

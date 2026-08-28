@@ -2,39 +2,67 @@
 import type { PlanPolicies } from "../Plan/index.ts"
 import type { Recipe } from "./Recipe.ts"
 
-const tighterMin = (current: number | undefined, next: number | undefined): number | undefined =>
-  current === undefined ? next : next === undefined ? current : Math.max(current, next)
-
-const tighterMax = (current: number | undefined, next: number | undefined): number | undefined =>
-  current === undefined ? next : next === undefined ? current : Math.min(current, next)
-
 interface MatchCountBounds {
   min?: number
   max?: number
 }
 
-/** Intersect durable child policies and preserve all runtime rules. */
-export const compileChildren = (recipes: ReadonlyArray<Recipe<any, any, any>>) => ({
+type ChildExecution = "every-child" | "one-child"
+
+const composeMatchCount = (
+  recipes: ReadonlyArray<Recipe<any, any, any>>,
+  execution: ChildExecution,
+): MatchCountBounds => {
+  if (recipes.length === 0) return {}
+  const bounds = recipes.map((recipe) => recipe.policies.matchCount)
+  const min =
+    execution === "every-child"
+      ? bounds.reduce((total, bound) => total + (bound.min ?? 0), 0)
+      : Math.min(...bounds.map((bound) => bound.min ?? 0))
+  const boundedMax = bounds.every((bound) => bound.max !== undefined)
+  const matchCount: MatchCountBounds = { min }
+  if (boundedMax) {
+    matchCount.max =
+      execution === "every-child"
+        ? bounds.reduce((total, bound) => total + bound.max!, 0)
+        : Math.max(...bounds.map((bound) => bound.max!))
+  }
+  return matchCount
+}
+
+const composeMaxAffectedFiles = (
+  recipes: ReadonlyArray<Recipe<any, any, any>>,
+  execution: ChildExecution,
+): number | undefined => {
+  if (
+    recipes.length === 0 ||
+    recipes.some((recipe) => recipe.policies.maxAffectedFiles === undefined)
+  ) {
+    return undefined
+  }
+  const maxima = recipes.map((recipe) => recipe.policies.maxAffectedFiles!)
+  return execution === "every-child"
+    ? maxima.reduce((total, maximum) => total + maximum, 0)
+    : Math.max(...maxima)
+}
+
+/** Compose durable child policies according to which children execute. */
+export const compileChildren = (
+  recipes: ReadonlyArray<Recipe<any, any, any>>,
+  execution: ChildExecution,
+) => ({
   policy: (() => {
-    let min: number | undefined
-    let max: number | undefined
-    let maxAffectedFiles: number | undefined
+    const matchCount = composeMatchCount(recipes, execution)
+    const maxAffectedFiles = composeMaxAffectedFiles(recipes, execution)
     let idempotence: PlanPolicies["idempotence"] = "not-promised"
     for (const recipe of recipes) {
-      const policy = recipe.policies
-      min = tighterMin(min, policy.matchCount.min)
-      max = tighterMax(max, policy.matchCount.max)
-      maxAffectedFiles = tighterMax(maxAffectedFiles, policy.maxAffectedFiles)
-      if (policy.idempotence === "required") idempotence = "required"
+      if (recipe.policies.idempotence === "required") idempotence = "required"
     }
     const diagnostics: PlanPolicies["diagnostics"] =
       recipes.length === 0 ||
       recipes.some((recipe) => recipe.policies.diagnostics === "no-new-errors")
         ? "no-new-errors"
         : "exact-delta"
-    const matchCount: MatchCountBounds = {}
-    if (min !== undefined) matchCount.min = min
-    if (max !== undefined) matchCount.max = max
     return maxAffectedFiles === undefined
       ? { matchCount, diagnostics, idempotence }
       : { matchCount, maxAffectedFiles, diagnostics, idempotence }

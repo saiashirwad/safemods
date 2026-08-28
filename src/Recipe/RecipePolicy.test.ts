@@ -5,6 +5,7 @@ import * as Pattern from "../Pattern/index.ts"
 import * as Policy from "../Policy/index.ts"
 import * as Query from "../Query/index.ts"
 import * as Recipe from "../Recipe/index.ts"
+import * as Verification from "../Verification/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
 import { fixtureProject } from "../test/project-fixture.ts"
 
@@ -70,11 +71,11 @@ describe("recipe policy and concurrent composition", () => {
       > = [
         [Recipe.pipe(guarded, bounded), 3],
         [Recipe.all([guarded, bounded]), 3],
-        [Recipe.branch(() => true, guarded, bounded), 3],
-        [Recipe.when(() => true, guarded), undefined],
+        [Recipe.branch(() => true, guarded, bounded), 0],
+        [Recipe.when(() => true, guarded), 0],
       ]
       for (const [composed, expectedMin] of composedCases) {
-        expect(composed.policies.maxAffectedFiles).toBe(2)
+        expect(composed.policies.maxAffectedFiles).toBeUndefined()
         expect(composed.policies.matchCount.min).toBe(expectedMin)
         expect(composed.policies.idempotence).toBe("required")
         expect(composed.rules.map((rule) => rule.name)).toContain("fixes-error:TS999")
@@ -82,9 +83,9 @@ describe("recipe policy and concurrent composition", () => {
     }),
   )
 
-  effect("Recipe.pipe, all, and branch keep the stricter child policy", () =>
+  effect("composes bounds for recipes that all run or choose one branch", () =>
     Effect.sync(() => {
-      const stricter = Recipe.define("stricter-policy", {
+      const narrower = Recipe.define("narrower-policy", {
         version: "1.0.0",
         policies: [
           Policy.atMostFiles(2),
@@ -94,7 +95,7 @@ describe("recipe policy and concurrent composition", () => {
         ],
         run: () => Effect.succeed(Draft.empty),
       })
-      const looser = Recipe.define("looser-policy", {
+      const wider = Recipe.define("wider-policy", {
         version: "1.0.0",
         policies: [
           Policy.atMostFiles(10),
@@ -104,20 +105,40 @@ describe("recipe policy and concurrent composition", () => {
         run: () => Effect.succeed(Draft.empty),
       })
 
-      const composed = [
-        Recipe.pipe(stricter, looser),
-        Recipe.pipe(looser, stricter),
-        Recipe.all([stricter, looser]),
-        Recipe.branch(() => true, stricter, looser),
-      ]
-      for (const recipe of composed) {
-        expect(recipe.policies.maxAffectedFiles).toBe(stricter.policies.maxAffectedFiles)
-        expect(recipe.policies.matchCount.min).toBe(stricter.policies.matchCount.min)
-        expect(recipe.policies.matchCount.max).toBe(stricter.policies.matchCount.max)
-        expect(recipe.policies.diagnostics).toBe(stricter.policies.diagnostics)
-        expect(recipe.policies.idempotence).toBe(stricter.policies.idempotence)
+      for (const recipe of [Recipe.pipe(narrower, wider), Recipe.all([narrower, wider])]) {
+        expect(recipe.policies.maxAffectedFiles).toBe(12)
+        expect(recipe.policies.matchCount).toEqual({ min: 4, max: 24 })
+        expect(recipe.policies.diagnostics).toBe("no-new-errors")
+        expect(recipe.policies.idempotence).toBe("required")
       }
+
+      const branched = Recipe.branch(() => true, narrower, wider)
+      expect(branched.policies.maxAffectedFiles).toBe(10)
+      expect(branched.policies.matchCount).toEqual({ min: 1, max: 20 })
+      expect(branched.policies.diagnostics).toBe("no-new-errors")
+      expect(branched.policies.idempotence).toBe("required")
     }),
+  )
+
+  effect(
+    "verifies the summed match count of bounded child recipes",
+    () =>
+      withFixture(() =>
+        Effect.gen(function* () {
+          const child = (name: string) =>
+            Recipe.define(name, {
+              version: "1.0.0",
+              policies: [Policy.exactly(2)],
+              run: () => Effect.succeed({ ...Draft.empty, matches: 2 }),
+            })
+          const recipe = Recipe.all([child("first"), child("second")])
+          const plan = yield* Recipe.run(recipe, undefined)
+          expect(plan.measurements?.matches).toBe(4)
+          expect(plan.policies.matchCount).toEqual({ min: 4, max: 4 })
+          yield* Verification.verify(plan, recipe, undefined)
+        }),
+      ),
+    60_000,
   )
 
   effect(
