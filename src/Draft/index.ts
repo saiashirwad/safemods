@@ -6,12 +6,10 @@ export {
   empty,
   insertAfter,
   insertBefore,
-  isDraft,
   print,
   remove,
   replace,
   replaceEach,
-  replaceWith,
 } from "./Draft.ts"
 export type { Draft, EditRangeOptions, ProposedEdit, Replacement } from "./Draft.ts"
 export * from "./Files.ts"

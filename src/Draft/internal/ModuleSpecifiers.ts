@@ -19,7 +19,7 @@ import {
   isStringLiteral,
 } from "typescript/unstable/ast/is"
 
-export const moduleExtension = /\.(ts|tsx|js|jsx)$/
+const moduleExtension = /\.(ts|tsx|js|jsx)$/
 
 export const stripModuleExtension = (value: string): string => value.replace(moduleExtension, "")
 

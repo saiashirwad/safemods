@@ -181,7 +181,7 @@ export const runCli = (options: CliOptions): Effect.Effect<void, CliError | CliM
           const execution = yield* executeRecipe(recipe, options.input, {
             mode: "apply",
             hooks,
-          }).pipe(Effect.provide(nodeLayer))
+          })
           yield* Console.log(
             `\n✔ Applied ${execution.receipt.outputs.length} file changes successfully!`,
           )

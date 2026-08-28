@@ -141,8 +141,7 @@ export const replace = (
   options?: EditRangeOptions,
 ): Effect.Effect<Draft, SnapshotExpired> =>
   draftForNodeRange(project, node, newText, "node:replace", (sourceFile) => ({
-    start:
-      options?.includeLeadingTrivia === true ? node.getFullStart() : node.getStart(sourceFile),
+    start: options?.includeLeadingTrivia === true ? node.getFullStart() : node.getStart(sourceFile),
     end: node.getEnd(),
   }))
 
@@ -184,22 +183,13 @@ export const print = (
   node: Node,
 ): Effect.Effect<string, ProjectSnapshotError> => project.printNode(node)
 
-/** Replace a node with a printed native fragment (e.g. built with the native factory API). */
-export const replaceWith = (
-  project: ProjectSnapshot,
-  node: Node,
-  fragment: Node,
-  options?: EditRangeOptions,
-): Effect.Effect<Draft, ProjectSnapshotError> =>
-  print(project, fragment).pipe(Effect.flatMap((text) => replace(project, node, text, options)))
-
 /** The replacement a selection maps to: text only (replace the selected node) or an explicit target node. */
 export type Replacement = string | { readonly node: Node; readonly text: string }
 
 const isTextReplacement = (val: Replacement): val is string => Predicate.isString(val)
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Type guard boundary for candidate draft values.
-export const isDraft = (value: unknown): value is Draft =>
+const isDraft = (value: unknown): value is Draft =>
   Predicate.isObject(value) && "edits" in value && "evidence" in value && "matches" in value
 
 /** A returned Draft with no edits, operations, evidence, or matches is `empty`. */
