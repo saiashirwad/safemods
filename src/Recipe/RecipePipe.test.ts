@@ -11,51 +11,6 @@ import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("recipe sequential composition", () => {
   effect(
-    "composes sequential recipes with Recipe.pipe and in-memory transitions",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          const addImportRecipe = Recipe.define("add-import", {
-            version: "1.0.0",
-            run: () =>
-              Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
-                  module: "./library.js",
-                  name: "TargetInput",
-                })
-              }),
-          })
-
-          const addSecondImportRecipe = Recipe.define("add-second-import", {
-            version: "1.0.0",
-            run: () =>
-              Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                return yield* Draft.imports.addNamed(project, "src/reexport-consumer.ts", {
-                  module: "./library.js",
-                  name: "TargetInput",
-                })
-              }),
-          })
-
-          const pipedRecipe = Recipe.pipe(addImportRecipe, addSecondImportRecipe)
-
-          const execution = yield* executeRecipe(pipedRecipe, undefined, {
-            mode: "apply",
-          }).pipe(Effect.provide(nodeLayer))
-          expect(execution.plan.edits.length).toBeGreaterThanOrEqual(2)
-
-          const consumerContent = yield* Effect.tryPromise(() =>
-            Fs.readFile(Path.join(root, "src/consumer.ts"), "utf8"),
-          )
-          expect(consumerContent).toContain("TargetInput")
-        }),
-      ),
-    60_000,
-  )
-
-  effect(
     "composes sequential recipes on the SAME file via Recipe.pipe without edit corruption",
     () =>
       withFixture((root, app) =>

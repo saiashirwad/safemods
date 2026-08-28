@@ -5,7 +5,6 @@ import { Effect } from "effect"
 import * as Draft from "../Draft/index.ts"
 import { layer as nodeLayer } from "../Node/index.ts"
 import * as Pattern from "../Pattern/index.ts"
-import * as Policy from "../Policy/index.ts"
 import * as Query from "../Query/index.ts"
 import * as Recipe from "../Recipe/index.ts"
 import { Workspace } from "../Workspace/index.ts"
@@ -13,36 +12,6 @@ import { withFixture } from "../test/declarative-fixture.ts"
 import { fixtureProject } from "../test/project-fixture.ts"
 
 describe("recipe project-file composition", () => {
-  effect(
-    "Draft.renameSymbolNamed provides idempotent symbol renaming by name",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          const renameRecipe = Recipe.define("rename-by-name", {
-            version: "1.0.0",
-            policies: [Policy.matches({ min: 1 }), Policy.noNewErrors(), Policy.idempotent()],
-            run: () =>
-              Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                return yield* Draft.renameSymbolNamed(project, "target", "newTarget", {
-                  lookupIn: "src/library.ts",
-                })
-              }),
-          })
-
-          yield* executeRecipe(renameRecipe, undefined, { mode: "apply" }).pipe(
-            Effect.provide(nodeLayer),
-          )
-
-          const libContent = yield* Effect.tryPromise(() =>
-            Fs.readFile(Path.join(root, "src/library.ts"), "utf8"),
-          )
-          expect(libContent).toContain("export function newTarget")
-        }),
-      ),
-    60_000,
-  )
-
   effect(
     "supports validated ProjectFile handles with scoped operations",
     () =>

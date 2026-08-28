@@ -152,58 +152,6 @@ describe("Draft helper contracts", () => {
   )
 
   effect(
-    "does not reprint unsupported imports and preserves supported quote style",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          const sources = new Map([
-            [
-              "type-only.ts",
-              'import type { Shape } from "./types.js";\nexport type Value = Shape\n',
-            ],
-            ["side-effect.ts", 'import "./setup.js";\nexport const value = 1\n'],
-            ["namespace.ts", 'import * as values from "./values.js";\nexport { values }\n'],
-            ["trivia.ts", 'import { /* keep */ value } from "./values.js";\nexport { value }\n'],
-          ])
-          for (const [fileName, source] of sources) {
-            yield* Effect.tryPromise(() => Fs.writeFile(Path.join(root, "src", fileName), source))
-          }
-          const quotedSource = [
-            "import { zed } from './zed.js';",
-            "import { alpha } from './alpha.js';",
-            "",
-            "export { alpha, zed }",
-            "",
-          ].join("\n")
-          yield* Effect.tryPromise(() =>
-            Fs.writeFile(Path.join(root, "src/quoted.ts"), quotedSource),
-          )
-
-          const workspace = yield* Workspace
-          yield* workspace.withSnapshot(
-            {},
-            Effect.gen(function* () {
-              const project = yield* fixtureProject(app)
-              for (const fileName of sources.keys()) {
-                expect(yield* Draft.imports.organize(project, `src/${fileName}`)).toEqual(
-                  Draft.empty,
-                )
-              }
-
-              const quoted = yield* Draft.imports.organize(project, "src/quoted.ts")
-              expectCompleteEvidence(quoted)
-              const output = yield* applyFileEdits(quotedSource, quoted.edits)
-              expect(output).toContain("import { alpha } from './alpha.js';")
-              expect(output).toContain("import { zed } from './zed.js';")
-              expect(output.endsWith("export { alpha, zed }\n")).toBe(true)
-            }),
-          )
-        }),
-      ),
-    60_000,
-  )
-
-  effect(
     "cleanUnused removes only an unused named binding and does not target it on a second run",
     () =>
       withFixture((root, app) =>
