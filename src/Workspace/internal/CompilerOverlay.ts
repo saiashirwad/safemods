@@ -24,8 +24,14 @@ export const compilerOverlayFor = (
 ): CompilerOverlay => {
   const deleted = overlay.deleted
   const created = overlay.created
-  const matchesVirtualPath = (observed: string, planned: string): boolean =>
-    runtime.resolve(observed) === runtime.resolve(planned)
+  const resolvedFiles = new Map<string, string>()
+  for (const [fileName, content] of overlay.files) {
+    resolvedFiles.set(runtime.resolve(fileName), content)
+  }
+  const resolvedDeleted = new Set<string>()
+  for (const fileName of deleted) {
+    resolvedDeleted.add(runtime.resolve(fileName))
+  }
 
   const options: APIOptions = {
     ...apiOptions,
@@ -42,15 +48,13 @@ export const compilerOverlayFor = (
               return undefined
             }
           })()
-        const isDeleted = (entry: string) => {
-          const absolute = runtime.resolve(directoryName, entry)
-          return [...deleted].some((path) => matchesVirtualPath(absolute, path))
-        }
+        const isDeleted = (entry: string) =>
+          resolvedDeleted.has(runtime.resolve(directoryName, entry))
         const files = new Set((existing?.files ?? []).filter((entry) => !isDeleted(entry)))
         const directories = new Set(
           (existing?.directories ?? []).filter((entry) => !isDeleted(entry)),
         )
-        for (const plannedFileName of overlay.files.keys()) {
+        for (const plannedFileName of resolvedFiles.keys()) {
           if (!isPathContained(runtime, directoryName, plannedFileName)) continue
           const relative = runtime.relative(directoryName, plannedFileName)
           const first = relative.split(runtime.sep)[0]!
@@ -62,24 +66,14 @@ export const compilerOverlayFor = (
           : { files: [...files], directories: [...directories] }
       },
       readFile: (fileName) => {
-        for (const plannedFileName of deleted) {
-          if (matchesVirtualPath(fileName, plannedFileName)) return null
-        }
-        const exact = overlay.files.get(fileName)
-        if (exact !== undefined) return exact
-        for (const [plannedFileName, content] of overlay.files) {
-          if (matchesVirtualPath(fileName, plannedFileName)) return content
-        }
-        return apiOptions.fs?.readFile?.(fileName)
+        const resolved = runtime.resolve(fileName)
+        if (resolvedDeleted.has(resolved)) return null
+        return resolvedFiles.get(resolved) ?? apiOptions.fs?.readFile?.(fileName)
       },
       fileExists: (fileName) => {
-        for (const plannedFileName of deleted) {
-          if (matchesVirtualPath(fileName, plannedFileName)) return false
-        }
-        if (overlay.files.has(fileName)) return true
-        for (const plannedFileName of overlay.files.keys()) {
-          if (matchesVirtualPath(fileName, plannedFileName)) return true
-        }
+        const resolved = runtime.resolve(fileName)
+        if (resolvedDeleted.has(resolved)) return false
+        if (resolvedFiles.has(resolved)) return true
         return apiOptions.fs?.fileExists?.(fileName)
       },
     },

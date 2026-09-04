@@ -16,7 +16,6 @@ import {
 import {
   allowedErrorsFromRules,
   computeDiagnosticDiff,
-  type DiagnosticRecord,
   type PolicyEvaluationContext,
 } from "../Policy/index.ts"
 import { TOOLCHAIN, type Recipe } from "../Recipe/index.ts"
@@ -34,7 +33,6 @@ import {
 } from "./Errors.ts"
 import { previewValidatedPlan, type PlanPreview } from "./Preview.ts"
 import { evaluateBuiltInPolicies, evaluateCustomRules } from "./PolicyEvaluation.ts"
-import type { VerificationReceipt } from "./VerificationReceipt.ts"
 import { absoluteTarget, requireMatchingProjectIdentity } from "./SourceRevalidation.ts"
 import { issueVerifiedPlan, type VerifiedPlan } from "./VerifiedPlan.ts"
 
@@ -106,9 +104,6 @@ const validateRecipeForPlan = <Input, E, R>(
     }
     return validated.value
   })
-
-const errorCount = (diagnostics: ReadonlyArray<DiagnosticRecord>): number =>
-  diagnostics.filter((d) => d.category === "error").length
 
 export interface VerifyOptions {
   readonly onPreview?: ((preview: PlanPreview) => Effect.Effect<void>) | undefined
@@ -209,7 +204,6 @@ export const verify = <Input, E, R>(
       actualMatches: matches ?? 0,
       affectedFiles,
       diagnosticDiff,
-      replayEdits: proposedRun.replayChanges,
       allowedErrors,
     }
     const custom = evaluateCustomRules(recipe.rules, context)
@@ -217,10 +211,5 @@ export const verify = <Input, E, R>(
       return yield* new VerificationFailure({ planId: validatedPlan.planId, ...custom.failure })
     }
 
-    const receipt: VerificationReceipt = {
-      diagnosticDelta: errorCount(diagnosticDiff.introduced) - errorCount(diagnosticDiff.resolved),
-      idempotenceChecked: validatedPlan.policies.idempotence === "required",
-      policyResults: [...builtIn.results, ...custom.results],
-    }
-    return issueVerifiedPlan(validatedPlan, proposed, receipt, diagnosticDiff)
+    return issueVerifiedPlan(validatedPlan, proposed, diagnosticDiff)
   })

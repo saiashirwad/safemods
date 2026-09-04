@@ -13,12 +13,7 @@ import { workspaceLayerNode } from "../WorkspaceRuntime.ts"
 import { withFixture } from "../../test/declarative-fixture.ts"
 import { fixtureProject } from "../../test/project-fixture.ts"
 
-type ForgedPlanValue =
-  | symbol
-  | TransformationPlan
-  | Verification.PlanPreview
-  | Verification.VerificationReceipt
-  | DiagnosticDiff
+type ForgedPlanValue = symbol | TransformationPlan | Verification.PlanPreview | DiagnosticDiff
 
 interface ForgedPlanCapability extends Partial<VerifiedPlan> {
   readonly [key: PropertyKey]: ForgedPlanValue
@@ -52,7 +47,7 @@ describe("Node application capability and staleness checks", () => {
         yield* Effect.promise(() => Fs.symlink(outside, link, "dir"))
         const recipe = Recipe.define("symlink-escape", {
           version: "1.0.0",
-          policies: [{ diagnostics: "exact-delta" }],
+          policies: [{ diagnostics: "allow-new-errors" }],
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
@@ -83,7 +78,7 @@ describe("Node application capability and staleness checks", () => {
         const contents = "export const created = true;\n"
         const recipe = Recipe.define("forged-apply", {
           version: "1.0.0",
-          policies: [{ diagnostics: "exact-delta" }],
+          policies: [{ diagnostics: "allow-new-errors" }],
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
@@ -97,7 +92,7 @@ describe("Node application capability and staleness checks", () => {
           [publicBrand]: publicBrand,
           plan: verified.plan,
           preview: verified.preview,
-          receipt: verified.receipt,
+          diagnosticDiff: verified.diagnosticDiff,
         }
         const spreadForgery = { ...verified }
         // oxlint-disable-next-line eslint/prefer-object-spread -- Exercise this distinct forgery path.
@@ -116,7 +111,7 @@ describe("Node application capability and staleness checks", () => {
                 : file,
             ),
           },
-          receipt: structuredClone(verified.receipt),
+          diagnosticDiff: structuredClone(verified.diagnosticDiff),
         }
         const publicResult = yield* Application.applyVerifiedPlan(
           // SAFETY: the test applies a caller-constructed public-brand object.
@@ -149,7 +144,7 @@ describe("Node application capability and staleness checks", () => {
         const contents = "export const created = true;\n"
         const recipe = Recipe.define("genuine-apply", {
           version: "1.0.0",
-          policies: [{ diagnostics: "exact-delta" }],
+          policies: [{ diagnostics: "allow-new-errors" }],
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
@@ -196,7 +191,7 @@ describe("Node application capability and staleness checks", () => {
       Effect.gen(function* () {
         const recipe = Recipe.define("stale-apply", {
           version: "1.0.0",
-          policies: [{ diagnostics: "exact-delta" }],
+          policies: [{ diagnostics: "allow-new-errors" }],
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)

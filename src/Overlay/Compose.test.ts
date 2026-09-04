@@ -2,7 +2,8 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../Draft/index.ts"
 import type { Draft as DraftModel } from "../Draft/index.ts"
-import { applyFileEdits, sha256, type TextEdit } from "../Edit/index.ts"
+import { applyFileEdits, type TextEdit } from "../Edit/index.ts"
+import { sha256 } from "../Edit/Hash.ts"
 import { DraftEvidenceConflict } from "../Evidence/index.ts"
 import { requireProjectRelativePath } from "../ProjectPath/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
@@ -338,8 +339,9 @@ describe("Overlay.composeDraft", () => {
           matches: 1,
         }
         const moved = yield* Draft.files.move(project, "src/library.ts", "src/moved-library.ts")
+        const accumulated = yield* Draft.concat(unrelated, moved)
         const composed = yield* Overlay.composeDraft(
-          Draft.concat(unrelated, moved),
+          accumulated,
           Effect.gen(function* () {
             const overlaySnapshot = yield* WorkspaceSnapshot
             const overlayProject = yield* overlaySnapshot.project(app)

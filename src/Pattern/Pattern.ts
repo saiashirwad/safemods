@@ -111,15 +111,6 @@ export function predicate<N extends Node = Node, Out = N>(
   return syntaxKind === undefined ? result : { ...result, syntaxKind }
 }
 
-export const not = <N extends Node, Out>(pattern: Pattern<N, Out>): Pattern<N, Node> => ({
-  mode: "node",
-  kind: `not(${pattern.kind ?? "pattern"})`,
-  match: (node, project) =>
-    pattern
-      .match(node, project)
-      .pipe(Effect.map((result) => (result.matched ? matchFailure : matchSuccess(node)))),
-})
-
 export const bind = <K extends string, N extends Node, Out>(
   key: K,
   pattern: Pattern<N, Out>,

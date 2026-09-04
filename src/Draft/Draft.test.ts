@@ -35,13 +35,11 @@ describe("declarative transformations API (@effect/vitest)", () => {
                     `/* wrapped */ { value: ${targetArg.getText()} }`,
                   )
 
-                  return Draft.concat(d1, d2)
+                  return yield* Draft.concat(d1, d2)
                 }),
             })
 
-            yield* executeRecipe(draftTestRecipe, undefined, { mode: "apply" }).pipe(
-              Effect.provide(nodeLayer),
-            )
+            yield* executeRecipe(draftTestRecipe, undefined).pipe(Effect.provide(nodeLayer))
 
             const consumerContent = yield* Effect.tryPromise(() =>
               Fs.readFile(Path.join(root, "src/consumer.ts"), "utf8"),

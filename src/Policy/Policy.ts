@@ -34,13 +34,12 @@ export interface PolicyEvaluationContext {
   readonly actualMatches: number
   readonly affectedFiles: number
   readonly diagnosticDiff: DiagnosticDiff
-  readonly replayEdits?: number | undefined
   readonly allowedErrors?: ReadonlyArray<AllowedError> | undefined
 }
 
 export interface VerificationRule {
   readonly name: string
-  readonly evaluate: (context: PolicyEvaluationContext) => boolean | string
+  readonly evaluate?: ((context: PolicyEvaluationContext) => boolean | string) | undefined
   readonly allowedError?: AllowedError | undefined
 }
 
@@ -63,18 +62,8 @@ export const computeDiagnosticDiff = (
   baseline: ReadonlyArray<DiagnosticRecord>,
   proposed: ReadonlyArray<DiagnosticRecord>,
 ): DiagnosticDiff => {
-  const group = (diagnostics: ReadonlyArray<DiagnosticRecord>) => {
-    const grouped = new Map<string, Array<DiagnosticRecord>>()
-    for (const diagnostic of diagnostics) {
-      const diagnosticKey = diagnosticIdentity(diagnostic)
-      const matches = grouped.get(diagnosticKey)
-      if (matches === undefined) grouped.set(diagnosticKey, [diagnostic])
-      else matches.push(diagnostic)
-    }
-    return grouped
-  }
-  const baselineMap = group(baseline)
-  const proposedMap = group(proposed)
+  const baselineMap = Map.groupBy(baseline, diagnosticIdentity)
+  const proposedMap = Map.groupBy(proposed, diagnosticIdentity)
 
   const introduced: Array<DiagnosticRecord> = []
   const unchanged: Array<DiagnosticRecord> = []
@@ -160,16 +149,6 @@ export const allowErrors = (options: {
     {
       name: `allow-errors:TS${options.code}`,
       allowedError: { code: options.code, max: options.max },
-      evaluate: (ctx) => {
-        const targetStr = diagnosticCodeKey(options.code)
-        const matchingIntroduced = ctx.diagnosticDiff.introduced.filter(
-          (d) => diagnosticCodeKey(d.code) === targetStr,
-        )
-        const max = options.max ?? Infinity
-        return matchingIntroduced.length <= max
-          ? true
-          : `Allowed at most ${max} occurrences of TS${options.code}, but found ${matchingIntroduced.length}.`
-      },
     },
   ],
 })

@@ -1,6 +1,6 @@
 /** Read-only materialization of a plan's exact proposed bytes. */
 import { Effect, type FileSystem, type Path } from "effect"
-import { sha256 } from "../Edit/index.ts"
+import { sha256 } from "../Edit/Hash.ts"
 import {
   isContentFingerprint,
   type PlanDecodeError,
@@ -176,20 +176,6 @@ export const previewValidatedPlan = (
         left.fileName.localeCompare(right.fileName),
     )
     return { planId: plan.planId, snapshotHash: plan.snapshotHash, files }
-  })
-
-/** Validate and materialize a plan against an explicit workspace root. */
-export const previewPlan = (
-  plan: TransformationPlan,
-  workspaceRoot: string,
-): Effect.Effect<
-  PlanPreview,
-  StalePlanError | VerificationFailure | PlanDecodeError,
-  FileSystem.FileSystem | Path.Path
-> =>
-  Effect.gen(function* () {
-    const validated = yield* validatePlan(plan)
-    return yield* previewValidatedPlan(validated, workspaceRoot)
   })
 
 /** Materialize a validated preview against the active Workspace. Never writes. */

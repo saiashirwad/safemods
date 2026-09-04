@@ -6,15 +6,10 @@ import {
   type Identifier,
   type ImportDeclaration,
   type Node,
-  type PropertyAccessExpression,
   type SourceFile,
 } from "typescript/unstable/ast"
-import {
-  isCallExpression,
-  isIdentifier,
-  isImportDeclaration,
-  isPropertyAccessExpression,
-} from "typescript/unstable/ast/is"
+import { isCallExpression, isIdentifier, isImportDeclaration } from "typescript/unstable/ast/is"
+import type { Symbol as NativeSymbol } from "typescript/unstable/async"
 import { requireProjectRelativePath } from "../ProjectPath/index.ts"
 import {
   isProjectFile,
@@ -71,18 +66,19 @@ const resolveScope = (
   )
 }
 
-/** Depth-first collection of nodes matching syntaxKind. */
-const descendantsMatching = (root: Node, syntaxKind?: SyntaxKindFilter): Array<Node> => {
-  const found: Array<Node> = []
-  const visit = (node: Node): void => {
+const forEachMatchingNode = (
+  root: Node,
+  syntaxKind: SyntaxKindFilter | undefined,
+  visit: (node: Node) => void,
+): void => {
+  const walk = (node: Node): void => {
     const kindMatches =
       syntaxKind === undefined ||
       (Array.isArray(syntaxKind) ? syntaxKind.includes(node.kind) : node.kind === syntaxKind)
-    if (kindMatches) found.push(node)
-    node.forEachChild(visit)
+    if (kindMatches) visit(node)
+    node.forEachChild(walk)
   }
-  visit(root)
-  return found
+  walk(root)
 }
 const collectNodes = <A extends Node>(
   project: ProjectSnapshot,
@@ -92,28 +88,22 @@ const collectNodes = <A extends Node>(
 ): Array<Selection<A>> => {
   const fileName = requireProjectRelativePath(project.relativeFileName(sourceFile.fileName))
   const selections: Array<Selection<A>> = []
-  const visit = (node: Node): void => {
-    const kindMatches =
-      syntaxKind === undefined ||
-      (Array.isArray(syntaxKind) ? syntaxKind.includes(node.kind) : node.kind === syntaxKind)
-    if (kindMatches && guard(node)) {
-      selections.push({
-        value: node,
-        project,
-        fileName,
-        start: node.getStart(sourceFile),
-        end: node.getEnd(),
-        evidence: [
-          {
-            criterion: "syntax-kind",
-            facts: { kind: syntaxKindName(node.kind) },
-          },
-        ],
-      })
-    }
-    node.forEachChild(visit)
-  }
-  visit(sourceFile)
+  forEachMatchingNode(sourceFile, syntaxKind, (node) => {
+    if (!guard(node)) return
+    selections.push({
+      value: node,
+      project,
+      fileName,
+      start: node.getStart(sourceFile),
+      end: node.getEnd(),
+      evidence: [
+        {
+          criterion: "syntax-kind",
+          facts: { kind: syntaxKindName(node.kind) },
+        },
+      ],
+    })
+  })
   return selections
 }
 
@@ -144,10 +134,49 @@ export const imports = (target: ProjectScope): Query<ImportDeclaration, ProjectS
 export const identifiers = (target: ProjectScope): Query<Identifier, ProjectSnapshotError> =>
   nodes(target, isIdentifier, SyntaxKind.Identifier)
 
-export const propertyAccesses = (
+/** Find references to a symbol in every file selected by the target scope. */
+export const referencesTo = (
   target: ProjectScope,
-): Query<PropertyAccessExpression, ProjectSnapshotError> =>
-  nodes(target, isPropertyAccessExpression, SyntaxKind.PropertyAccessExpression)
+  symbol: NativeSymbol,
+): Query<Identifier, ProjectSnapshotError> =>
+  resolveScope(target).pipe(
+    Stream.flatMap(({ project, fileName }) =>
+      Stream.fromEffect(
+        Effect.gen(function* () {
+          const sourceFile = yield* project.sourceFile(fileName)
+          if (sourceFile === undefined) return []
+          const references = yield* project.referencesToSymbolInFile(fileName, symbol)
+          const relativeFileName = requireProjectRelativePath(
+            project.relativeFileName(sourceFile.fileName),
+          )
+          const declarationFile = symbol.valueDeclaration?.path ?? symbol.declarations[0]?.path
+          const declarationPath =
+            declarationFile === undefined
+              ? "unknown"
+              : project.containsFileName(String(declarationFile))
+                ? project.relativeFileName(String(declarationFile))
+                : "external"
+          return references.map((node): Selection<Identifier> => ({
+            value: node,
+            project,
+            fileName: relativeFileName,
+            start: node.getStart(sourceFile),
+            end: node.getEnd(),
+            evidence: [
+              {
+                criterion: "syntax-kind",
+                facts: { kind: syntaxKindName(node.kind) },
+              },
+              {
+                criterion: "resolves-to-symbol",
+                facts: { symbol: symbol.name, declarationFile: declarationPath },
+              },
+            ],
+          }))
+        }),
+      ).pipe(Stream.flatMap((references) => Stream.fromIterable(references))),
+    ),
+  )
 
 /** Structural pattern matching query. */
 export const match = <Out>(
@@ -162,7 +191,8 @@ export const match = <Out>(
           const relFileName = requireProjectRelativePath(
             project.relativeFileName(sourceFile.fileName),
           )
-          const candidateNodes = descendantsMatching(sourceFile, pattern.syntaxKind)
+          const candidateNodes: Array<Node> = []
+          forEachMatchingNode(sourceFile, pattern.syntaxKind, (node) => candidateNodes.push(node))
 
           return Stream.fromIterable(candidateNodes).pipe(
             Stream.mapEffect((node) =>

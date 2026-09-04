@@ -1,13 +1,8 @@
 /** Project identity and source fingerprint revalidation. */
 import { Effect, FileSystem, Path } from "effect"
-import { hashDirectoryListing, sha256 } from "../Edit/Hash.ts"
+import { sha256 } from "../Edit/Hash.ts"
 import type { SourceFingerprint, TransformationPlan } from "../Plan/index.ts"
-import {
-  parseProjectRelativePath,
-  projectRelative,
-  resolvePlanFilePath,
-  unsafePlanFilePathMessage,
-} from "../ProjectPath/index.ts"
+import { resolvePlanFilePath, unsafePlanFilePathMessage } from "../ProjectPath/index.ts"
 import { ProjectIdentityMismatch, StalePlanError, VerificationFailure } from "./Errors.ts"
 
 const liveProjectIdentities = (
@@ -85,22 +80,6 @@ export const revalidateSource = (
     if (source.kind === "missing") {
       const exists = yield* fs.exists(absolute).pipe(Effect.mapError(() => stale))
       if (exists) return yield* stale
-      return undefined
-    }
-    if (source.kind === "directory") {
-      const names = yield* fs.readDirectory(absolute).pipe(Effect.mapError(() => stale))
-      if (hashDirectoryListing(names) !== source.hash) return yield* stale
-      return undefined
-    }
-    if (source.kind === "realpath") {
-      const resolved = yield* fs.realPath(absolute).pipe(Effect.mapError(() => stale))
-      const project = plan.projects.find((candidate) => candidate.id === source.projectId)
-      if (project === undefined) return yield* stale
-      const path = yield* Path.Path
-      const projectRoot = path.resolve(workspaceRoot, path.dirname(project.configFileName))
-      const realRoot = yield* fs.realPath(projectRoot).pipe(Effect.orElseSucceed(() => projectRoot))
-      const relative = parseProjectRelativePath(projectRelative(path, realRoot, resolved))
-      if (relative === undefined || sha256(relative) !== source.hash) return yield* stale
       return undefined
     }
     const content = yield* fs.readFileString(absolute).pipe(Effect.mapError(() => stale))

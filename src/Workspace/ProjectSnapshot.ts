@@ -1,7 +1,13 @@
 /** Project-scoped compiler operations for one active snapshot region. */
 import { Data, Effect, Option, Predicate } from "effect"
-import type { Node, SourceFile } from "typescript/unstable/ast"
-import { isIdentifier } from "typescript/unstable/ast/is"
+import type { Identifier, Node, SourceFile } from "typescript/unstable/ast"
+import {
+  isExportDeclaration,
+  isIdentifier,
+  isImportDeclaration,
+  isNamedExports,
+  isNamedImports,
+} from "typescript/unstable/ast/is"
 import {
   SymbolFlags,
   type Project as NativeProject,
@@ -107,6 +113,10 @@ export interface ProjectSnapshot {
     fileName: string,
     positions: ReadonlyArray<number>,
   ) => Effect.Effect<ReadonlyArray<NativeSymbol | undefined>, ProjectSnapshotError>
+  readonly referencesToSymbolInFile: (
+    fileName: string,
+    symbol: NativeSymbol,
+  ) => Effect.Effect<ReadonlyArray<Identifier>, ProjectSnapshotError>
   readonly canonicalSymbol: (
     symbol: NativeSymbol,
   ) => Effect.Effect<NativeSymbol, ProjectSnapshotError>
@@ -122,6 +132,10 @@ export interface ProjectSnapshot {
     fileName: string,
     position: number,
   ) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
+  readonly typesAt: (
+    fileName: string,
+    positions: ReadonlyArray<number>,
+  ) => Effect.Effect<ReadonlyArray<NativeType | undefined>, ProjectSnapshotError>
   readonly typeToString: (type: NativeType) => Effect.Effect<string, ProjectSnapshotError>
   readonly isTypeAssignableTo: (
     fromType: NativeType,
@@ -298,16 +312,117 @@ export const projectSnapshotFor = ({
       nativeProject.checker.getSymbolAtPosition(absolute, positions),
     )
   })
+  const referencesToSymbolInFile = Effect.fn("ProjectSnapshot.referencesToSymbolInFile")(function* (
+    fileName: string,
+    symbol: NativeSymbol,
+  ) {
+    yield* ensureActive
+    const absolute = requireContainedPath(fileName)
+    if (absolute === undefined) return []
+    return yield* nativeRequest("getReferencesToSymbolInFile", async () => {
+      const source = await nativeProject.program.getSourceFile(absolute)
+      if (source === undefined) return []
+
+      const meaning =
+        SymbolFlags.Value |
+        SymbolFlags.Type |
+        SymbolFlags.Namespace |
+        SymbolFlags.Alias |
+        SymbolFlags.ExportValue
+      const targetSymbol =
+        (symbol.flags & SymbolFlags.Alias) === 0
+          ? await symbol.getExportSymbol()
+          : await nativeProject.checker.getAliasedSymbol(symbol)
+      const localSymbol = await nativeProject.checker.resolveName(symbol.name, meaning, source)
+      const candidates: Array<{ readonly symbol: NativeSymbol; readonly node?: Identifier }> =
+        localSymbol === undefined ? [] : [{ symbol: localSymbol }]
+      const candidateNodes: Array<Identifier> = []
+      for (const statement of source.statements) {
+        if (isImportDeclaration(statement)) {
+          const clause = statement.importClause
+          if (clause?.name !== undefined) candidateNodes.push(clause.name)
+          if (clause?.namedBindings !== undefined && isNamedImports(clause.namedBindings)) {
+            for (const element of clause.namedBindings.elements) {
+              if (element.propertyName !== undefined && isIdentifier(element.propertyName)) {
+                candidateNodes.push(element.propertyName)
+              }
+              candidateNodes.push(element.name)
+            }
+          }
+        } else if (
+          isExportDeclaration(statement) &&
+          statement.exportClause !== undefined &&
+          isNamedExports(statement.exportClause)
+        ) {
+          for (const element of statement.exportClause.elements) {
+            if (element.propertyName !== undefined && isIdentifier(element.propertyName)) {
+              candidateNodes.push(element.propertyName)
+            }
+            if (isIdentifier(element.name)) candidateNodes.push(element.name)
+          }
+        }
+      }
+      if (candidateNodes.length > 0) {
+        const located = await nativeProject.checker.getSymbolAtLocation(candidateNodes)
+        for (let index = 0; index < located.length; index++) {
+          const candidate = located[index]
+          const node = candidateNodes[index]
+          if (candidate !== undefined && node !== undefined) {
+            candidates.push({ symbol: candidate, node })
+          }
+        }
+      }
+
+      const canonicalCandidates = await Promise.all(
+        candidates.map(async (candidate) => ({
+          candidate,
+          canonical:
+            (candidate.symbol.flags & SymbolFlags.Alias) === 0
+              ? await candidate.symbol.getExportSymbol()
+              : await nativeProject.checker.getAliasedSymbol(candidate.symbol),
+        })),
+      )
+      const referenceSymbols = new Map<number, NativeSymbol>()
+      const directReferences: Array<Identifier> = []
+      for (const { candidate, canonical } of canonicalCandidates) {
+        if (canonical.id !== targetSymbol.id) continue
+        if (candidate.node !== undefined) directReferences.push(candidate.node)
+        referenceSymbols.set(
+          candidate.symbol.id,
+          (candidate.symbol.flags & SymbolFlags.Alias) === 0 ? canonical : candidate.symbol,
+        )
+      }
+
+      const handleGroups = await Promise.all(
+        [...referenceSymbols.values()].map((referenceSymbol) =>
+          nativeProject.checker.getReferencesToSymbolInFile(absolute, referenceSymbol),
+        ),
+      )
+      const handles = handleGroups.flat()
+      const resolved = await Promise.all(handles.map((handle) => handle.resolve(nativeProject)))
+      const references = [
+        ...directReferences,
+        ...resolved.filter((node): node is Identifier => node !== undefined && isIdentifier(node)),
+      ]
+      return [
+        ...new Map(
+          references.map((node) => [
+            `${node.getStart(node.getSourceFile())}:${node.getEnd()}`,
+            node,
+          ]),
+        ).values(),
+      ]
+    })
+  })
 
   const canonicalSymbol = Effect.fn("ProjectSnapshot.canonicalSymbol")(function* (
     symbol: NativeSymbol,
   ) {
     yield* ensureActive
-    if ((symbol.flags & SymbolFlags.Alias) === 0) {
-      return symbol
-    }
-    return yield* nativeRequest("getAliasedSymbol", () =>
-      nativeProject.checker.getAliasedSymbol(symbol),
+    return yield* nativeRequest("getCanonicalSymbol", () =>
+      (symbol.flags & SymbolFlags.Alias) === 0
+        ? symbol.getExportSymbol()
+        : nativeProject.checker.getAliasedSymbol(symbol),
     )
   })
 
@@ -331,23 +446,26 @@ export const projectSnapshotFor = ({
     if (source === undefined || !(yield* isOwnedSourceFile(source, absolute))) {
       return yield* new SymbolNotFound({ name, fileName: options.within })
     }
-    const identifiers: Array<Node> = []
-    const visit = (node: Node): void => {
-      if (isIdentifier(node) && node.text === name) identifiers.push(node)
-      node.forEachChild(visit)
-    }
-    visit(source)
-    if (identifiers.length === 0) {
+    const symbol = yield* nativeRequest("resolveName", async () => {
+      const resolved = await nativeProject.checker.resolveName(
+        name,
+        SymbolFlags.Value |
+          SymbolFlags.Type |
+          SymbolFlags.Namespace |
+          SymbolFlags.Alias |
+          SymbolFlags.ExportValue,
+        source,
+      )
+      if (resolved !== undefined) return resolved
+      const [moduleSymbol] = await nativeProject.checker.getSymbolAtLocation([source])
+      return moduleSymbol === undefined
+        ? undefined
+        : nativeProject.checker.getMemberInModuleExports(moduleSymbol, name)
+    })
+    if (symbol === undefined) {
       return yield* new SymbolNotFound({ name, fileName: options.within })
     }
-    const symbols = yield* nativeRequest("getSymbolsAtLocations", () =>
-      nativeProject.checker.getSymbolAtLocation(identifiers),
-    )
-    for (const symbol of symbols) {
-      if (symbol === undefined) continue
-      return yield* canonicalSymbol(symbol)
-    }
-    return yield* new SymbolNotFound({ name, fileName: options.within })
+    return yield* canonicalSymbol(symbol)
   })
 
   const findSymbolNamed = Effect.fn("ProjectSnapshot.findSymbolNamed")(
@@ -358,16 +476,24 @@ export const projectSnapshotFor = ({
       ),
   )
 
+  const typesAt = Effect.fn("ProjectSnapshot.typesAt")(function* (
+    fileName: string,
+    positions: ReadonlyArray<number>,
+  ) {
+    yield* ensureActive
+    if (positions.length === 0) return []
+    const absolute = requireContainedPath(fileName)
+    if (absolute === undefined) return positions.map(() => undefined)
+    return yield* nativeRequest("getTypeAtPosition", () =>
+      nativeProject.checker.getTypeAtPosition(absolute, positions),
+    )
+  })
+
   const typeAt = Effect.fn("ProjectSnapshot.typeAt")(function* (
     fileName: string,
     position: number,
   ) {
-    yield* ensureActive
-    const absolute = requireContainedPath(fileName)
-    if (absolute === undefined) return undefined
-    const types = yield* nativeRequest("getTypeAtPosition", () =>
-      nativeProject.checker.getTypeAtPosition(absolute, [position]),
-    )
+    const types = yield* typesAt(fileName, [position])
     return types[0]
   })
 
@@ -466,10 +592,12 @@ export const projectSnapshotFor = ({
     files,
     symbolAt,
     symbolsAt,
+    referencesToSymbolInFile,
     canonicalSymbol,
     symbolNamed,
     findSymbolNamed,
     typeAt,
+    typesAt,
     typeToString,
     isTypeAssignableTo,
     intrinsicType,

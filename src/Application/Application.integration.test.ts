@@ -1,7 +1,7 @@
 import { path as Path, nodeFsPromises as Fs } from "../platform/node.ts"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Layer } from "effect"
-import { sha256 } from "../Edit/index.ts"
+import { sha256 } from "../Edit/Hash.ts"
 import * as Draft from "../Draft/index.ts"
 import { executeRecipe } from "../Execution/index.ts"
 import { layer as nodeLayer } from "../Node/index.ts"
@@ -24,7 +24,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
 
             const fileLifecycleRecipe = Recipe.define("file-lifecycle", {
               version: "1.0.0",
-              policies: [{ diagnostics: "exact-delta" }],
+              policies: [{ diagnostics: "allow-new-errors" }],
               run: () =>
                 Effect.gen(function* () {
                   const project = yield* fixtureProject(app)
@@ -41,15 +41,15 @@ describe("declarative transformations API (@effect/vitest)", () => {
                     "src/shared/core.ts",
                   )
 
-                  return Draft.concat(d1, d2)
+                  return yield* Draft.concat(d1, d2)
                 }),
             })
 
-            const execution = yield* executeRecipe(fileLifecycleRecipe, undefined, {
-              mode: "apply",
-            }).pipe(Effect.provide(mainLayer))
+            const execution = yield* executeRecipe(fileLifecycleRecipe, undefined).pipe(
+              Effect.provide(mainLayer),
+            )
             expect(execution.plan.fileOperations?.length).toBe(2)
-            expect(execution.preview.files.length).toBeGreaterThanOrEqual(2)
+            expect(execution.verified.preview.files.length).toBeGreaterThanOrEqual(2)
 
             const createdContent = yield* Effect.tryPromise(() =>
               Fs.readFile(Path.join(root, "src/utils.ts"), "utf8"),
@@ -116,7 +116,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
 
             const moveRecipe = Recipe.define("move-specifiers", {
               version: "1.0.0",
-              policies: [{ diagnostics: "exact-delta" }],
+              policies: [{ diagnostics: "allow-new-errors" }],
               run: () =>
                 Effect.gen(function* () {
                   const project = yield* fixtureProject(app)
@@ -154,9 +154,9 @@ describe("declarative transformations API (@effect/vitest)", () => {
             )
             expect(preMoveFail._tag).toBe("Failure")
 
-            const execution = yield* executeRecipe(moveRecipe, undefined, {
-              mode: "apply",
-            }).pipe(Effect.provide(mainLayer))
+            const execution = yield* executeRecipe(moveRecipe, undefined).pipe(
+              Effect.provide(mainLayer),
+            )
             const move = execution.plan.fileOperations?.find(
               (operation) => operation.kind === "move",
             )

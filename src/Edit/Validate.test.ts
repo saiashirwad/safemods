@@ -1,6 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Exit } from "effect"
-import { applyFileEdits, textEdit, normalizeEdits, sha256, type TextEdit } from "./index.ts"
+import { sha256 } from "./Hash.ts"
+import { applyFileEdits, textEdit, normalizeEdits, type TextEdit } from "./index.ts"
 
 const edit = (start: number, end: number, newText: string): TextEdit => ({
   projectId: "app",

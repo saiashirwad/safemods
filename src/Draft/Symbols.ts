@@ -14,7 +14,6 @@ import {
 } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol } from "typescript/unstable/async"
 import * as Query from "../Query/index.ts"
-import type { QueryContractError } from "../Query/index.ts"
 import {
   isProjectFile,
   type ProjectFile,
@@ -162,7 +161,7 @@ export const renameSymbol = (
   project: ProjectSnapshot,
   symbol: NativeSymbol,
   newName: string,
-): Effect.Effect<Draft, ProjectSnapshotError | QueryContractError | DraftEvidenceConflict> =>
+): Effect.Effect<Draft, ProjectSnapshotError | DraftEvidenceConflict> =>
   Effect.gen(function* () {
     const declarationPath = symbol.valueDeclaration?.path ?? symbol.declarations[0]?.path
     const references = yield* Query.collect(Query.referencesTo(project, symbol))
@@ -218,13 +217,13 @@ export interface RenameSymbolNamedFn {
     file: ProjectFile,
     oldName: string,
     newName: string,
-  ): Effect.Effect<Draft, ProjectSnapshotError | QueryContractError | DraftEvidenceConflict>
+  ): Effect.Effect<Draft, ProjectSnapshotError | DraftEvidenceConflict>
   (
     project: ProjectSnapshot,
     oldName: string,
     newName: string,
     options: { readonly lookupIn: string },
-  ): Effect.Effect<Draft, ProjectSnapshotError | QueryContractError | DraftEvidenceConflict>
+  ): Effect.Effect<Draft, ProjectSnapshotError | DraftEvidenceConflict>
 }
 
 /**
@@ -240,7 +239,7 @@ export const renameSymbolNamed: RenameSymbolNamedFn = (
   oldName: string,
   newName: string,
   maybeOptions?: { readonly lookupIn: string },
-): Effect.Effect<Draft, ProjectSnapshotError | QueryContractError | DraftEvidenceConflict> =>
+): Effect.Effect<Draft, ProjectSnapshotError | DraftEvidenceConflict> =>
   Effect.gen(function* () {
     const isFile = isProjectFile(projectOrFile)
     const project = isFile ? projectOrFile.project : projectOrFile

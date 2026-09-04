@@ -8,7 +8,7 @@ export interface ProjectEvidence {
   readonly configFileName: string
 }
 
-export type SourceFingerprintKind = "file" | "missing" | "directory" | "realpath"
+export type SourceFingerprintKind = "file" | "missing"
 
 export interface SourceFingerprint {
   readonly projectId: string
@@ -48,7 +48,7 @@ export type PlannedFileOperation = CreateFileOperation | DeleteFileOperation | M
 export interface PlanPolicies {
   readonly matchCount: { readonly min?: number | undefined; readonly max?: number | undefined }
   readonly maxAffectedFiles?: number | undefined
-  readonly diagnostics: "no-new-errors" | "exact-delta"
+  readonly diagnostics: "no-new-errors" | "allow-new-errors"
   readonly idempotence: "required" | "not-promised"
 }
 

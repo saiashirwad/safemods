@@ -1,20 +1,11 @@
 /** TypeScript semantic and declaration criteria. */
 import { Effect } from "effect"
-import { getJSDocTags, SyntaxKind, type Identifier, type Node } from "typescript/unstable/ast"
+import { getJSDocTags, SyntaxKind, type Node } from "typescript/unstable/ast"
 import type { Symbol as NativeSymbol, Type as NativeType } from "typescript/unstable/async"
 import type { ProjectSnapshotError } from "../Workspace/index.ts"
 import { isIntrinsicTypeName, type IntrinsicTypeName } from "../Workspace/ProjectSnapshot.ts"
 import type { EvidenceFact } from "../Evidence/Evidence.ts"
-import {
-  CriterionBase,
-  type Criterion,
-  type ProjectScope,
-  type Query,
-  type QueryContractError,
-  type Selection,
-} from "./Query.ts"
-import { identifiers } from "./Sources.ts"
-import { where } from "./Operators.ts"
+import { CriterionBase, type Criterion, type Selection } from "./Query.ts"
 
 /**
  * Admit nodes that resolve to the given canonical symbol, through import
@@ -101,13 +92,6 @@ export const isExported = <A extends Node>(): Criterion<A> =>
     return hasExport ? { exported: true } : undefined
   })
 
-/** Find all occurrences across all files in the project that resolve to the given canonical symbol. */
-export const referencesTo = (
-  target: ProjectScope,
-  symbol: NativeSymbol,
-): Query<Identifier, ProjectSnapshotError | QueryContractError> =>
-  identifiers(target).pipe(where(resolvesTo(symbol)))
-
 /**
  * Compute the TypeScript type of each selection's node in order, skipping
  * selections the checker cannot resolve, and collect one optional fact per
@@ -120,19 +104,34 @@ const eachComputedType = <A extends Node, Fact>(
     nodeType: NativeType,
   ) => Effect.Effect<Fact | undefined, ProjectSnapshotError>,
 ): Effect.Effect<Array<Fact | undefined>, ProjectSnapshotError> =>
-  Effect.forEach(
-    selections,
-    (selection) =>
-      Effect.gen(function* () {
-        const node = selection.value
-        const sourceFile = node.getSourceFile()
-        const pos = node.getStart(sourceFile)
-        const nodeType = yield* selection.project.typeAt(selection.fileName, pos)
-        if (nodeType === undefined) return undefined
-        return yield* compute(selection, nodeType)
-      }),
-    { concurrency: 1 },
-  )
+  Effect.gen(function* () {
+    const byProjectFile = Map.groupBy(
+      selections.map((selection, index) => ({ selection, index })),
+      ({ selection }) => `${selection.project.project.id}:${selection.fileName}`,
+    )
+    const facts: Array<Fact | undefined> = Array.from({ length: selections.length })
+    yield* Effect.all(
+      [...byProjectFile.values()].map((group) =>
+        Effect.gen(function* () {
+          const project = group[0]!.selection.project
+          const positions = group.map(({ selection }) => {
+            const node = selection.value
+            return node.getStart(node.getSourceFile())
+          })
+          const types = yield* project.typesAt(group[0]!.selection.fileName, positions)
+          yield* Effect.forEach(types, (nodeType, index) => {
+            if (nodeType === undefined) return Effect.void
+            const { selection, index: selectionIndex } = group[index]!
+            return Effect.map(compute(selection, nodeType), (fact) => {
+              facts[selectionIndex] = fact
+            })
+          })
+        }),
+      ),
+      { concurrency: 8 },
+    )
+    return facts
+  })
 
 /** Admit nodes whose computed type is assignable to `target`. */
 export const typeAssignableTo = <A extends Node>(

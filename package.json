@@ -68,6 +68,7 @@
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-rc.109",
+    "diff": "^9.0.0",
     "effect": "4.0.0-rc.109",
     "typescript": "7.0.2"
   },

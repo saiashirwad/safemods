@@ -12,7 +12,6 @@ import { Effect, Predicate } from "effect"
 import {
   type DraftEvidenceConflict,
   finalizeDraftEvidence,
-  finalizeDraftEvidenceEffect,
   mergeEvidence,
   type EvidenceRecord,
 } from "../Evidence/index.ts"
@@ -20,7 +19,7 @@ import type { PlannedFileOperation } from "../Plan/index.ts"
 import type { Node, SourceFile } from "typescript/unstable/ast"
 import { textEdit, type TextEdit } from "../Edit/TextEdit.ts"
 import type { Selection } from "../Query/index.ts"
-import type { ProjectSnapshot, ProjectSnapshotError, SnapshotExpired } from "../Workspace/index.ts"
+import type { ProjectSnapshot, SnapshotExpired } from "../Workspace/index.ts"
 
 /** An edit in pre-finalization form; identical in shape to its durable counterpart. */
 export type ProposedEdit = TextEdit
@@ -42,17 +41,13 @@ const mergeDrafts = (...drafts: ReadonlyArray<Draft>) => ({
   matches: drafts.reduce((total, draft) => total + draft.matches, 0),
 })
 
-/** Effect form of `concat` for Recipe.all. */
-export const concatEffect = (
-  ...drafts: ReadonlyArray<Draft>
-): Effect.Effect<Draft, DraftEvidenceConflict> =>
-  finalizeDraftEvidenceEffect(mergeDrafts(...drafts), { facts: { source: "concat" } })
-
 /**
  * Combine drafts built from disjoint selections. Identical evidence records
  * merge; records sharing an ID with different facts are rejected.
  */
-export const concat = (...drafts: ReadonlyArray<Draft>): Draft =>
+export const concat = (
+  ...drafts: ReadonlyArray<Draft>
+): Effect.Effect<Draft, DraftEvidenceConflict> =>
   finalizeDraftEvidence(mergeDrafts(...drafts), { facts: { source: "concat" } })
 
 type DraftEdit = Omit<TextEdit, "evidenceIds">
@@ -82,10 +77,6 @@ export const draftForEdit = (
     ],
     matches: 1,
   }
-}
-
-export interface EditRangeOptions {
-  readonly includeLeadingTrivia?: boolean
 }
 
 /** Text edit over a half-open [start, end) range of a native source file. */
@@ -138,10 +129,9 @@ export const replace = (
   project: ProjectSnapshot,
   node: Node,
   newText: string,
-  options?: EditRangeOptions,
 ): Effect.Effect<Draft, SnapshotExpired> =>
   draftForNodeRange(project, node, newText, "node:replace", (sourceFile) => ({
-    start: options?.includeLeadingTrivia === true ? node.getFullStart() : node.getStart(sourceFile),
+    start: node.getStart(sourceFile),
     end: node.getEnd(),
   }))
 
@@ -149,8 +139,7 @@ export const replace = (
 export const remove = (
   project: ProjectSnapshot,
   node: Node,
-  options?: EditRangeOptions,
-): Effect.Effect<Draft, SnapshotExpired> => replace(project, node, "", options)
+): Effect.Effect<Draft, SnapshotExpired> => replace(project, node, "")
 
 /** Insert text immediately before a node's first token. */
 export const insertBefore = (
@@ -176,12 +165,6 @@ const insertAtNode = (
     const position = side === "before" ? node.getStart(sourceFile) : node.getEnd()
     return { start: position, end: position }
   })
-
-/** Print a synthesized or updated native node to source text via the native emitter. */
-export const print = (
-  project: ProjectSnapshot,
-  node: Node,
-): Effect.Effect<string, ProjectSnapshotError> => project.printNode(node)
 
 /** The replacement a selection maps to: text only (replace the selected node) or an explicit target node. */
 export type Replacement = string | { readonly node: Node; readonly text: string }
@@ -220,7 +203,7 @@ const adoptReturnedDraft = <A extends Node>(
   evidenceId: string,
   proposed: Draft,
 ): Effect.Effect<Draft, DraftEvidenceConflict> =>
-  finalizeDraftEvidenceEffect(
+  finalizeDraftEvidence(
     {
       edits: proposed.edits.map((edit) => ({
         ...edit,
@@ -285,7 +268,7 @@ export const replaceEach = <A extends Node, E = never, R = never>(
       ? raw
       : Effect.succeed(raw)
     return Effect.flatMap(effect, (proposed) => draftFromProposal(selection, proposed))
-  }).pipe(Effect.flatMap((drafts) => concatEffect(...drafts)))
+  }).pipe(Effect.flatMap((drafts) => concat(...drafts)))
 
 const selectionEvidenceId = <A extends Node>(selection: Selection<A>): string =>
   `selection:${selection.project.project.id}:${selection.fileName}:${selection.start}-${selection.end}`
@@ -311,11 +294,14 @@ const selectionEvidence = <A extends Node>(
  * Record query selections as search/audit evidence without proposing any file edits.
  * Enables read-only codebase audits, inventorying, and migration sizing.
  */
-export const audit = <A extends Node>(selections: ReadonlyArray<Selection<A>>): Draft => {
-  const evidence = mergeEvidence(selections.map((selection) => selectionEvidence(selection)))
-  return {
-    edits: [],
-    evidence,
-    matches: evidence.length,
-  }
-}
+export const audit = <A extends Node>(
+  selections: ReadonlyArray<Selection<A>>,
+): Effect.Effect<Draft, DraftEvidenceConflict> =>
+  Effect.map(
+    mergeEvidence(selections.map((selection) => selectionEvidence(selection))),
+    (evidence) => ({
+      edits: [],
+      evidence,
+      matches: evidence.length,
+    }),
+  )

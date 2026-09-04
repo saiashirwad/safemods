@@ -76,7 +76,7 @@ describe("verification diagnostics and policies", () => {
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
                 // Resolve the TS2322 error, introduce one TS2304 error: count stays 1.
-                return Draft.concat(
+                return yield* Draft.concat(
                   yield* Draft.files.delete(project, "src/swap.ts"),
                   yield* Draft.files.create(project, "src/other.ts", "missingName;\n"),
                 )
@@ -147,9 +147,6 @@ describe("verification diagnostics and policies", () => {
           const validPlan = yield* Recipe.run(validRecipe, undefined)
           const verified = yield* Verification.verify(validPlan, validRecipe, undefined)
           expect(verified.diagnosticDiff).toBeDefined()
-          const policyNames = verified.receipt.policyResults.map((result) => result.name)
-          expect(policyNames.filter((name) => name === "no-new-errors")).toEqual(["no-new-errors"])
-          expect(new Set(policyNames).size).toBe(policyNames.length)
 
           const failingPlan = yield* Recipe.run(failingRecipe, undefined)
           const failure = yield* Verification.verify(failingPlan, failingRecipe, undefined).pipe(
@@ -238,7 +235,7 @@ describe("verification diagnostics and policies", () => {
         Effect.gen(function* () {
           const recipe = Recipe.define("non-idempotent-file-create", {
             version: "1.0.0",
-            policies: [{ diagnostics: "exact-delta" }, Policy.idempotent()],
+            policies: [{ diagnostics: "allow-new-errors" }, Policy.idempotent()],
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
@@ -300,7 +297,7 @@ describe("verification diagnostics and policies", () => {
           const source = `export const n: number = "string";\n`
           const observe = Recipe.define("observe-introduced-error", {
             version: "1.0.0",
-            policies: [{ diagnostics: "exact-delta" }],
+            policies: [{ diagnostics: "allow-new-errors" }],
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)

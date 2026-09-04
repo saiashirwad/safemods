@@ -46,7 +46,7 @@ describe("recipe sequential composition", () => {
           })
 
           const piped = Recipe.pipe(step1, step2)
-          yield* executeRecipe(piped, undefined, { mode: "apply" }).pipe(Effect.provide(nodeLayer))
+          yield* executeRecipe(piped, undefined).pipe(Effect.provide(nodeLayer))
 
           const consumerContent = yield* Effect.tryPromise(() =>
             Fs.readFile(Path.join(root, "src/consumer.ts"), "utf8"),

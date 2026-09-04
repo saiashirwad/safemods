@@ -2,13 +2,13 @@ import { Effect } from "effect"
 import type { Draft as DraftModel } from "../Draft/index.ts"
 import {
   applyFileEdits,
-  sha256,
   type EditConflict,
   type InvalidEdit,
   type TextEdit,
 } from "../Edit/index.ts"
+import { sha256 } from "../Edit/Hash.ts"
 import { textEdit } from "../Edit/TextEdit.ts"
-import { mergeEvidenceEffect, type DraftEvidenceConflict } from "../Evidence/index.ts"
+import { mergeEvidence, type DraftEvidenceConflict } from "../Evidence/index.ts"
 import type { PlannedFileOperation } from "../Plan/index.ts"
 import { virtualFileKey } from "../VirtualFs/index.ts"
 import {
@@ -64,7 +64,7 @@ export const rebaseDrafts = (
       accumulated.edits.length > 0 || (accumulated.fileOperations?.length ?? 0) > 0
     const nextChanged = next.edits.length > 0 || (next.fileOperations?.length ?? 0) > 0
     const retained = {
-      evidence: yield* mergeEvidenceEffect([...accumulated.evidence, ...next.evidence]),
+      evidence: yield* mergeEvidence([...accumulated.evidence, ...next.evidence]),
       matches: accumulated.matches + next.matches,
     }
     if (!accumulatedChanged) return { ...next, ...retained }
@@ -130,6 +130,26 @@ export const rebaseDrafts = (
     const fileOperations = [...(accumulated.fileOperations ?? []), ...(next.fileOperations ?? [])]
     const consumedEdits = new Set<TextEdit>()
     const normalizedOperations: Array<PlannedFileOperation> = []
+    const combinedEditsByFile = Map.groupBy(combinedEdits, (edit) =>
+      virtualFileKey(edit.projectId, edit.fileName),
+    )
+    const importRewriteEvidenceIds = new Set(
+      accumulated.evidence
+        .filter((item) => item.kind === "file-import-rewrite")
+        .map((item) => item.id),
+    )
+    const importRewriteEditsByEvidenceId = new Map<string, Array<TextEdit>>()
+    for (const edit of combinedEdits) {
+      for (const evidenceId of edit.evidenceIds) {
+        if (!importRewriteEvidenceIds.has(evidenceId)) continue
+        const edits = importRewriteEditsByEvidenceId.get(evidenceId)
+        if (edits === undefined) {
+          importRewriteEditsByEvidenceId.set(evidenceId, [edit])
+        } else {
+          edits.push(edit)
+        }
+      }
+    }
     for (const operation of fileOperations) {
       const sourceKey = virtualFileKey(operation.projectId, operation.path)
       const targetKey =
@@ -138,11 +158,7 @@ export const rebaseDrafts = (
           : undefined
       const operationEditKey = operation.kind === "move" ? targetKey : sourceKey
       const operationEdits =
-        operationEditKey === undefined
-          ? undefined
-          : combinedEdits.filter(
-              (edit) => virtualFileKey(edit.projectId, edit.fileName) === operationEditKey,
-            )
+        operationEditKey === undefined ? undefined : combinedEditsByFile.get(operationEditKey)
       let normalized = operation
       if (operationEdits !== undefined && operationEdits.length > 0) {
         for (const edit of operationEdits) consumedEdits.add(edit)
@@ -164,10 +180,8 @@ export const rebaseDrafts = (
           const evidenceIds = [
             ...new Set([...(producer.evidenceIds ?? []), ...(operation.evidenceIds ?? [])]),
           ]
-          for (const edit of combinedEdits) {
-            if (virtualFileKey(edit.projectId, edit.fileName) === sourceKey) {
-              consumedEdits.add(edit)
-            }
+          for (const edit of combinedEditsByFile.get(sourceKey) ?? []) {
+            consumedEdits.add(edit)
           }
           if (operation.kind === "delete") {
             if (producer.kind === "create") {
@@ -190,8 +204,8 @@ export const rebaseDrafts = (
                   )
                   .map((item) => item.id),
               )
-              for (const edit of combinedEdits) {
-                if (edit.evidenceIds.some((id) => obsoleteEvidenceIds.has(id))) {
+              for (const evidenceId of obsoleteEvidenceIds) {
+                for (const edit of importRewriteEditsByEvidenceId.get(evidenceId) ?? []) {
                   consumedEdits.add(edit)
                 }
               }
@@ -221,13 +235,6 @@ export const rebaseDrafts = (
               evidenceIds,
             }
           }
-          if (operation.kind === "move") {
-            for (const edit of combinedEdits) {
-              if (virtualFileKey(edit.projectId, edit.fileName) === targetKey) {
-                consumedEdits.add(edit)
-              }
-            }
-          }
           continue
         }
       }
@@ -239,10 +246,8 @@ export const rebaseDrafts = (
         normalized = { ...normalized, initialHash: sha256(original) }
       }
       if (operation.kind === "delete" || operation.kind === "move") {
-        for (const edit of combinedEdits) {
-          if (virtualFileKey(edit.projectId, edit.fileName) === sourceKey) {
-            consumedEdits.add(edit)
-          }
+        for (const edit of combinedEditsByFile.get(sourceKey) ?? []) {
+          consumedEdits.add(edit)
         }
       }
       normalizedOperations.push(normalized)
@@ -251,7 +256,6 @@ export const rebaseDrafts = (
     return {
       edits: combinedEdits.filter((edit) => !consumedEdits.has(edit)),
       fileOperations: normalizedOperations,
-      evidence: yield* mergeEvidenceEffect([...accumulated.evidence, ...next.evidence]),
-      matches: accumulated.matches + next.matches,
+      ...retained,
     }
   })

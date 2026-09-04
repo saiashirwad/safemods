@@ -21,27 +21,6 @@ const ARITY_SOURCE = [
 const inArity = <A, E, R>(self: Query.Query<A, E, R>): Query.Query<A, E, R> =>
   Query.within(self, "src/arity.ts")
 
-describe("Query.matchesPathGlob", () => {
-  const cases: ReadonlyArray<readonly [fileName: string, glob: string, expected: boolean]> = [
-    ["src/a.ts", "src/*.ts", true],
-    ["src/nested/a.ts", "src/*.ts", false],
-    ["src/a.ts", "src/**/*.ts", true],
-    ["src/nested/deep/a.ts", "src/**/*.ts", true],
-    ["other/a.ts", "src/**/*.ts", false],
-    ["a.ts", "**/*.ts", true],
-    ["src/lib.ts", "**/lib.ts", true],
-    ["src/a+b.ts", "src/a+b.ts", true],
-    ["src/ab.ts", "src/a+b.ts", false],
-    ["src/a.ts", "src\\*.ts", true],
-  ]
-
-  for (const [fileName, glob, expected] of cases) {
-    effect(`matchesPathGlob(${JSON.stringify(fileName)}, ${JSON.stringify(glob)})`, () =>
-      Effect.sync(() => expect(Query.matchesPathGlob(fileName, glob)).toBe(expected)),
-    )
-  }
-})
-
 describe("Query stream operators", () => {
   effect(
     "collect orders selections by project, file, start, end",
@@ -204,31 +183,54 @@ describe("Query stream operators", () => {
   effect(
     "within admits by glob, exact path, regular expression, and exact ProjectFile",
     () =>
-      withProject({}, (project) => {
-        const countIn = (pattern: string | RegExp | ProjectFile) =>
-          Query.identifiers(project).pipe(Query.within(pattern), Query.collect)
+      withProject(
+        {
+          "src/question?.ts": "export const question = 1\n",
+          "src/nested/deep.ts": "export const deep = 1\n",
+        },
+        (project) => {
+          const countIn = (pattern: string | RegExp | ProjectFile) =>
+            Query.identifiers(project).pipe(Query.within(pattern), Query.collect)
 
-        return Effect.gen(function* () {
-          const all = yield* countIn("src/**/*.ts")
-          const libraryOnly = yield* countIn("src/library.ts")
-          const regExp = yield* countIn(/reexport-consumer/)
-          const files = yield* project.files
-          const library = files.find((file) => file.path === "src/library.ts")
-          expect(library).toBeDefined()
+          return Effect.gen(function* () {
+            const all = yield* countIn("src/**/*.ts")
+            const topLevel = yield* countIn("src/*.ts")
+            const portableTopLevel = yield* countIn("src\\*.ts")
+            const literalQuestion = yield* countIn("src/question?.ts")
+            const libraryOnly = yield* countIn("src/library.ts")
+            const regExp = yield* countIn(/reexport-consumer/)
+            const files = yield* project.files
+            const library = files.find((file) => file.path === "src/library.ts")
+            expect(library).toBeDefined()
 
-          expect(all.length).toBeGreaterThan(0)
-          expect(libraryOnly.length).toBeGreaterThan(0)
-          expect(libraryOnly.every((s) => s.fileName === "src/library.ts")).toBe(true)
-          expect(regExp.every((s) => s.fileName.includes("reexport-consumer"))).toBe(true)
-          expect((yield* countIn(library!)).every((s) => s.fileName === "src/library.ts")).toBe(
-            true,
-          )
+            expect(all.length).toBeGreaterThan(0)
+            expect(libraryOnly.length).toBeGreaterThan(0)
+            expect(libraryOnly.every((s) => s.fileName === "src/library.ts")).toBe(true)
+            expect(regExp.every((s) => s.fileName.includes("reexport-consumer"))).toBe(true)
+            expect((yield* countIn(library!)).every((s) => s.fileName === "src/library.ts")).toBe(
+              true,
+            )
 
-          // Bare strings are exact: no substring or suffix matching.
-          expect(yield* countIn("library.ts")).toEqual([])
-          expect(yield* countIn("consumer")).toEqual([])
-        })
-      }),
+            // Bare strings are exact: no substring or suffix matching.
+            expect(yield* countIn("library.ts")).toEqual([])
+            expect(yield* countIn("consumer")).toEqual([])
+            expect(topLevel.some((selection) => selection.fileName === "src/question?.ts")).toBe(
+              true,
+            )
+            expect(topLevel.some((selection) => selection.fileName === "src/nested/deep.ts")).toBe(
+              false,
+            )
+            expect(all.some((selection) => selection.fileName === "src/nested/deep.ts")).toBe(true)
+            expect(portableTopLevel.map((selection) => selection.fileName)).toEqual(
+              topLevel.map((selection) => selection.fileName),
+            )
+            expect(literalQuestion.length).toBeGreaterThan(0)
+            expect(
+              literalQuestion.every((selection) => selection.fileName === "src/question?.ts"),
+            ).toBe(true)
+          })
+        },
+      ),
     60_000,
   )
 })

@@ -60,11 +60,8 @@ export const evaluateBuiltInPolicies = (input: BuiltInPolicyInput): PolicyEvalua
     input.allowedErrors ?? [],
   )
   const diagnosticsPassed =
-    input.policies.diagnostics !== "no-new-errors" || unpermittedErrors.length === 0
-  results.push({
-    name: input.policies.diagnostics === "no-new-errors" ? "no-new-errors" : "diagnostic-diff",
-    passed: diagnosticsPassed,
-  })
+    input.policies.diagnostics === "allow-new-errors" || unpermittedErrors.length === 0
+  results.push({ name: input.policies.diagnostics, passed: diagnosticsPassed })
 
   const idempotencePassed =
     input.policies.idempotence !== "required" || input.secondPlanChangeCount === 0
@@ -102,6 +99,7 @@ export const evaluateCustomRules = (
 ): PolicyEvaluation => {
   const results: Array<PolicyResult> = []
   for (const rule of rules) {
+    if (rule.evaluate === undefined) continue
     const result = rule.evaluate(context)
     if (result === true) {
       results.push({ name: rule.name, passed: true })

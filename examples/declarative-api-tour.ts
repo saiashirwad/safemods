@@ -61,7 +61,7 @@ export const wrapTargetRecipe = Recipe.define("wrap-target-call-sites", {
           })
         : Draft.empty
 
-      return Draft.concat(wrapDraft, importDraft)
+      return yield* Draft.concat(wrapDraft, importDraft)
     }),
 })
 
@@ -97,9 +97,6 @@ export const runTour = Effect.gen(function* () {
   console.log(`[Preview Generated] Files affected: ${preview.files.length}`)
 
   const verified = yield* Verification.verify(plan, wrapTargetRecipe, input)
-  console.log(
-    `[Verification Passed] Diagnostic Delta: ${verified.receipt.diagnosticDelta}, Idempotence: ${verified.receipt.idempotenceChecked}`,
-  )
   console.log(
     `[Diagnostic Diff] Introduced: ${verified.diagnosticDiff.introduced.length}, Resolved: ${verified.diagnosticDiff.resolved.length}`,
   )

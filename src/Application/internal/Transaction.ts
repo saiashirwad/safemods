@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto"
 import { Effect, FileSystem, Path } from "effect"
 import type { ApplicationReceipt } from "../Application.ts"
-import { sha256 } from "../../Edit/index.ts"
+import { sha256 } from "../../Edit/Hash.ts"
 import { StalePlanError } from "../../Verification/Errors.ts"
-import { previewValidatedPlan } from "../../Verification/Preview.ts"
 import { requireMatchingProjectIdentity } from "../../Verification/SourceRevalidation.ts"
 import { isVerifiedPlan, type VerifiedPlan } from "../../Verification/VerifiedPlan.ts"
 import { Workspace } from "../../Workspace/index.ts"
-import { preserveStalePlanError, toApplicationFailure } from "./Failure.ts"
+import { toApplicationFailure } from "./Failure.ts"
 import { safeTarget } from "./PathSafety.ts"
 
 export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(function* (
@@ -22,9 +21,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
   const plan = verified.plan
   yield* requireMatchingProjectIdentity(plan, definition.projects)
 
-  const preview = yield* previewValidatedPlan(plan, workspaceRoot).pipe(
-    Effect.mapError(preserveStalePlanError(plan.planId)),
-  )
+  const preview = verified.preview
 
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path

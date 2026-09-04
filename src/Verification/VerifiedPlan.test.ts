@@ -31,7 +31,7 @@ describe("issued verified plans and project identity", () => {
         Effect.gen(function* () {
           const recipe = Recipe.define("unvalidated-paths", {
             version: "1.0.0",
-            policies: [{ diagnostics: "exact-delta" }],
+            policies: [{ diagnostics: "allow-new-errors" }],
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
@@ -65,7 +65,7 @@ describe("issued verified plans and project identity", () => {
         Effect.gen(function* () {
           const recipe = Recipe.define("identity-mismatch", {
             version: "1.0.0",
-            policies: [{ diagnostics: "exact-delta" }],
+            policies: [{ diagnostics: "allow-new-errors" }],
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
@@ -126,7 +126,7 @@ describe("issued verified plans and project identity", () => {
 
           const recipe = Recipe.define("manifest-stale", {
             version: "1.0.0",
-            policies: [{ diagnostics: "exact-delta" }],
+            policies: [{ diagnostics: "allow-new-errors" }],
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
@@ -160,7 +160,7 @@ describe("issued verified plans and project identity", () => {
         Effect.gen(function* () {
           const recipe = Recipe.define("issued-freeze", {
             version: "1.0.0",
-            policies: [{ diagnostics: "exact-delta" }],
+            policies: [{ diagnostics: "allow-new-errors" }],
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)

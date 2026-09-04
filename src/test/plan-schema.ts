@@ -1,4 +1,4 @@
-import { sha256 } from "../Edit/index.ts"
+import { sha256 } from "../Edit/Hash.ts"
 import { planHashOf } from "../Plan/Codec.ts"
 import type { Json } from "../Evidence/index.ts"
 import {
