@@ -1,13 +1,3 @@
-/**
- * safemods — Declarative API Tour
- *
- * This example walks through the 5 core pillars of safemods:
- * 1. Declarative AST Pattern Matching (`Pattern` & `Query.match`)
- * 2. Algebraic Criteria Combinators (`Criterion.all`, `Criterion.not`)
- * 3. High-Fidelity Draft Mutations (`Draft.replaceEach`, `Draft.imports`, `Draft.files`)
- * 4. In-Memory Virtual Overlays & Algebraic Recipes (`Recipe.pipe`, `Recipe.all`, `Recipe.branch`)
- * 5. Diagnostic Diffs & Declarative Policies (`Policy.noNewErrors`, `Policy.fixesError`, `Policy.idempotent`)
- */
 import { nodeFsPromises as Fs } from "../src/platform/node.ts"
 import { fileURLToPath } from "node:url"
 import { isObjectLiteralExpression } from "typescript/unstable/ast/is"

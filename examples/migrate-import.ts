@@ -6,10 +6,6 @@ import * as Recipe from "safemods/Recipe"
 import { ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 import { isStringLiteral } from "typescript/unstable/ast/is"
 
-/**
- * Rewrites an import specifier while retaining its original quotes and the
- * comment inside the import clause. Run it against fixtures/stress.
- */
 export default Recipe.define("migrate-legacy-import", {
   version: "1.0.0",
   policies: [Policy.matches({ min: 1, max: 1 }), Policy.noNewErrors(), Policy.idempotent()],
