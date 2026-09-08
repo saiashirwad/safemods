@@ -360,7 +360,7 @@ export default defineConfig({
       },
     },
     {
-      files: ["src/**/*.test.ts", "examples/**/*.ts"],
+      files: ["test/**/*.ts"],
       rules: {
         "no-restricted-imports": "off",
         // Tests use @effect/vitest assertions and intentionally exercise
@@ -382,22 +382,6 @@ export default defineConfig({
         // Test fixtures deliberately inspect untyped Effect failures.
         "effecttsgo/any-unknown-in-error-context": "off",
         "effecttsgo/unknown-in-effect-catch": "off",
-      },
-    },
-    {
-      files: ["src/test/**/*.ts", "test/**/*.ts"],
-      rules: {
-        // Test fixtures deliberately inspect untyped Effect failures.
-        "effecttsgo/any-unknown-in-error-context": "off",
-        "effecttsgo/unknown-in-effect-catch": "off",
-      },
-    },
-    {
-      files: ["src/Cli/**/*.test.ts"],
-      rules: {
-        "typescript/no-unsafe-assignment": "off",
-        "typescript/no-unsafe-member-access": "off",
-        "typescript/no-unsafe-return": "off",
       },
     },
     {

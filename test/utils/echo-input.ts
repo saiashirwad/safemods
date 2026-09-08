@@ -1,0 +1,14 @@
+// oxlint-disable effecttsgo/global-console-in-effect anti-slop/no-unknown-parameters
+import { Effect } from "effect"
+import * as Draft from "../../src/Draft/index.ts"
+import * as Recipe from "../../src/Recipe/index.ts"
+
+/** Prints the decoded CLI input so subprocess tests can observe parser behavior. */
+export default Recipe.define("echo-input", {
+  version: "1.0.0",
+  run: (input: unknown) =>
+    Effect.sync(() => {
+      console.log(`ECHO_INPUT:${JSON.stringify(input)}`)
+      return Draft.empty
+    }),
+})
