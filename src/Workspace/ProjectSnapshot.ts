@@ -1,6 +1,6 @@
 /** Project-scoped compiler operations for one active snapshot region. */
 import { Data, Effect, Option, Predicate } from "effect"
-import type { Identifier, Node, SourceFile } from "typescript/unstable/ast"
+import type { Identifier, SourceFile } from "typescript/unstable/ast"
 import {
   isExportDeclaration,
   isIdentifier,
@@ -14,14 +14,13 @@ import {
   type Symbol as NativeSymbol,
   type Type as NativeType,
 } from "typescript/unstable/async"
-import { nativeRequest, WorkspaceCompilerError } from "./NativeRequest.ts"
+import { nativeRequest, type WorkspaceCompilerError } from "./NativeRequest.ts"
 import {
   InvalidProjectRelativePath,
   isPathContained,
   parseProjectRelativePath,
   projectRelative,
   requireProjectRelativePath,
-  resolveContainedProjectPath,
   type ProjectRelativePath,
 } from "../ProjectPath.ts"
 import type { ConfiguredProject } from "./ConfiguredProject.ts"
@@ -41,7 +40,6 @@ export class FileNotFound extends Data.TaggedError("FileNotFound")<{
   readonly projectId: string
 }> {}
 
-export { WorkspaceCompilerError }
 export type ProjectSnapshotError = WorkspaceCompilerError | SnapshotExpired
 
 export type IntrinsicTypeName =
@@ -121,10 +119,6 @@ export interface ProjectSnapshot {
     name: string,
     options: { readonly within: string },
   ) => Effect.Effect<Option.Option<NativeSymbol>, ProjectSnapshotError>
-  readonly typeAt: (
-    fileName: string,
-    position: number,
-  ) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
   readonly typesAt: (
     fileName: string,
     positions: ReadonlyArray<number>,
@@ -137,8 +131,6 @@ export interface ProjectSnapshot {
   readonly intrinsicType: (
     kind: IntrinsicTypeName,
   ) => Effect.Effect<NativeType, ProjectSnapshotError>
-  /** Print an AST node using the snapshot emitter. */
-  readonly printNode: (node: Node) => Effect.Effect<string, ProjectSnapshotError>
   /** Native values remain valid only during the snapshot region. */
   readonly unsafeNative: <A, E, R>(
     use: (project: NativeProject) => Effect.Effect<A, E, R>,
@@ -210,8 +202,18 @@ export const projectSnapshotFor = ({
     return projectRelative(runtime, resolvedProjectRoot.toLowerCase(), resolved.toLowerCase())
   }
   const requireContainedPath = (fileName: string): string | undefined => {
-    const lexical = resolveContainedProjectPath(runtime, projectRoot, fileName, containmentOptions)
-    if (lexical === undefined) return undefined
+    const relative = parseProjectRelativePath(fileName)
+    const lexical =
+      relative !== undefined
+        ? runtime.resolve(projectRoot, relative)
+        : runtime.isAbsolute(fileName)
+          ? runtime.resolve(fileName)
+          : undefined
+    if (
+      lexical === undefined ||
+      !isPathContained(runtime, projectRoot, lexical, containmentOptions)
+    )
+      return undefined
     const lookup = lookupHostPath(lexical)
     return isPathContained(
       runtime,
@@ -418,11 +420,6 @@ export const projectSnapshotFor = ({
     )
   })
 
-  const printNode = Effect.fn("ProjectSnapshot.printNode")(function* (node: Node) {
-    yield* ensureActive
-    return yield* nativeRequest("printNode", () => nativeProject.emitter.printNode(node))
-  })
-
   const symbolNamed = Effect.fn("ProjectSnapshot.symbolNamed")(function* (
     name: string,
     options: { readonly within: string },
@@ -479,14 +476,6 @@ export const projectSnapshotFor = ({
     return yield* nativeRequest("getTypeAtPosition", () =>
       nativeProject.checker.getTypeAtPosition(absolute, positions),
     )
-  })
-
-  const typeAt = Effect.fn("ProjectSnapshot.typeAt")(function* (
-    fileName: string,
-    position: number,
-  ) {
-    const types = yield* typesAt(fileName, [position])
-    return types[0]
   })
 
   const typeToString = Effect.fn("ProjectSnapshot.typeToString")(function* (type: NativeType) {
@@ -585,12 +574,10 @@ export const projectSnapshotFor = ({
     canonicalSymbol,
     symbolNamed,
     findSymbolNamed,
-    typeAt,
     typesAt,
     typeToString,
     isTypeAssignableTo,
     intrinsicType,
-    printNode,
     unsafeNative,
   }
 

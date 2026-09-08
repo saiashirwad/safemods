@@ -1,7 +1,4 @@
-import type { Schema } from "effect"
-import { canonicalJson } from "../../src/Evidence.ts"
-import { planHashOf, validatePlan } from "../../src/Plan/Codec.ts"
-import { finalizePlan } from "../../src/Plan/Finalize.ts"
+import { planHashOf } from "../../src/Plan/Codec.ts"
 import type { PlanInput, TransformationPlan } from "../../src/Plan/TransformationPlan.ts"
 
 export const richInput = {
@@ -311,21 +308,6 @@ export const semanticMutations: ReadonlyArray<InputMutation> = [
       withOperation(value, 2, { ...value.fileOperations![2]!, evidenceIds: ["unknown"] }),
   },
 ]
-
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- mutation cases are invalid payloads.
-export const finalizeUnknown = (candidate: unknown) =>
-  // SAFETY: mutation tests deliberately send untyped values through the public boundary.
-  finalizePlan(candidate as PlanInput)
-
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- mutation cases are invalid payloads.
-export const validateUnknown = (candidate: unknown) =>
-  // SAFETY: mutation tests deliberately send untyped values through the public boundary.
-  validatePlan(candidate as TransformationPlan)
-
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- exact-structure mutations remain JSON values.
-export const encodeUnknown = (candidate: unknown): string =>
-  // SAFETY: exact-structure mutations in this test remain JSON values.
-  canonicalJson(candidate as Schema.Json)
 
 export const rehashPlan = (plan: TransformationPlan): TransformationPlan => ({
   ...plan,

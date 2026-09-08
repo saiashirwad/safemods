@@ -17,7 +17,6 @@ import {
   Workspace,
   type WorkspaceCompilerError,
   WorkspaceSnapshot,
-  type WorkspaceSnapshotService,
 } from "./Workspace/index.ts"
 import { type DraftEvidenceConflict, finalizeDraftEvidence } from "./Evidence.ts"
 import { all as allPolicies, type Policy, type VerificationRule } from "./Policy.ts"
@@ -128,7 +127,7 @@ const addFingerprint = (
 /** Record compiler inputs that verification can revalidate. */
 const fingerprintWorkspace = (
   workspaceRoot: string,
-  snapshot: WorkspaceSnapshotService,
+  snapshot: WorkspaceSnapshot["Service"],
 ): Effect.Effect<
   ReadonlyArray<SourceFingerprint>,
   WorkspaceCompilerError | ProjectNotInSnapshot | SnapshotExpired,

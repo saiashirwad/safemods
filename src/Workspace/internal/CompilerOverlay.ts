@@ -6,7 +6,7 @@ import type { VirtualFsSnapshot } from "../../VirtualFs.ts"
 import type { SnapshotTransition, WorkspaceFileChanges } from "../ConfiguredProject.ts"
 import type { WorkspaceRuntimeService } from "../Runtime.ts"
 
-export interface CompilerOverlay {
+interface CompilerOverlay {
   readonly options: APIOptions
   readonly transition: SnapshotTransition
 }

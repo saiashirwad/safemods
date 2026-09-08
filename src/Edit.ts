@@ -62,7 +62,7 @@ export const editsConflict = (left: TextEdit, right: TextEdit): boolean => {
   return left.start < right.end && right.start < left.end
 }
 
-export const normalizeEdits = (
+const normalizeEdits = (
   edits: ReadonlyArray<TextEdit>,
 ): Effect.Effect<ReadonlyArray<TextEdit>, InvalidEdit | EditConflict> =>
   Effect.gen(function* () {

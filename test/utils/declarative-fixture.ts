@@ -3,18 +3,14 @@ import { layer as nodeLayer, workspaceLayerNode } from "../../src/Node.ts"
 import { fileURLToPath } from "node:url"
 import type { APIOptions } from "typescript/unstable/async"
 import { Effect, Layer, type FileSystem, type Path } from "effect"
-import {
-  ConfiguredProject,
-  type Workspace,
-  type WorkspaceRuntime,
-} from "../../src/Workspace/index.ts"
+import { ConfiguredProject, type Workspace } from "../../src/Workspace/index.ts"
+import type { WorkspaceRuntime } from "../../src/Workspace/Runtime.ts"
 
 const fixtureSource = fileURLToPath(new URL("../../fixtures/recipe/", import.meta.url))
 
 export interface FixtureOptions {
   readonly fixturePath?: string
   readonly fs?: APIOptions["fs"]
-  readonly temporaryPrefix?: string
 }
 
 export const withFixture = <A, E, R>(
@@ -27,7 +23,7 @@ export const withFixture = <A, E, R>(
 > =>
   Effect.acquireUseRelease(
     Effect.tryPromise(async () => {
-      const root = await Fs.mkdtemp(options.temporaryPrefix ?? "/tmp/safemods-decl-")
+      const root = await Fs.mkdtemp("/tmp/safemods-decl-")
       await Fs.cp(options.fixturePath ?? fixtureSource, root, { recursive: true })
       return root
     }),

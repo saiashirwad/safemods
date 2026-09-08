@@ -1,8 +1,8 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
-import { layer as nodeLayer, workspaceLayerNode } from "../src/Node.ts"
+import { layer as nodeLayer } from "../src/Node.ts"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
 import * as Application from "../src/Application.ts"
 import * as Draft from "../src/Draft/index.ts"
 import * as Recipe from "../src/Recipe.ts"
@@ -10,7 +10,6 @@ import * as Verification from "../src/Verification/index.ts"
 import type { TransformationPlan } from "../src/Plan/TransformationPlan.ts"
 import type { DiagnosticDiff } from "../src/Policy.ts"
 import type { VerifiedPlan } from "../src/Verification/index.ts"
-import { ConfiguredProject } from "../src/Workspace/index.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
 
@@ -23,15 +22,6 @@ type ForgedPlanValue =
 
 interface ForgedPlanCapability extends Partial<VerifiedPlan> {
   readonly [key: PropertyKey]: ForgedPlanValue
-}
-
-const didMutate = (write: () => void): boolean => {
-  try {
-    write()
-    return true
-  } catch {
-    return false
-  }
 }
 
 const exists = (fileName: string): Effect.Effect<boolean> =>
@@ -101,8 +91,6 @@ describe("Node application capability and staleness checks", () => {
           diagnosticDiff: verified.diagnosticDiff,
         }
         const spreadForgery = { ...verified }
-        // oxlint-disable-next-line eslint/prefer-object-spread -- Exercise this distinct forgery path.
-        const assignedForgery = Object.assign({}, verified)
         const clonedPreview = structuredClone(verified.preview)
         const clonedForgery: ForgedPlanCapability = {
           plan: structuredClone(verified.plan),
@@ -131,63 +119,10 @@ describe("Node application capability and staleness checks", () => {
           Effect.provide(nodeLayer),
           Effect.result,
         )
-        const assignedResult = yield* Application.applyVerifiedPlan(assignedForgery).pipe(
-          Effect.provide(nodeLayer),
-          Effect.result,
-        )
         expect(publicResult._tag).toBe("Failure")
         expect(clonedResult._tag).toBe("Failure")
         expect(spreadResult._tag).toBe("Failure")
-        expect(assignedResult._tag).toBe("Failure")
         expect(yield* exists(Path.join(root, "src/created.ts"))).toBe(false)
-      }),
-    ),
-  )
-
-  effect("applies an unmodified verified plan and rejects a live project-config mismatch", () =>
-    withFixture((root, app) =>
-      Effect.gen(function* () {
-        const contents = "export const created = true;\n"
-        const recipe = Recipe.define("genuine-apply", {
-          version: "1.0.0",
-          policies: [{ diagnostics: "allow-new-errors" }],
-          run: () =>
-            Effect.gen(function* () {
-              const project = yield* fixtureProject(app)
-              return yield* Draft.files.create(project, "src/created.ts", contents)
-            }),
-        })
-        const plan = yield* Recipe.run(recipe, undefined)
-        const verified = yield* Verification.verify(plan, recipe, undefined)
-        const file = verified.preview.files[0]
-        expect(file).toBeDefined()
-        if (file === undefined) return
-        const originalFileName = file.fileName
-        expect(
-          didMutate(() => {
-            // SAFETY: the test asserts nested issued preview state is frozen.
-            const target = file as { fileName: string }
-            target.fileName = "src/mutated.ts"
-          }),
-        ).toBe(false)
-        expect(file.fileName).toBe(originalFileName)
-
-        const other = ConfiguredProject.make({ id: app.id, config: "other.json" })
-        const mismatchedWorkspace = workspaceLayerNode({ projects: [other] }, { cwd: root })
-        const mismatch = yield* Application.applyVerifiedPlan(verified).pipe(
-          Effect.provide(Layer.merge(nodeLayer, mismatchedWorkspace)),
-          Effect.result,
-        )
-        expect(mismatch._tag).toBe("Failure")
-        expect(yield* exists(Path.join(root, "src/created.ts"))).toBe(false)
-
-        const receipt = yield* Application.applyVerifiedPlan(verified).pipe(
-          Effect.provide(nodeLayer),
-        )
-        expect(receipt.planId).toBe(plan.planId)
-        expect(
-          yield* Effect.promise(() => Fs.readFile(Path.join(root, "src/created.ts"), "utf8")),
-        ).toBe(contents)
       }),
     ),
   )

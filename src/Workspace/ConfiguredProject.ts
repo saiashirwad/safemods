@@ -19,10 +19,8 @@ export interface WorkspaceFileChanges {
   readonly deleted?: ReadonlyArray<string>
 }
 
-export type WorkspaceChanges = { readonly invalidateAll: true } | WorkspaceFileChanges
-
 export interface SnapshotTransition {
-  readonly changes?: WorkspaceChanges
+  readonly changes?: WorkspaceFileChanges
 }
 
 export class DuplicateConfiguredProject extends Data.TaggedError("DuplicateConfiguredProject")<{

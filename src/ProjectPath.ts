@@ -51,7 +51,7 @@ export const parseProjectRelativePath = (value: string): ProjectRelativePath | u
   return normalized as ProjectRelativePath | undefined
 }
 
-export const isProjectRelativePath = (value: string): value is ProjectRelativePath =>
+const isProjectRelativePath = (value: string): value is ProjectRelativePath =>
   parseProjectRelativePath(value) === value
 
 export const requireProjectRelativePath = (value: string): ProjectRelativePath => {
@@ -79,24 +79,6 @@ export const isPathContained = (
     !relative.startsWith(`..${path.sep}`) &&
     !path.isAbsolute(relative)
   )
-}
-
-export const resolveContainedProjectPath = (
-  path: Path.Path,
-  projectRoot: string,
-  fileName: string,
-  options: PathContainmentOptions = {},
-): string | undefined => {
-  const relative = parseProjectRelativePath(fileName)
-  const absolute =
-    relative !== undefined
-      ? path.resolve(projectRoot, relative)
-      : path.isAbsolute(fileName)
-        ? path.resolve(fileName)
-        : undefined
-  return absolute !== undefined && isPathContained(path, projectRoot, absolute, options)
-    ? absolute
-    : undefined
 }
 
 export const resolvePlanFilePath = (

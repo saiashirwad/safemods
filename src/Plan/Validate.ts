@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import { compareEdits, editsConflict } from "../Edit.ts"
 import { virtualFileKey } from "../VirtualFs.ts"
-import { parseProjectRelativePath, type ProjectRelativePath } from "../ProjectPath.ts"
+import { parseProjectRelativePath } from "../ProjectPath.ts"
 import {
   isContentFingerprint,
   PlanBuildError,
@@ -27,11 +27,6 @@ const validateInputStructure = (input: unknown): Effect.Effect<void, PlanBuildEr
       () => new PlanBuildError({ reason: "invalid-plan", detail: "Plan shape is invalid" }),
     ),
   )
-
-export const normalizedPath = (value: string): ProjectRelativePath | undefined =>
-  parseProjectRelativePath(value)
-
-export const compareStrings = (left: string, right: string): number => left.localeCompare(right)
 
 export const compareIds = (left: { readonly id: string }, right: { readonly id: string }): number =>
   left.id.localeCompare(right.id)
@@ -75,7 +70,8 @@ const validateOperation = (
   evidence: ReadonlySet<string>,
 ): string | undefined => {
   if (!projects.has(operation.projectId)) return `Unknown project ${operation.projectId}`
-  if (normalizedPath(operation.path) === undefined) return `Invalid path ${operation.path}`
+  if (parseProjectRelativePath(operation.path) === undefined)
+    return `Invalid path ${operation.path}`
   for (const id of operation.evidenceIds ?? [])
     if (!evidence.has(id)) return `Unknown evidence ${id}`
   const source = sources.get(virtualFileKey(operation.projectId, operation.path))
@@ -85,7 +81,7 @@ const validateOperation = (
     if (source === undefined) return `Missing source ${operation.path}`
     if (operation.initialHash !== source.hash) return `Fingerprint mismatch ${operation.path}`
     if (operation.kind === "move") {
-      if (normalizedPath(operation.toPath) === undefined)
+      if (parseProjectRelativePath(operation.toPath) === undefined)
         return `Invalid target path ${operation.toPath}`
       if (operation.toPath === operation.path) return "Move source and target must differ"
       if (sources.has(virtualFileKey(operation.projectId, operation.toPath)))
@@ -119,7 +115,7 @@ const validateInputSemantics = (
           `Invalid project ${project.id}`,
         )
       }
-      const configFileName = normalizedPath(project.configFileName)
+      const configFileName = parseProjectRelativePath(project.configFileName)
       if (
         configFileName === undefined ||
         (requireCanonicalOrder && configFileName !== project.configFileName)
@@ -131,7 +127,7 @@ const validateInputSemantics = (
     const sourceMap = new Map<string, SourceFingerprint>()
     const seenSources = new Set<string>()
     for (const source of input.sources) {
-      const path = normalizedPath(source.fileName)
+      const path = parseProjectRelativePath(source.fileName)
       if (path === undefined || (requireCanonicalOrder && path !== source.fileName)) {
         return yield* fail("invalid-path", source.fileName)
       }
@@ -158,11 +154,14 @@ const validateInputSemantics = (
       }
     }
     for (const edit of input.edits) {
-      const fileName = normalizedPath(edit.fileName)
+      const fileName = parseProjectRelativePath(edit.fileName)
       if (fileName === undefined || (requireCanonicalOrder && fileName !== edit.fileName)) {
         return yield* fail("invalid-path", edit.fileName)
       }
-      if (requireCanonicalOrder && !hasCanonicalOrder(edit.evidenceIds, compareStrings)) {
+      if (
+        requireCanonicalOrder &&
+        !hasCanonicalOrder(edit.evidenceIds, (left, right) => left.localeCompare(right))
+      ) {
         return yield* fail("invalid-plan", "Edit evidence IDs are not in canonical order")
       }
       if (
@@ -177,26 +176,26 @@ const validateInputSemantics = (
     if (input.fileOperations !== undefined) {
       const occupied = new Set<string>()
       for (const operation of input.fileOperations) {
-        const path = normalizedPath(operation.path)
+        const path = parseProjectRelativePath(operation.path)
         if (path === undefined || (requireCanonicalOrder && path !== operation.path)) {
           return yield* fail("invalid-path", operation.path)
         }
         if (
           requireCanonicalOrder &&
           operation.kind === "move" &&
-          normalizedPath(operation.toPath) !== operation.toPath
+          parseProjectRelativePath(operation.toPath) !== operation.toPath
         ) {
           return yield* fail("invalid-path", operation.toPath)
         }
         const normalized =
-          operation.kind === "move" && normalizedPath(operation.toPath) !== undefined
-            ? { ...operation, path, toPath: normalizedPath(operation.toPath)! }
+          operation.kind === "move" && parseProjectRelativePath(operation.toPath) !== undefined
+            ? { ...operation, path, toPath: parseProjectRelativePath(operation.toPath)! }
             : { ...operation, path }
         const error = validateOperation(normalized, projectIds, sourceMap, evidenceIds)
         if (
           requireCanonicalOrder &&
           normalized.evidenceIds !== undefined &&
-          !hasCanonicalOrder(normalized.evidenceIds, compareStrings)
+          !hasCanonicalOrder(normalized.evidenceIds, (left, right) => left.localeCompare(right))
         ) {
           return yield* fail("invalid-plan", "File operation evidence IDs are not canonical")
         }

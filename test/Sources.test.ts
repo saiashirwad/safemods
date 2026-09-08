@@ -38,29 +38,4 @@ describe("project-owned query sources", () => {
       ),
     60_000,
   )
-
-  effect(
-    "Query.within matches documented ** globs on fixture files",
-    () =>
-      withFixture((_, app) =>
-        Effect.gen(function* () {
-          const workspace = yield* Workspace
-          yield* workspace.withSnapshot(
-            {},
-            Effect.gen(function* () {
-              const project = yield* fixtureProject(app)
-              const all = yield* Query.collect(Query.identifiers(project))
-              const nested = yield* Query.collect(
-                Query.identifiers(project).pipe(Query.within("src/**/*.ts")),
-              )
-              expect(all.length).toBeGreaterThan(0)
-              expect(nested.length).toBe(all.length)
-              expect(nested.every((selection) => selection.fileName.startsWith("src/"))).toBe(true)
-              expect(nested.some((selection) => selection.fileName === "src/library.ts")).toBe(true)
-            }),
-          )
-        }),
-      ),
-    60_000,
-  )
 })

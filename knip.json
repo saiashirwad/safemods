@@ -10,10 +10,8 @@
     "src/Recipe.ts",
     "src/Verification/index.ts",
     "src/Workspace/index.ts",
-    "test/**/*.test.ts",
     "tools/*.mjs"
   ],
-  "project": ["src/**/*.ts", "test/**/*.ts", "tools/**/*.mjs"],
-  "includeEntryExports": true,
+  "project": ["src/**/*.ts", "tools/**/*.mjs"],
   "ignoreExportsUsedInFile": true
 }

@@ -1,5 +1,6 @@
 import { hash } from "node:crypto"
 import { Effect, Schema } from "effect"
+import { parseProjectRelativePath } from "../ProjectPath.ts"
 import { compareEdits } from "../Edit.ts"
 import { canonicalJson } from "../Evidence.ts"
 import {
@@ -12,7 +13,6 @@ import {
   compareFileOperations,
   compareIds,
   compareSourceFingerprints,
-  normalizedPath,
   validateDecodedPlan,
 } from "./Validate.ts"
 
@@ -37,19 +37,19 @@ export const canonicalizeContent = (input: PlanInput): PlanInput => {
   const projects = input.projects
     .map((project) => ({
       ...project,
-      configFileName: normalizedPath(project.configFileName)!,
+      configFileName: parseProjectRelativePath(project.configFileName)!,
     }))
     .sort(compareIds)
   const sources = input.sources
     .map((source) => ({
       ...source,
-      fileName: normalizedPath(source.fileName)!,
+      fileName: parseProjectRelativePath(source.fileName)!,
     }))
     .sort(compareSourceFingerprints)
   const edits = input.edits
     .map((edit) => ({
       ...edit,
-      fileName: normalizedPath(edit.fileName)!,
+      fileName: parseProjectRelativePath(edit.fileName)!,
       evidenceIds: [...edit.evidenceIds].sort(),
     }))
     .sort(compareEdits)
@@ -59,14 +59,14 @@ export const canonicalizeContent = (input: PlanInput): PlanInput => {
       operation.kind === "move"
         ? {
             ...operation,
-            path: normalizedPath(operation.path)!,
-            toPath: normalizedPath(operation.toPath)!,
+            path: parseProjectRelativePath(operation.path)!,
+            toPath: parseProjectRelativePath(operation.toPath)!,
             evidenceIds:
               operation.evidenceIds === undefined ? undefined : [...operation.evidenceIds].sort(),
           }
         : {
             ...operation,
-            path: normalizedPath(operation.path)!,
+            path: parseProjectRelativePath(operation.path)!,
             evidenceIds:
               operation.evidenceIds === undefined ? undefined : [...operation.evidenceIds].sort(),
           },

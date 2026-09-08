@@ -6,7 +6,7 @@ import { nativeRequest, type WorkspaceCompilerError } from "../NativeRequest.ts"
 
 export interface NativeCompiler {
   readonly openSnapshot: (
-    params?: UpdateSnapshotParams,
+    params: UpdateSnapshotParams,
   ) => Effect.Effect<Snapshot, WorkspaceCompilerError, Scope.Scope>
 }
 
@@ -19,7 +19,7 @@ export const openCompiler = (
       (api) => Effect.promise(() => api.close()),
     )
 
-    const openSnapshot = Effect.fn("NativeCompiler.openSnapshot")((params?: UpdateSnapshotParams) =>
+    const openSnapshot = Effect.fn("NativeCompiler.openSnapshot")((params: UpdateSnapshotParams) =>
       Effect.acquireRelease(
         nativeRequest("updateSnapshot", () => api.updateSnapshot(params)),
         (snapshot) => Effect.promise(() => snapshot.dispose()),

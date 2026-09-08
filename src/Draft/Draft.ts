@@ -50,7 +50,7 @@ export const concat = (
 type DraftEdit = Omit<TextEdit, "evidenceIds">
 
 /** Build one syntax edit with deterministic, self-contained operation evidence. */
-export const draftForEdit = (
+const draftForEdit = (
   edit: DraftEdit,
   operation: string,
   facts: EvidenceRecord["facts"] = {},

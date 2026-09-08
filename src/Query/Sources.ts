@@ -16,7 +16,7 @@ import {
   type ProjectFile,
   type ProjectSnapshot,
   type ProjectSnapshotError,
-} from "../Workspace/index.ts"
+} from "../Workspace/ProjectSnapshot.ts"
 import { type Pattern, type SyntaxKindFilter, syntaxKindName } from "../Pattern.ts"
 import type { ProjectScope, Query, Selection, TargetFileScope } from "./Query.ts"
 

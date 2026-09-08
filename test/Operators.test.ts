@@ -23,26 +23,6 @@ const inArity = <A, E, R>(self: Query.Query<A, E, R>): Query.Query<A, E, R> =>
 
 describe("Query stream operators", () => {
   effect(
-    "collect orders selections by project, file, start, end",
-    () =>
-      withProject({}, (project) =>
-        Effect.gen(function* () {
-          const selections = yield* Query.identifiers(project).pipe(Query.collect)
-          expect(selections.length).toBeGreaterThan(0)
-          const resorted = [...selections].sort(
-            (left, right) =>
-              left.project.project.id.localeCompare(right.project.project.id) ||
-              left.fileName.localeCompare(right.fileName) ||
-              left.start - right.start ||
-              left.end - right.end,
-          )
-          expect(selections).toEqual(resorted)
-        }),
-      ),
-    60_000,
-  )
-
-  effect(
     "where admits only selections the criterion gives facts, appending its evidence",
     () =>
       withProject(

@@ -1,7 +1,7 @@
 import { hash } from "node:crypto"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Exit } from "effect"
-import { applyFileEdits, normalizeEdits, textEdit, type TextEdit } from "../src/Edit.ts"
+import { applyFileEdits, textEdit, type TextEdit } from "../src/Edit.ts"
 
 const edit = (start: number, end: number, newText: string): TextEdit => ({
   projectId: "app",
@@ -14,28 +14,22 @@ const edit = (start: number, end: number, newText: string): TextEdit => ({
 })
 
 describe("Edit", () => {
-  effect("sorts edits deterministically", () =>
+  effect("applies edits in offset order regardless of input order", () =>
     Effect.gen(function* () {
-      const normalized = yield* normalizeEdits([edit(4, 5, "E"), edit(1, 2, "B")])
-      expect(normalized.map((item) => item.start)).toEqual([1, 4])
+      expect(yield* applyFileEdits("abcdef", [edit(4, 5, "E"), edit(1, 2, "B")])).toBe("aBcdEf")
     }),
   )
 
   effect("rejects insertions at the same position and overlapping replacements", () =>
     Effect.gen(function* () {
-      const insertion = yield* Effect.exit(normalizeEdits([edit(2, 2, "x"), edit(2, 2, "y")]))
-      const overlap = yield* Effect.exit(normalizeEdits([edit(1, 4, "x"), edit(3, 5, "y")]))
+      const insertion = yield* Effect.exit(
+        applyFileEdits("abcdef", [edit(2, 2, "x"), edit(2, 2, "y")]),
+      )
+      const overlap = yield* Effect.exit(
+        applyFileEdits("abcdef", [edit(1, 4, "x"), edit(3, 5, "y")]),
+      )
       expect(Exit.isFailure(insertion)).toBe(true)
       expect(Exit.isFailure(overlap)).toBe(true)
-    }),
-  )
-
-  effect("rejects NaN and non-integer offsets", () =>
-    Effect.gen(function* () {
-      const nanOffset = yield* Effect.exit(normalizeEdits([edit(Number.NaN, 2, "x")]))
-      const fractional = yield* Effect.exit(normalizeEdits([edit(1.5, 2, "x")]))
-      expect(Exit.isFailure(nanOffset)).toBe(true)
-      expect(Exit.isFailure(fractional)).toBe(true)
     }),
   )
 

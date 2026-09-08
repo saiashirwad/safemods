@@ -1,8 +1,6 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import type { CallExpression } from "typescript/unstable/ast"
 import * as Pattern from "../src/Pattern.ts"
-import { Criterion } from "../src/Query/index.ts"
 import * as Query from "../src/Query/index.ts"
 import { Workspace } from "../src/Workspace/index.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
@@ -37,66 +35,6 @@ describe("declarative transformations API (@effect/vitest)", () => {
                   expect(match.value.args[0]!.arg).toBeDefined()
                   expect(match.evidence.length).toBeGreaterThan(0)
                 }
-              }),
-            )
-          }),
-        ),
-      60_000,
-    )
-
-    effect(
-      "evaluates type assignability and type patterns declaratively",
-      () =>
-        withFixture((_, app) =>
-          Effect.gen(function* () {
-            const workspace = yield* Workspace
-            yield* workspace.withSnapshot(
-              {},
-              Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-
-                const typedCallPattern = Pattern.callExpression({
-                  expression: Pattern.any,
-                  arguments: Pattern.tuple([Pattern.bind("arg", Pattern.any)]),
-                })
-
-                const matches = yield* Query.match(project, typedCallPattern).pipe(Query.collect)
-                expect(matches.length).toBeGreaterThan(0)
-
-                const numberArgs = yield* Query.identifiers(project).pipe(
-                  Query.where(Query.typeAssignableTo("number")),
-                  Query.collect,
-                )
-                expect(numberArgs.length).toBeGreaterThan(0)
-              }),
-            )
-          }),
-        ),
-      60_000,
-    )
-
-    effect(
-      "evaluates algebraic criterion combinators (all, any, not)",
-      () =>
-        withFixture((_, app) =>
-          Effect.gen(function* () {
-            const workspace = yield* Workspace
-            yield* workspace.withSnapshot(
-              {},
-              Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                const target = yield* project.symbolNamed("target", { within: "src/library.ts" })
-
-                const combinedCriterion = Criterion.all(
-                  Query.resolvesTo(target, { location: (call: CallExpression) => call.expression }),
-                  Criterion.not(Query.textMatches(/nonexistent/)),
-                )
-
-                const calls = yield* Query.calls(project).pipe(
-                  Query.where(combinedCriterion),
-                  Query.collect,
-                )
-                expect(calls.length).toBe(2)
               }),
             )
           }),

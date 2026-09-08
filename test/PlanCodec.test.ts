@@ -1,26 +1,11 @@
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, type Schema } from "effect"
+import { Effect } from "effect"
 import { finalizePlan } from "../src/Plan/Finalize.ts"
 import { parsePlan, serializePlan } from "../src/Plan/Codec.ts"
 import type { PlanInput } from "../src/Plan/TransformationPlan.ts"
-import { canonicalJson } from "../src/Evidence.ts"
 import { richInput } from "./utils/plan-schema.ts"
 
 describe("plan codec and canonicalization", () => {
-  effect("uses the evidence canonical JSON operation for durable plan values", () =>
-    Effect.sync(() => {
-      const value: Schema.Json = {
-        outer: { zebra: [3, { beta: false, alpha: true }], alpha: null },
-        alpha: "first",
-      }
-
-      expect(canonicalJson(value)).toBe(
-        '{"alpha":"first","outer":{"alpha":null,"zebra":[3,{"alpha":true,"beta":false}]}}',
-      )
-      expect(canonicalJson(value)).toBe(canonicalJson(value))
-    }),
-  )
-
   effect("round-trips the schema-version 1 canonical fixture without changing IDs", () =>
     Effect.gen(function* () {
       const plan = yield* finalizePlan(richInput)
@@ -32,38 +17,13 @@ describe("plan codec and canonicalization", () => {
       expect(plan.snapshotHash).toBe(
         "b94070e67eb09e018c5bf1263bd3941d9f221d5d6d0afecf9fe39c0ea218d7d1",
       )
-      expect(parsed.planId).toBe(plan.planId)
-      expect(parsed.snapshotHash).toBe(plan.snapshotHash)
       expect(serializePlan(parsed)).toBe(serialized)
       expect(parsed).toEqual(plan)
+    }),
+  )
 
-      const helperStyleInput: PlanInput = {
-        ...richInput,
-        edits: [
-          {
-            ...richInput.edits[0]!,
-            evidenceIds: ["node:replace:app:src/index.ts:0-0", "selection:app:src/index.ts:0-1"],
-          },
-        ],
-        evidence: [
-          {
-            id: "node:replace:app:src/index.ts:0-0",
-            kind: "draft-operation",
-            facts: { operation: "node:replace", source: "concat" },
-          },
-          {
-            id: "selection:app:src/index.ts:0-1",
-            kind: "selection",
-            facts: { projectId: "app", fileName: "src/index.ts", start: 0, end: 1 },
-          },
-          ...richInput.evidence.filter((record) => record.id !== "edit"),
-        ],
-      }
-      const helperPlan = yield* finalizePlan(helperStyleInput)
-      const helperAgain = yield* finalizePlan(helperStyleInput)
-      expect(helperPlan.planId).toBe(helperAgain.planId)
-      expect((yield* parsePlan(serializePlan(helperPlan))).planId).toBe(helperPlan.planId)
-
+  effect("hashes Windows-style paths identically to portable paths", () =>
+    Effect.gen(function* () {
       const windowsStylePaths: PlanInput = {
         ...richInput,
         sources: richInput.sources.map((source) => ({

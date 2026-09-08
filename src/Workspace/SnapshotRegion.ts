@@ -11,13 +11,12 @@ import {
   type ConfiguredProject,
   ProjectNotInSnapshot,
   type SnapshotTransition,
-  type WorkspaceChanges,
+  type WorkspaceFileChanges,
 } from "./ConfiguredProject.ts"
 import { projectSnapshotFor, SnapshotExpired, type ProjectSnapshot } from "./ProjectSnapshot.ts"
 import type { WorkspaceRuntimeService } from "./Runtime.ts"
 
 export interface WorkspaceSnapshotService {
-  readonly generation: number
   readonly projects: ReadonlyArray<ConfiguredProject>
   readonly project: (
     project: ConfiguredProject,
@@ -32,9 +31,8 @@ export class WorkspaceSnapshot extends Context.Service<
   "@safemods/WorkspaceSnapshot",
 ) {}
 
-const toNativeChanges = (changes: WorkspaceChanges | undefined): FileChanges | undefined => {
+const toNativeChanges = (changes: WorkspaceFileChanges | undefined): FileChanges | undefined => {
   if (changes === undefined) return undefined
-  if ("invalidateAll" in changes) return { invalidateAll: true }
   const result: FileChangeSummary = {}
   if (changes.changed !== undefined) result.changed = [...changes.changed]
   if (changes.created !== undefined) result.created = [...changes.created]
@@ -106,7 +104,6 @@ export const openSnapshotRegion = <A, E, R>(
       })
 
       const snapshotService = WorkspaceSnapshot.of({
-        generation: nativeSnapshot.id,
         projects: options.projects,
         project,
       })

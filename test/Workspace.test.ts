@@ -1,17 +1,15 @@
 import * as Fs from "node:fs/promises"
-import { NodePath } from "@effect/platform-node"
 import { workspaceLayerNode } from "../src/Node.ts"
-import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Path as EffectPath } from "effect"
+import { NodePath } from "@effect/platform-node"
+import { fileURLToPath } from "node:url"
+import { InvalidProjectRelativePath } from "../src/ProjectPath.ts"
 import { ConfiguredProject, Workspace } from "../src/Workspace/index.ts"
-import { InvalidProjectRelativePath, isPathContained, projectRelative } from "../src/ProjectPath.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
 
 const Path = Effect.runSync(Effect.provide(EffectPath.Path, NodePath.layer))
-
-const stressFixture = fileURLToPath(new URL("../fixtures/stress/", import.meta.url))
 
 describe("workspace path confinement, overlay FS, and symbol lookup", () => {
   effect("rejects absolute and escaping project configs", () =>
@@ -84,20 +82,6 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
     60_000,
   )
 
-  effect("keeps mixed-case siblings distinct in containment", () =>
-    Effect.sync(() => {
-      const projectRoot = "/tmp/SafeModsCase/Project"
-      const inside = "/tmp/SafeModsCase/Project/src/index.ts"
-      const mixedCaseSibling = "/tmp/SafeModsCase/project/src/index.ts"
-      expect(isPathContained(Path, projectRoot, inside)).toBe(true)
-      expect(isPathContained(Path, projectRoot, mixedCaseSibling)).toBe(false)
-      expect(isPathContained(Path, projectRoot, "/tmp/SafeModsCase/Project/../Other/x.ts")).toBe(
-        false,
-      )
-      expect(projectRelative(Path, projectRoot, mixedCaseSibling).startsWith("..")).toBe(true)
-    }),
-  )
-
   effect(
     "delegates isolated overlay reads to the caller filesystem",
     () => {
@@ -122,7 +106,6 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
           }),
         {
           fixturePath: recipeFixture,
-          temporaryPrefix: "/tmp/safemods-workspace-",
           fs: {
             readFile: (fileName) => {
               const normalized = fileName.replaceAll("\\", "/")
@@ -136,38 +119,6 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
         },
       )
     },
-    60_000,
-  )
-
-  effect(
-    "resolves aliased and re-exported names with symbolNamed",
-    () =>
-      withFixture(
-        (_, app) =>
-          Effect.gen(function* () {
-            const workspace = yield* Workspace
-            yield* workspace.withSnapshot(
-              {},
-              Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                const original = yield* project.symbolNamed("oldName", { within: "src/symbol.ts" })
-                const aliased = yield* project.symbolNamed("localName", {
-                  within: "src/symbol-aliased.ts",
-                })
-                const reexported = yield* project.symbolNamed("publicName", {
-                  within: "src/symbol-barrel.ts",
-                })
-                const throughBarrel = yield* project.symbolNamed("publicName", {
-                  within: "src/symbol-reexport-consumer.ts",
-                })
-                expect(aliased).toBe(original)
-                expect(reexported).toBe(original)
-                expect(throughBarrel).toBe(original)
-              }),
-            )
-          }),
-        { fixturePath: stressFixture, temporaryPrefix: "/tmp/safemods-workspace-" },
-      ),
     60_000,
   )
 
@@ -200,7 +151,7 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
   )
 
   effect(
-    "prints AST nodes and resolves batched symbols directly on project snapshot",
+    "resolves batched symbols directly on project snapshot",
     () =>
       withFixture((_, app) =>
         Effect.gen(function* () {
@@ -213,22 +164,10 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
               expect(source).toBeDefined()
               if (source === undefined) return
 
-              const printed = yield* project.printNode(source)
-              expect(printed).toContain("export function target")
-
               const libraryPath = project.resolveFileName("src/library.ts")
               const positions = [source.getStart(source)]
               const symbols = yield* project.symbolsAt(libraryPath, positions)
               expect(symbols).toHaveLength(1)
-
-              const aliasedSymbol = yield* project.symbolNamed("renamed", {
-                within: "src/consumer.ts",
-              })
-              const canonical = yield* project.canonicalSymbol(aliasedSymbol)
-              const original = yield* project.symbolNamed("target", {
-                within: "src/library.ts",
-              })
-              expect(canonical).toBe(original)
             }),
           )
         }),

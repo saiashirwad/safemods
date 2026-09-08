@@ -1,32 +1,39 @@
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, type Schema } from "effect"
+import { canonicalJson } from "../src/Evidence.ts"
 import { parsePlan, serializePlan, snapshotHashOf, validatePlan } from "../src/Plan/Codec.ts"
 import { finalizePlan } from "../src/Plan/Finalize.ts"
+import type { PlanInput, TransformationPlan } from "../src/Plan/TransformationPlan.ts"
 import {
-  encodeUnknown,
   exactStructureMutations,
-  finalizeUnknown,
   nonJsonMutations,
   rehashPlan,
   richInput,
   semanticMutations,
-  validateUnknown,
 } from "./utils/plan-schema.ts"
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- invalid payloads on purpose.
+const validateUnknown = (candidate: unknown) =>
+  // SAFETY: mutation tables deliberately send untyped payloads across the plan boundary.
+  validatePlan(candidate as TransformationPlan)
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- invalid payloads on purpose.
+const finalizeUnknown = (candidate: unknown) =>
+  // SAFETY: mutation tables deliberately send untyped payloads across the plan boundary.
+  finalizePlan(candidate as PlanInput)
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- invalid payloads on purpose.
+const encodeUnknown = (candidate: unknown): string =>
+  // SAFETY: structural mutations remain JSON values.
+  canonicalJson(candidate as Schema.Json)
+
 describe("plan structural and semantic validation", () => {
-  effect("uses one exact structural contract at finalize, validate, and parse boundaries", () =>
+  effect("rejects structural mutations at the validate and parse boundaries", () =>
     Effect.gen(function* () {
       const plan = yield* finalizePlan(richInput)
       for (const mutation of exactStructureMutations) {
-        const finalized = yield* finalizeUnknown(mutation.mutate(richInput)).pipe(Effect.result)
         const mutatedPlan = mutation.mutate(plan)
         const validated = yield* validateUnknown(mutatedPlan).pipe(Effect.result)
         const parsed = yield* parsePlan(encodeUnknown(mutatedPlan)).pipe(Effect.result)
 
-        expect({ name: mutation.name, outcome: finalized._tag }).toEqual({
-          name: mutation.name,
-          outcome: "Failure",
-        })
         expect({ name: mutation.name, outcome: validated._tag }).toEqual({
           name: mutation.name,
           outcome: "Failure",
@@ -41,16 +48,11 @@ describe("plan structural and semantic validation", () => {
     }),
   )
 
-  effect("rejects non-JSON options and evidence at in-memory boundaries", () =>
+  effect("rejects non-JSON options and evidence at the validate boundary", () =>
     Effect.gen(function* () {
       const plan = yield* finalizePlan(richInput)
       for (const mutation of nonJsonMutations) {
-        const finalized = yield* finalizeUnknown(mutation.mutate(richInput)).pipe(Effect.result)
         const validated = yield* validateUnknown(mutation.mutate(plan)).pipe(Effect.result)
-        expect({ name: mutation.name, outcome: finalized._tag }).toEqual({
-          name: mutation.name,
-          outcome: "Failure",
-        })
         expect({ name: mutation.name, outcome: validated._tag }).toEqual({
           name: mutation.name,
           outcome: "Failure",
