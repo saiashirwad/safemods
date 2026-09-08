@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "src/Application.ts",
+    "src/Draft/index.ts",
+    "src/Node.ts",
+    "src/Pattern.ts",
+    "src/Policy.ts",
+    "src/Query/index.ts",
+    "src/Recipe.ts",
+    "src/Verification/index.ts",
+    "src/Workspace/index.ts",
+    "test/**/*.test.ts",
+    "tools/*.mjs"
+  ],
+  "project": ["src/**/*.ts", "test/**/*.ts", "tools/**/*.mjs"],
+  "includeEntryExports": true,
+  "ignoreExportsUsedInFile": true
+}

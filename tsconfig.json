@@ -18,13 +18,7 @@
       "safemods/*": ["./src/*/index.ts"]
     },
     "skipLibCheck": false,
-    "types": ["node", "vitest/globals"],
-    "plugins": [
-      {
-        "name": "@effect/language-service",
-        "diagnostics": false
-      }
-    ]
+    "types": ["node", "vitest/globals"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
 }
