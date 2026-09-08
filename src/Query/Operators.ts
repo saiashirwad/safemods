@@ -1,10 +1,19 @@
 /** Generic query stream operators. */
 import { matchesGlob } from "node:path"
 import { Effect, Function, Predicate, Stream } from "effect"
-import type { CallExpression, Node } from "typescript/unstable/ast"
 import { isProjectFile, type ProjectFile } from "../Workspace/ProjectSnapshot.ts"
-import { testRegExp } from "../Pattern.ts"
-import { Criterion, type Query, QueryContractError, type Selection } from "./Query.ts"
+import { type Criterion, type Query, QueryContractError, type Selection } from "./Query.ts"
+
+const testRegExp = (pattern: RegExp, value: string): boolean => {
+  if (!pattern.global && !pattern.sticky) return pattern.test(value)
+  const lastIndex = pattern.lastIndex
+  try {
+    pattern.lastIndex = 0
+    return pattern.test(value)
+  } finally {
+    pattern.lastIndex = lastIndex
+  }
+}
 
 /** Admit only selections the criterion produces evidence for. */
 export const where = Function.dual<
@@ -47,14 +56,6 @@ export const where = Function.dual<
     Stream.flatMap((batch) => Stream.fromIterable(batch)),
   ),
 )
-
-/** Admit nodes whose text matches a string or regular expression. */
-export const textMatches = <A extends Node>(pattern: string | RegExp): Criterion<A> =>
-  Criterion.predicate(`text-matches:${String(pattern)}`, (selection) => {
-    const text = selection.value.getText(selection.value.getSourceFile())
-    const matched = Predicate.isString(pattern) ? text.includes(pattern) : testRegExp(pattern, text)
-    return matched ? { matchedText: text } : undefined
-  })
 
 /** Selection-level predicate filter; evidence of surviving selections is preserved. */
 export const filter = Function.dual<
@@ -111,22 +112,3 @@ export const within = Function.dual<
 
   return Stream.filter(query, (selection) => predicate(selection.fileName))
 })
-
-/** Filter call expressions by argument count. */
-export const withArgCount = Function.dual<
-  (
-    count: number | { readonly min?: number; readonly max?: number },
-  ) => <E, R>(query: Query<CallExpression, E, R>) => Query<CallExpression, E, R>,
-  <E, R>(
-    query: Query<CallExpression, E, R>,
-    count: number | { readonly min?: number; readonly max?: number },
-  ) => Query<CallExpression, E, R>
->(2, (query, count) =>
-  Stream.filter(query, (selection) => {
-    const len = selection.value.arguments.length
-    if (Predicate.isNumber(count)) return len === count
-    if (count.min !== undefined && len < count.min) return false
-    if (count.max !== undefined && len > count.max) return false
-    return true
-  }),
-)

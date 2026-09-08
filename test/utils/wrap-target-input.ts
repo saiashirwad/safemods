@@ -25,7 +25,7 @@ export interface WrapTargetInput {
 
 export const wrapTargetInput = Recipe.define("wrap-target-input", {
   version: "1.0.0",
-  policies: [Policy.matches({ min: 1 }), Policy.noNewErrors(), Policy.idempotent()],
+  policies: [Policy.matches({ min: 1 }), Policy.idempotent()],
   run: (input: WrapTargetInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot

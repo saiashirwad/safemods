@@ -19,7 +19,7 @@ export interface MigrateImportSourceInput {
 
 export const migrateImportSource = Recipe.define("migrate-import-source", {
   version: "1.0.0",
-  policies: [Policy.matches({ min: 1 }), Policy.noNewErrors(), Policy.idempotent()],
+  policies: [Policy.matches({ min: 1 }), Policy.idempotent()],
   run: (input: MigrateImportSourceInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot

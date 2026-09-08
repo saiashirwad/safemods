@@ -19,7 +19,7 @@ import {
   WorkspaceSnapshot,
 } from "./Workspace/index.ts"
 import { type DraftEvidenceConflict, finalizeDraftEvidence } from "./Evidence.ts"
-import { all as allPolicies, type Policy, type VerificationRule } from "./Policy.ts"
+import { all as allPolicies, type Policy } from "./Policy.ts"
 import {
   parseProjectRelativePath,
   projectRelative,
@@ -35,7 +35,6 @@ export interface Recipe<Input = undefined, E = never, R = never> {
   readonly version: string
   readonly implementationHash: string
   readonly policies: PlanPolicies
-  readonly rules: ReadonlyArray<VerificationRule>
   readonly schema?: Schema.Codec<Input, unknown> | undefined
   readonly run: (input: Input) => Effect.Effect<Draft, E, R | WorkspaceSnapshot | Workspace>
 }
@@ -81,19 +80,16 @@ export const validateRecipeInput = <Input, E, R>(
 export const define = <Input = undefined, E = never, R = never>(
   name: string,
   definition: RecipeDefinition<Input, E, R>,
-): Recipe<Input, E, R> => {
-  const compiled = allPolicies(definition.policies ?? [])
-  return Object.freeze({
+): Recipe<Input, E, R> =>
+  Object.freeze({
     name,
     version: definition.version,
     schema: definition.schema,
     implementationHash:
       definition.implementationHash ?? hash("sha256", `${name}@${definition.version}`, "hex"),
-    policies: compiled.policy,
-    rules: compiled.rules,
+    policies: allPolicies(definition.policies ?? []),
     run: definition.run,
   })
-}
 
 const observationRelativePath = (
   fs: FileSystem.FileSystem,

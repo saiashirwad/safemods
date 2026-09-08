@@ -1,13 +1,41 @@
-/** Pure evaluation of durable policies and runtime verification rules. */
+/** Pure evaluation of durable plan policies. */
 import type { PlanPolicies } from "../Plan/TransformationPlan.ts"
-import {
-  type AllowedError,
-  type DiagnosticDiff,
-  type DiagnosticRecord,
-  type PolicyEvaluationContext,
-  type VerificationRule,
-  unpermittedIntroducedErrors,
-} from "../Policy.ts"
+import type { DiagnosticDiff, DiagnosticRecord } from "../Policy.ts"
+
+export const diagnosticIdentity = (diagnostic: DiagnosticRecord): string =>
+  JSON.stringify([
+    diagnostic.category,
+    diagnostic.code,
+    diagnostic.fileName ?? null,
+    diagnostic.start ?? null,
+    diagnostic.length ?? null,
+    diagnostic.message,
+  ])
+
+export const computeDiagnosticDiff = (
+  baseline: ReadonlyArray<DiagnosticRecord>,
+  proposed: ReadonlyArray<DiagnosticRecord>,
+): DiagnosticDiff => {
+  const baselineMap = Map.groupBy(baseline, diagnosticIdentity)
+  const proposedMap = Map.groupBy(proposed, diagnosticIdentity)
+
+  const introduced: Array<DiagnosticRecord> = []
+  const unchanged: Array<DiagnosticRecord> = []
+  const resolved: Array<DiagnosticRecord> = []
+
+  for (const [diagnosticKey, diagnostics] of proposedMap.entries()) {
+    const baselineMatches = baselineMap.get(diagnosticKey)?.length ?? 0
+    unchanged.push(...diagnostics.slice(0, baselineMatches))
+    introduced.push(...diagnostics.slice(baselineMatches))
+  }
+
+  for (const [diagnosticKey, diagnostics] of baselineMap.entries()) {
+    const proposedMatches = proposedMap.get(diagnosticKey)?.length ?? 0
+    resolved.push(...diagnostics.slice(proposedMatches))
+  }
+
+  return { introduced, resolved, unchanged }
+}
 
 interface PolicyFailure {
   readonly policy: "matches" | "affected-files" | "diagnostics" | "idempotence"
@@ -21,7 +49,6 @@ interface BuiltInPolicyInput {
   readonly affectedFiles: number
   readonly diagnosticDiff: DiagnosticDiff
   readonly secondPlanChangeCount?: number | undefined
-  readonly allowedErrors?: ReadonlyArray<AllowedError> | undefined
 }
 
 export const evaluateBuiltInPolicies = (input: BuiltInPolicyInput): PolicyFailure | undefined => {
@@ -37,12 +64,11 @@ export const evaluateBuiltInPolicies = (input: BuiltInPolicyInput): PolicyFailur
     input.policies.maxAffectedFiles === undefined ||
     input.affectedFiles <= input.policies.maxAffectedFiles
 
-  const unpermittedErrors = unpermittedIntroducedErrors(
-    input.diagnosticDiff,
-    input.allowedErrors ?? [],
+  const introducedErrors = input.diagnosticDiff.introduced.filter(
+    (diagnostic) => diagnostic.category === "error",
   )
   const diagnosticsPassed =
-    input.policies.diagnostics === "allow-new-errors" || unpermittedErrors.length === 0
+    input.policies.diagnostics === "allow-new-errors" || introducedErrors.length === 0
 
   const idempotencePassed =
     input.policies.idempotence !== "required" || input.secondPlanChangeCount === 0
@@ -57,27 +83,12 @@ export const evaluateBuiltInPolicies = (input: BuiltInPolicyInput): PolicyFailur
   if (!diagnosticsPassed) {
     return {
       policy: "diagnostics",
-      detail: `Introduced ${unpermittedErrors.length} new error diagnostic(s): ${unpermittedErrors.map((error) => `TS${error.code}: ${error.message}`).join("; ")}`,
-      diagnostics: unpermittedErrors,
+      detail: `Introduced ${introducedErrors.length} new error diagnostic(s): ${introducedErrors.map((error) => `TS${error.code}: ${error.message}`).join("; ")}`,
+      diagnostics: introducedErrors,
     }
   }
   if (!idempotencePassed) {
     return { policy: "idempotence", detail: "Second recipe run was not empty" }
-  }
-  return undefined
-}
-
-/** Evaluate custom rules in declaration order and stop at the first failure. */
-export const evaluateCustomRules = (
-  rules: ReadonlyArray<VerificationRule>,
-  context: PolicyEvaluationContext,
-): PolicyFailure | undefined => {
-  for (const rule of rules) {
-    if (rule.evaluate === undefined) continue
-    const result = rule.evaluate(context)
-    if (result === true) continue
-    const detail = result === false ? `Policy rule '${rule.name}' failed` : result
-    return { policy: "diagnostics", detail, diagnostics: context.diagnosticDiff.introduced }
   }
   return undefined
 }

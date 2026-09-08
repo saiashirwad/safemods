@@ -2,7 +2,6 @@ import { hash } from "node:crypto"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import type { PlannedFileOperation } from "../src/Plan/TransformationPlan.ts"
-import { applyFileEdits } from "../src/Edit.ts"
 import { withProject } from "./utils/project-fixture.ts"
 import * as Draft from "../src/Draft/index.ts"
 
@@ -58,44 +57,7 @@ describe("Draft.files", () => {
   )
 
   effect(
-    "move rewrites importer specifiers, normalizing those that already resolve",
-    () =>
-      withProject(
-        {
-          "src/lib.ts": "export const A = 1\n",
-          "src/user.ts": 'import { A } from "./lib.js";\nexport const value = A;\n',
-          "src/nested/inner.ts": 'import { A } from "../lib.js";\nexport const inner = A;\n',
-        },
-        (project) =>
-          Effect.gen(function* () {
-            const userSource = yield* project.sourceText("src/user.ts")
-            const innerSource = yield* project.sourceText("src/nested/inner.ts")
-            const draft = yield* Draft.files.move(project, "src/lib.ts", "src/nested/lib.ts")
-
-            const operation = expectKind(draft.fileOperations![0]!, "move")
-            expect(operation.path).toBe("src/lib.ts")
-            expect(operation.toPath).toBe("src/nested/lib.ts")
-
-            // src/user.ts needs a real rewrite. src/nested/inner.ts still
-            // resolved via "../lib.js", but the engine normalizes any rendered
-            // specifier that differs textually from the shortest relative form.
-            expect(draft.edits.map((edit) => edit.fileName)).toEqual([
-              "src/user.ts",
-              "src/nested/inner.ts",
-            ])
-
-            const userOutput = yield* applyFileEdits(userSource, [draft.edits[0]!])
-            expect(userOutput).toContain('from "./nested/lib.js"')
-
-            const innerOutput = yield* applyFileEdits(innerSource, [draft.edits[1]!])
-            expect(innerOutput).toContain('from "./lib.js"')
-          }),
-      ),
-    60_000,
-  )
-
-  effect(
-    "move carries the moved file's rewritten imports in the operation content, not as edits",
+    "move carries the source text unchanged in the operation content, not as edits",
     () =>
       withProject(
         {
@@ -104,14 +66,15 @@ describe("Draft.files", () => {
         },
         (project) =>
           Effect.gen(function* () {
+            const source = yield* project.sourceText("src/host.ts")
             const draft = yield* Draft.files.move(project, "src/host.ts", "src/nested/host.ts")
 
-            // The file moves wholesale, so its own specifier rewrites ride in
-            // the move operation's content instead of Text Edits.
             expect(draft.edits).toEqual([])
             const operation = expectKind(draft.fileOperations![0]!, "move")
-            expect(operation.content).toContain('from "../lib.js"')
-            expect(operation.content).toContain("export const h = A;")
+            expect(operation.path).toBe("src/host.ts")
+            expect(operation.toPath).toBe("src/nested/host.ts")
+            expect(operation.content).toBe(source)
+            expect(operation.initialHash).toBe(hash("sha256", source, "hex"))
           }),
       ),
     60_000,

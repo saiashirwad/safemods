@@ -96,10 +96,6 @@ export interface ProjectSnapshot {
     fileName: string,
   ) => Effect.Effect<ProjectFile, FileNotFound | InvalidProjectRelativePath | ProjectSnapshotError>
   readonly files: Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError>
-  readonly symbolAt: (
-    fileName: string,
-    position: number,
-  ) => Effect.Effect<NativeSymbol | undefined, ProjectSnapshotError>
   readonly symbolsAt: (
     fileName: string,
     positions: ReadonlyArray<number>,
@@ -280,18 +276,6 @@ export const projectSnapshotFor = ({
       return yield* new FileNotFound({ fileName, projectId: configured.id })
     }
     return file.text
-  })
-
-  const symbolAt = Effect.fn("ProjectSnapshot.symbolAt")(function* (
-    fileName: string,
-    position: number,
-  ) {
-    yield* ensureActive
-    const absolute = requireContainedPath(fileName)
-    if (absolute === undefined) return undefined
-    return yield* nativeRequest("getSymbolAtPosition", () =>
-      nativeProject.checker.getSymbolAtPosition(absolute, position),
-    )
   })
 
   const symbolsAt = Effect.fn("ProjectSnapshot.symbolsAt")(function* (
@@ -568,7 +552,6 @@ export const projectSnapshotFor = ({
     sourceText,
     file,
     files,
-    symbolAt,
     symbolsAt,
     referencesToSymbolInFile,
     canonicalSymbol,

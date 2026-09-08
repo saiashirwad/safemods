@@ -4,10 +4,9 @@ import { layer as nodeLayer, workspaceLayerNode } from "../src/Node.ts"
 import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Layer, type Stream } from "effect"
-import type { CallExpression, Node } from "typescript/unstable/ast"
+import type { CallExpression } from "typescript/unstable/ast"
 import { executeRecipe } from "./utils/execute-recipe.ts"
 import * as Application from "../src/Application.ts"
-import * as Pattern from "../src/Pattern.ts"
 import * as Plan from "../src/Plan/index.ts"
 import type { TransformationPlan } from "../src/Plan/index.ts"
 import type * as Query from "../src/Query/index.ts"
@@ -50,12 +49,6 @@ void _rawPlanIsNotApplicationAuthority
 const _verifiedPlanIsApplicationAuthority = (verified: Verification.VerifiedPlan) =>
   Application.applyVerifiedPlan(verified)
 void _verifiedPlanIsApplicationAuthority
-
-const _booleanPredicate = Pattern.predicate("boolean-node", (_node: Node) => true)
-type PredicateOutput<P> = P extends Pattern.Pattern<infer Out> ? Out : never
-export type _BooleanPredicateYieldsNode = Assert<
-  Equal<PredicateOutput<typeof _booleanPredicate>, Node>
->
 
 const stressFixture = fileURLToPath(new URL("../fixtures/stress/", import.meta.url))
 

@@ -1,7 +1,13 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
+import type { Identifier } from "typescript/unstable/ast"
 import { withProject } from "./utils/project-fixture.ts"
 import * as Query from "../src/Query/index.ts"
+
+const nameMatches = (pattern: RegExp) =>
+  Query.Criterion.predicate<Identifier>(`name-matches:${String(pattern)}`, (selection) =>
+    pattern.test(selection.value.text) ? { matchedText: selection.value.text } : undefined,
+  )
 
 const NAMES_SOURCE = [
   "export const alpha = 1",
@@ -21,9 +27,7 @@ describe("Query criterion combinators", () => {
         Effect.gen(function* () {
           const surviving = yield* Query.identifiers(project).pipe(
             inNames,
-            Query.where(
-              Query.Criterion.all(Query.textMatches(/^alpha$/), Query.textMatches("lph")),
-            ),
+            Query.where(Query.Criterion.all(nameMatches(/^alpha$/), nameMatches(/lph/))),
             Query.collect,
           )
           expect(surviving.map((selection) => selection.value.text)).toEqual(["alpha"])
@@ -39,14 +43,12 @@ describe("Query criterion combinators", () => {
         Effect.gen(function* () {
           const surviving = yield* Query.identifiers(project).pipe(
             inNames,
-            Query.where(
-              Query.Criterion.any(Query.textMatches(/^alpha$/), Query.textMatches(/^beta$/)),
-            ),
+            Query.where(Query.Criterion.any(nameMatches(/^alpha$/), nameMatches(/^beta$/))),
             Query.collect,
           )
           expect(surviving.map((selection) => selection.value.text)).toEqual(["alpha", "beta"])
-          expect(surviving[0]!.evidence.at(-1)?.facts.criterion).toBe("text-matches:/^alpha$/")
-          expect(surviving[1]!.evidence.at(-1)?.facts.criterion).toBe("text-matches:/^beta$/")
+          expect(surviving[0]!.evidence.at(-1)?.facts.criterion).toBe("name-matches:/^alpha$/")
+          expect(surviving[1]!.evidence.at(-1)?.facts.criterion).toBe("name-matches:/^beta$/")
         }),
       ),
     60_000,
@@ -59,11 +61,11 @@ describe("Query criterion combinators", () => {
         Effect.gen(function* () {
           const surviving = yield* Query.identifiers(project).pipe(
             inNames,
-            Query.where(Query.Criterion.not(Query.textMatches(/^alpha$/))),
+            Query.where(Query.Criterion.not(nameMatches(/^alpha$/))),
             Query.collect,
           )
           expect(surviving.map((selection) => selection.value.text)).toEqual(["beta", "gamma"])
-          expect(surviving[0]!.evidence.at(-1)?.facts.negated).toBe("text-matches:/^alpha$/")
+          expect(surviving[0]!.evidence.at(-1)?.facts.negated).toBe("name-matches:/^alpha$/")
         }),
       ),
     60_000,
@@ -78,8 +80,8 @@ describe("Query criterion combinators", () => {
             inNames,
             Query.where(
               Query.Criterion.all(
-                Query.Criterion.any(Query.textMatches(/^alpha$/), Query.textMatches(/^beta$/)),
-                Query.Criterion.not(Query.textMatches(/^alpha$/)),
+                Query.Criterion.any(nameMatches(/^alpha$/), nameMatches(/^beta$/)),
+                Query.Criterion.not(nameMatches(/^alpha$/)),
               ),
             ),
             Query.collect,

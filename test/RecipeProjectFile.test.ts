@@ -4,8 +4,9 @@ import { layer as nodeLayer } from "../src/Node.ts"
 import { executeRecipe } from "./utils/execute-recipe.ts"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
+import { SyntaxKind } from "typescript/unstable/ast"
+import { isFunctionDeclaration } from "typescript/unstable/ast/is"
 import * as Draft from "../src/Draft/index.ts"
-import * as Pattern from "../src/Pattern.ts"
 import * as Query from "../src/Query/index.ts"
 import * as Recipe from "../src/Recipe.ts"
 import { Workspace } from "../src/Workspace/index.ts"
@@ -37,13 +38,11 @@ describe("recipe project-file composition", () => {
                 )
                 expect(callsInConsumer.length).toBe(1)
 
-                const importDraft = yield* Draft.imports.addNamed(
+                const [existingImport] = yield* Query.imports(consumerFile).pipe(Query.collect)
+                const importDraft = yield* Draft.insertBefore(
                   consumerFile.project,
-                  consumerFile.path,
-                  {
-                    module: "./library.js",
-                    name: "TargetInput",
-                  },
+                  existingImport!.value,
+                  'import type { TargetInput } from "./library.js"\n',
                 )
 
                 const replaceDraft = yield* Draft.replaceEach(
@@ -94,10 +93,19 @@ describe("recipe project-file composition", () => {
               const emptyCalls = yield* Query.calls([]).pipe(Query.collect)
               expect(emptyCalls).toEqual([])
 
-              const fnDeclsInSlice = yield* Query.match(
+              const fnDeclsInSlice = yield* Query.nodes(
                 [libraryFile, consumerFile],
-                Pattern.functionDeclaration({ exported: true }),
-              ).pipe(Query.collect)
+                isFunctionDeclaration,
+                SyntaxKind.FunctionDeclaration,
+              ).pipe(
+                Query.filter(
+                  ({ value }) =>
+                    value.modifiers?.some(
+                      (modifier) => modifier.kind === SyntaxKind.ExportKeyword,
+                    ) ?? false,
+                ),
+                Query.collect,
+              )
               expect(fnDeclsInSlice.length).toBe(2)
               expect(fnDeclsInSlice.map((declaration) => declaration.fileName)).toEqual([
                 "src/library.ts",

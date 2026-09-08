@@ -92,7 +92,7 @@ interface TextReplacement {
 }
 
 /** Apply non-overlapping text replacements from right to left so offsets remain stable. */
-export const applyTextReplacements = (
+const applyTextReplacements = (
   sourceText: string,
   replacements: ReadonlyArray<TextReplacement>,
 ): string => {

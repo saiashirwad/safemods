@@ -1,6 +1,5 @@
 import { hash } from "node:crypto"
 import { Effect } from "effect"
-import type { DraftEvidenceConflict } from "../Evidence.ts"
 import {
   InvalidProjectRelativePath,
   parseProjectRelativePath,
@@ -12,9 +11,7 @@ import type {
   ProjectSnapshotError,
   SnapshotExpired,
 } from "../Workspace/index.ts"
-import { applyTextReplacements, textEdit, type TextEdit } from "../Edit.ts"
-import { specifierReplacements, stripModuleExtension } from "./internal/ModuleSpecifiers.ts"
-import { concat, type Draft } from "./Draft.ts"
+import type { Draft } from "./Draft.ts"
 
 export const files = {
   /** Propose creating a new source file in the project with initial content. */
@@ -77,26 +74,18 @@ export const files = {
       }
     }),
 
-  /**
-   * Propose moving/renaming a source file. The move is self-contained: the
-   * moved content carries rewrites of the file's own relative imports, and
-   * Text Edits update importers across the project so their specifiers keep
-   * resolving to the moved module.
-   */
+  /** Propose moving/renaming a source file, carrying its content unchanged. */
   move: (
     project: ProjectSnapshot,
     fromPath: string,
     toPath: string,
-  ): Effect.Effect<
-    Draft,
-    ProjectSnapshotError | FileNotFound | InvalidProjectRelativePath | DraftEvidenceConflict
-  > =>
+  ): Effect.Effect<Draft, ProjectSnapshotError | FileNotFound | InvalidProjectRelativePath> =>
     Effect.gen(function* () {
       const sourcePath = yield* checkedPath(fromPath)
       const targetPath = yield* checkedPath(toPath)
       const source = yield* project.sourceText(sourcePath)
       const moveEvidence = `file:move:${project.project.id}:${sourcePath}->${targetPath}`
-      const fileOpDraft: Draft = {
+      return {
         edits: [],
         fileOperations: [
           {
@@ -123,66 +112,6 @@ export const files = {
         ],
         matches: 1,
       }
-
-      const fromBase = stripModuleExtension(sourcePath)
-      const toBase = stripModuleExtension(targetPath)
-      const importEdits: Array<TextEdit> = []
-      const owned = yield* project.files
-      let movedContent = source
-
-      for (const projectFile of owned) {
-        const file = yield* projectFile.sourceFile
-        const relFile = projectFile.path
-        const replacements = specifierReplacements(
-          file,
-          relFile,
-          sourcePath,
-          targetPath,
-          fromBase,
-          toBase,
-        )
-        if (relFile === sourcePath) {
-          movedContent = applyTextReplacements(source, replacements)
-          continue
-        }
-        for (const replacement of replacements) {
-          const importEvidenceId = `import:move-target:${project.project.id}:${relFile}:${replacement.start}-${replacement.end}`
-          importEdits.push(
-            textEdit({
-              projectId: project.project.id,
-              fileName: relFile,
-              sourceText: file.text,
-              start: replacement.start,
-              end: replacement.end,
-              newText: replacement.newText,
-              evidenceIds: [importEvidenceId],
-            }),
-          )
-        }
-      }
-
-      const movedDraft: Draft = {
-        ...fileOpDraft,
-        fileOperations: (fileOpDraft.fileOperations ?? []).map((operation) =>
-          operation.kind === "move" ? { ...operation, content: movedContent } : operation,
-        ),
-      }
-      const importDraft: Draft = {
-        edits: importEdits,
-        evidence: importEdits.flatMap((edit) =>
-          edit.evidenceIds.map((id) => ({
-            id,
-            kind: "file-import-rewrite",
-            facts: {
-              projectId: edit.projectId,
-              fileName: edit.fileName,
-              target: targetPath,
-            },
-          })),
-        ),
-        matches: importEdits.length,
-      }
-      return yield* concat(movedDraft, importDraft)
     }),
 }
 

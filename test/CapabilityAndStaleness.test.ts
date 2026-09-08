@@ -5,6 +5,7 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Application from "../src/Application.ts"
 import * as Draft from "../src/Draft/index.ts"
+import * as Query from "../src/Query/index.ts"
 import * as Recipe from "../src/Recipe.ts"
 import * as Verification from "../src/Verification/index.ts"
 import type { TransformationPlan } from "../src/Plan/index.ts"
@@ -136,10 +137,15 @@ describe("Node application capability and staleness checks", () => {
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
-              return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
-                module: "./library.js",
-                name: "TargetInput",
-              })
+              const [declaration] = yield* Query.imports(project).pipe(
+                Query.within("src/consumer.ts"),
+                Query.collect,
+              )
+              return yield* Draft.insertBefore(
+                project,
+                declaration!.value,
+                "// touched by stale-apply\n",
+              )
             }),
         })
         const plan = yield* Recipe.run(recipe, undefined)

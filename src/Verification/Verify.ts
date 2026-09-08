@@ -10,11 +10,6 @@ import {
 import { canonicalJson } from "../Evidence.ts"
 import type { PlanDecodeError, TransformationPlan } from "../Plan/TransformationPlan.ts"
 import { validatePlan } from "../Plan/Codec.ts"
-import {
-  allowedErrorsFromRules,
-  computeDiagnosticDiff,
-  type PolicyEvaluationContext,
-} from "../Policy.ts"
 import { type Recipe, TOOLCHAIN, validateRecipeInput } from "../Recipe.ts"
 import type { VirtualFsSnapshot } from "../VirtualFs.ts"
 import { collectDiagnostics } from "./Diagnostics.ts"
@@ -28,7 +23,7 @@ import {
   VerificationFailure,
 } from "./Errors.ts"
 import { previewValidatedPlan } from "./Preview.ts"
-import { evaluateBuiltInPolicies, evaluateCustomRules } from "./PolicyEvaluation.ts"
+import { computeDiagnosticDiff, evaluateBuiltInPolicies } from "./PolicyEvaluation.ts"
 import { absoluteTarget, requireMatchingProjectIdentity } from "./SourceRevalidation.ts"
 import { issueVerifiedPlan, type VerifiedPlan } from "./VerifiedPlan.ts"
 
@@ -173,7 +168,6 @@ export const verify = <Input, E, R>(
     )
 
     const diagnosticDiff = computeDiagnosticDiff(baselineDiagnostics, proposedRun.diagnostics)
-    const allowedErrors = allowedErrorsFromRules(recipe.rules)
     const matches = validatedPlan.measurements?.matches
     const affectedFiles = proposed.files.length
     const builtInFailure = evaluateBuiltInPolicies({
@@ -182,21 +176,9 @@ export const verify = <Input, E, R>(
       affectedFiles,
       diagnosticDiff,
       secondPlanChangeCount: proposedRun.replayChanges,
-      allowedErrors,
     })
     if (builtInFailure !== undefined) {
       return yield* new VerificationFailure({ planId: validatedPlan.planId, ...builtInFailure })
-    }
-
-    const context: PolicyEvaluationContext = {
-      actualMatches: matches ?? 0,
-      affectedFiles,
-      diagnosticDiff,
-      allowedErrors,
-    }
-    const customFailure = evaluateCustomRules(recipe.rules, context)
-    if (customFailure !== undefined) {
-      return yield* new VerificationFailure({ planId: validatedPlan.planId, ...customFailure })
     }
 
     return issueVerifiedPlan(validatedPlan, proposed, diagnosticDiff)

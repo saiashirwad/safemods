@@ -3,8 +3,10 @@ import * as Path from "node:path"
 import { describe, effect, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../src/Draft/index.ts"
-import { computeDiagnosticDiff, type DiagnosticRecord } from "../src/Policy.ts"
+import type { DiagnosticRecord } from "../src/Policy.ts"
 import * as Policy from "../src/Policy.ts"
+import * as Query from "../src/Query/index.ts"
+import { computeDiagnosticDiff } from "../src/Verification/PolicyEvaluation.ts"
 import * as Recipe from "../src/Recipe.ts"
 import { VerificationFailure } from "../src/Verification/index.ts"
 import * as Verification from "../src/Verification/index.ts"
@@ -72,7 +74,7 @@ describe("verification diagnostics and policies", () => {
           )
           const recipe = Recipe.define("swap-one-error-for-another", {
             version: "1.0.0",
-            policies: [Policy.noNewErrors()],
+            policies: [],
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
@@ -121,14 +123,16 @@ describe("verification diagnostics and policies", () => {
         Effect.gen(function* () {
           const validRecipe = Recipe.define("policy-valid", {
             version: "1.0.0",
-            policies: [Policy.matches({ min: 1 }), Policy.noNewErrors(), Policy.idempotent()],
+            policies: [Policy.matches({ min: 1 }), Policy.idempotent()],
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
-                  module: "./library.js",
-                  name: "TargetInput",
-                })
+                return yield* Draft.audit(
+                  yield* Query.imports(project).pipe(
+                    Query.within("src/consumer.ts"),
+                    Query.collect,
+                  ),
+                )
               }),
           })
 
@@ -138,10 +142,12 @@ describe("verification diagnostics and policies", () => {
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.imports.addNamed(project, "src/consumer.ts", {
-                  module: "./library.js",
-                  name: "TargetInput",
-                })
+                return yield* Draft.audit(
+                  yield* Query.imports(project).pipe(
+                    Query.within("src/consumer.ts"),
+                    Query.collect,
+                  ),
+                )
               }),
           })
 
@@ -160,21 +166,14 @@ describe("verification diagnostics and policies", () => {
   )
 
   effect(
-    "rejects recipe identity, implementation, input, and toolchain mismatches before rules run",
+    "rejects recipe identity, implementation, input, and toolchain mismatches",
     () =>
       withFixture(() =>
         Effect.gen(function* () {
-          let ruleRan = false
           const input = { value: 1 }
           const author = Recipe.define("identity-author", {
             version: "1.0.0",
             implementationHash: "author-hash",
-            policies: [
-              Policy.diagnosticDiff("must-not-run", () => {
-                ruleRan = true
-                return true
-              }),
-            ],
             run: (_input: { readonly value: number }) => Effect.succeed(Draft.empty),
           })
           const plan = yield* Recipe.run(author, input)
@@ -223,7 +222,6 @@ describe("verification diagnostics and policies", () => {
           expect(toolchainResult._tag).toBe("Failure")
           if (toolchainResult._tag === "Failure")
             expect(toolchainResult.failure._tag).toBe("ToolchainMismatch")
-          expect(ruleRan).toBe(false)
         }),
       ),
     60_000,
@@ -268,7 +266,7 @@ describe("verification diagnostics and policies", () => {
           const broken = "export const broken = {\n"
           const recipe = Recipe.define("introduce-syntax-error", {
             version: "1.0.0",
-            policies: [Policy.noNewErrors()],
+            policies: [],
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
@@ -285,100 +283,6 @@ describe("verification diagnostics and policies", () => {
             if (result.failure._tag === "VerificationFailure")
               expect(result.failure.detail).toContain("Introduced 1 new error diagnostic")
           }
-        }),
-      ),
-    60_000,
-  )
-
-  effect(
-    "allowErrors permits a listed code through the default no-new-errors gate",
-    () =>
-      withFixture((_, app) =>
-        Effect.gen(function* () {
-          const source = `export const n: number = "string";\n`
-          const observe = Recipe.define("observe-introduced-error", {
-            version: "1.0.0",
-            policies: [{ diagnostics: "allow-new-errors" }],
-            run: () =>
-              Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                return yield* Draft.files.create(project, "src/assign.ts", source)
-              }),
-          })
-          const observedPlan = yield* Recipe.run(observe, undefined)
-          const observed = yield* Verification.verify(observedPlan, observe, undefined)
-          const introduced = observed.diagnosticDiff.introduced.filter(
-            (diagnostic) => diagnostic.category === "error",
-          )
-          expect(introduced.length).toBeGreaterThan(0)
-          const code = introduced[0]!.code
-          const introducedKeys = new Set(
-            introduced.map((diagnostic) => String(diagnostic.code).replace(/^TS/, "")),
-          )
-          let otherCode = 1
-          while (introducedKeys.has(String(otherCode))) otherCode += 1
-
-          const allowed = Recipe.define("allow-observed-error", {
-            version: "1.0.0",
-            policies: [Policy.allowErrors({ code })],
-            run: () =>
-              Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                return yield* Draft.files.create(project, "src/assign.ts", source)
-              }),
-          })
-          const denied = Recipe.define("deny-other-error", {
-            version: "1.0.0",
-            policies: [Policy.allowErrors({ code: otherCode })],
-            run: () =>
-              Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                return yield* Draft.files.create(project, "src/assign.ts", source)
-              }),
-          })
-
-          const allowedPlan = yield* Recipe.run(allowed, undefined)
-          const deniedPlan = yield* Recipe.run(denied, undefined)
-          const allowedResult = yield* Verification.verify(allowedPlan, allowed, undefined)
-          const deniedResult = yield* Verification.verify(deniedPlan, denied, undefined).pipe(
-            Effect.result,
-          )
-          expect(
-            allowedResult.diagnosticDiff.introduced.some((diagnostic) => diagnostic.code === code),
-          ).toBe(true)
-          expect(deniedResult._tag).toBe("Failure")
-          if (deniedResult._tag === "Failure")
-            expect(deniedResult.failure._tag).toBe("VerificationFailure")
-        }),
-      ),
-    60_000,
-  )
-
-  effect(
-    "stops custom rules at the first failure",
-    () =>
-      withFixture((_, app) =>
-        Effect.gen(function* () {
-          const visited: Array<string> = []
-          const rule = (name: string, verdict: boolean | string) =>
-            Policy.diagnosticDiff(name, () => {
-              visited.push(name)
-              return verdict
-            })
-          const recipe = Recipe.define("short-circuit-rules", {
-            version: "1.0.0",
-            policies: [rule("first", true), rule("second", "failed"), rule("third", true)],
-            run: () =>
-              Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                return yield* Draft.files.create(project, "src/noop.ts", "export {}\n")
-              }),
-          })
-          const plan = yield* Recipe.run(recipe, undefined)
-          const failure = yield* Verification.verify(plan, recipe, undefined).pipe(Effect.flip)
-          expect(failure).toBeInstanceOf(VerificationFailure)
-          if (failure instanceof VerificationFailure) expect(failure.detail).toBe("failed")
-          expect(visited).toEqual(["first", "second"])
         }),
       ),
     60_000,

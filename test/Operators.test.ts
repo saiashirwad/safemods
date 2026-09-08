@@ -1,5 +1,6 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
+import type { Identifier } from "typescript/unstable/ast"
 import type { ProjectFile } from "../src/Workspace/index.ts"
 import { withProject } from "./utils/project-fixture.ts"
 import * as Query from "../src/Query/index.ts"
@@ -31,15 +32,18 @@ describe("Query stream operators", () => {
           const inTiny = <A, E, R>(self: Query.Query<A, E, R>): Query.Query<A, E, R> =>
             Query.within(self, "src/tiny.ts")
           return Effect.gen(function* () {
+            const isAlpha = Query.Criterion.predicate<Identifier>("name-is-alpha", (selection) =>
+              selection.value.text === "alpha" ? { text: "alpha" } : undefined,
+            )
             const surviving = yield* Query.identifiers(project).pipe(
               inTiny,
-              Query.where(Query.textMatches("alpha")),
+              Query.where(isAlpha),
               Query.collect,
             )
             expect(surviving.map((selection) => selection.value.text)).toEqual(["alpha"])
             const last = surviving[0]!.evidence.at(-1)!
-            expect(last.criterion).toBe("text-matches:alpha")
-            expect(last.facts).toEqual({ matchedText: "alpha" })
+            expect(last.criterion).toBe("name-is-alpha")
+            expect(last.facts).toEqual({ text: "alpha" })
           })
         },
       ),
@@ -96,34 +100,6 @@ describe("Query stream operators", () => {
   )
 
   effect(
-    "textMatches admits by substring for strings and full text for regular expressions",
-    () =>
-      withProject(
-        { "src/tiny.ts": "export const alpha = 1\nexport const beta = 2\n" },
-        (project) => {
-          const inTiny = <A, E, R>(self: Query.Query<A, E, R>): Query.Query<A, E, R> =>
-            Query.within(self, "src/tiny.ts")
-          return Effect.gen(function* () {
-            const substring = yield* Query.identifiers(project).pipe(
-              inTiny,
-              Query.where(Query.textMatches("alph")),
-              Query.collect,
-            )
-            expect(substring.map((selection) => selection.value.text)).toEqual(["alpha"])
-
-            const anchored = yield* Query.identifiers(project).pipe(
-              inTiny,
-              Query.where(Query.textMatches(/^beta$/)),
-              Query.collect,
-            )
-            expect(anchored.map((selection) => selection.value.text)).toEqual(["beta"])
-          })
-        },
-      ),
-    60_000,
-  )
-
-  effect(
     "filter narrows by selection predicate without touching evidence",
     () =>
       withProject({ "src/arity.ts": ARITY_SOURCE }, (project) =>
@@ -135,26 +111,6 @@ describe("Query stream operators", () => {
           )
           expect(binary).toHaveLength(1)
           expect(binary[0]!.value.getText()).toBe("two(1, 2)")
-        }),
-      ),
-    60_000,
-  )
-
-  effect(
-    "withArgCount admits exact counts and min/max ranges",
-    () =>
-      withProject({ "src/arity.ts": ARITY_SOURCE }, (project) =>
-        Effect.gen(function* () {
-          const count = (options: number | { readonly min?: number; readonly max?: number }) =>
-            Query.calls(project).pipe(inArity, Query.withArgCount(options), Query.collect)
-
-          expect(yield* count(0)).toHaveLength(1)
-          expect(yield* count(1)).toHaveLength(1)
-          expect(yield* count(2)).toHaveLength(1)
-          expect(yield* count(3)).toHaveLength(1)
-          expect(yield* count({ min: 2 })).toHaveLength(2)
-          expect(yield* count({ max: 1 })).toHaveLength(2)
-          expect(yield* count({ min: 1, max: 2 })).toHaveLength(2)
         }),
       ),
     60_000,

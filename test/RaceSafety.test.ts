@@ -6,7 +6,6 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Application from "../src/Application.ts"
 import * as Draft from "../src/Draft/index.ts"
-import * as Policy from "../src/Policy.ts"
 import * as Recipe from "../src/Recipe.ts"
 import * as Verification from "../src/Verification/index.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
@@ -26,7 +25,7 @@ describe("Node application race and filesystem safety", () => {
       Effect.gen(function* () {
         const recipe = Recipe.define("create-race", {
           version: "1.0.0",
-          policies: [Policy.noNewErrors()],
+          policies: [],
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
