@@ -1,8 +1,13 @@
+import { hash } from "node:crypto"
 import { Effect, Schema } from "effect"
-import { compareEdits, sha256 } from "../Edit.ts"
-import { canonicalJson, type Json } from "../Evidence.ts"
-import { PlanDecodeError, type PlanInput, type TransformationPlan } from "./TransformationPlan.ts"
-import { strictPlanParseOptions, TransformationPlanSchema } from "./Structure.ts"
+import { compareEdits } from "../Edit.ts"
+import { canonicalJson } from "../Evidence.ts"
+import {
+  PlanDecodeError,
+  type PlanInput,
+  strictPlanParseOptions,
+  TransformationPlan,
+} from "./TransformationPlan.ts"
 import {
   compareFileOperations,
   compareIds,
@@ -16,19 +21,17 @@ export type ValidatedPlan = TransformationPlan & {
   readonly [ValidatedPlanTypeId]: true
 }
 
-export { canonicalJson, compareSourceFingerprints }
-
 const asEncodedJson = (
   value:
-    | Json
+    | Schema.Json
     | TransformationPlan
     | {
         readonly projects: TransformationPlan["projects"]
         readonly sources: TransformationPlan["sources"]
       },
-): Json =>
+): Schema.Json =>
   // SAFETY: plan schemas contain only JSON values.
-  value as Json
+  value as Schema.Json
 
 export const canonicalizeContent = (input: PlanInput): PlanInput => {
   const projects = input.projects
@@ -77,18 +80,18 @@ export const snapshotHashOf = ({
   projects,
   sources,
 }: Pick<PlanInput, "projects" | "sources">): string =>
-  sha256(canonicalJson(asEncodedJson({ projects, sources })))
+  hash("sha256", canonicalJson(asEncodedJson({ projects, sources })), "hex")
 
 export const planHashOf = (plan: TransformationPlan): string => {
   const { planId: _, ...content } = plan
-  return sha256(canonicalJson(asEncodedJson(content)))
+  return hash("sha256", canonicalJson(asEncodedJson(content)), "hex")
 }
 
 export const serializePlan = (plan: TransformationPlan): string =>
   canonicalJson(asEncodedJson(plan))
 
 const decodeTransformationPlan = Schema.decodeUnknownEffect(
-  TransformationPlanSchema,
+  TransformationPlan,
   strictPlanParseOptions,
 )
 
@@ -96,10 +99,6 @@ const decodeTransformationPlan = Schema.decodeUnknownEffect(
 const decodePlan = (decoded: unknown): Effect.Effect<TransformationPlan, PlanDecodeError> =>
   decodeTransformationPlan(decoded).pipe(
     Effect.mapError(() => new PlanDecodeError({ reason: "schema" })),
-    Effect.map(
-      // SAFETY: the schema validates every field; branded path types are runtime strings.
-      (value) => value as TransformationPlan,
-    ),
   )
 
 const validateSnapshotHash = (plan: TransformationPlan): Effect.Effect<void, PlanDecodeError> => {

@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Exit } from "effect"
-import { snapshotHashOf } from "../src/Plan/Codec.ts"
-import { finalizePlan, parsePlan, serializePlan, validatePlan } from "../src/Plan/index.ts"
+import { parsePlan, serializePlan, snapshotHashOf, validatePlan } from "../src/Plan/Codec.ts"
+import { finalizePlan } from "../src/Plan/Finalize.ts"
 import {
   encodeUnknown,
   exactStructureMutations,

@@ -1,96 +1,96 @@
-import { Data } from "effect"
-import type { TextEdit } from "../Edit.ts"
-import type { EvidenceRecord, Json } from "../Evidence.ts"
-import type { ProjectRelativePath } from "../ProjectPath.ts"
+import { Data, Schema } from "effect"
+import { NonNegativeInt, TextEdit } from "../Edit.ts"
+import { EvidenceRecord } from "../Evidence.ts"
 
-export interface ProjectEvidence {
-  readonly id: string
-  readonly configFileName: string
-}
+const EvidenceIds = Schema.optional(Schema.Array(Schema.String))
 
-export type SourceFingerprintKind = "file" | "missing"
-
-export interface SourceFingerprint {
-  readonly projectId: string
-  readonly fileName: string
-  readonly hash: string
-  readonly kind?: SourceFingerprintKind | undefined
-}
+export const SourceFingerprint = Schema.Struct({
+  projectId: Schema.String,
+  fileName: Schema.String,
+  hash: Schema.String,
+  kind: Schema.optional(Schema.Literals(["file", "missing"])),
+})
+export type SourceFingerprint = typeof SourceFingerprint.Type
 
 export const isContentFingerprint = (source: SourceFingerprint): boolean =>
   source.kind === undefined || source.kind === "file"
 
-interface FileOperationBase {
-  readonly projectId: string
-  readonly path: ProjectRelativePath
-  readonly evidenceIds?: ReadonlyArray<string> | undefined
+export const PlannedFileOperation = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("create"),
+    projectId: Schema.String,
+    path: Schema.String,
+    content: Schema.String,
+    evidenceIds: EvidenceIds,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("delete"),
+    projectId: Schema.String,
+    path: Schema.String,
+    initialHash: Schema.String,
+    evidenceIds: EvidenceIds,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("move"),
+    projectId: Schema.String,
+    path: Schema.String,
+    toPath: Schema.String,
+    content: Schema.optional(Schema.String),
+    initialHash: Schema.String,
+    evidenceIds: EvidenceIds,
+  }),
+])
+export type PlannedFileOperation = typeof PlannedFileOperation.Type
+
+export const PlanPolicies = Schema.Struct({
+  matchCount: Schema.Struct({
+    min: Schema.optional(NonNegativeInt),
+    max: Schema.optional(NonNegativeInt),
+  }).check(
+    Schema.makeFilter(
+      (count) => count.min === undefined || count.max === undefined || count.min <= count.max,
+      { expected: "matchCount.min <= matchCount.max" },
+    ),
+  ),
+  maxAffectedFiles: Schema.optional(NonNegativeInt),
+  diagnostics: Schema.Literals(["no-new-errors", "allow-new-errors"]),
+  idempotence: Schema.Literals(["required", "not-promised"]),
+})
+export type PlanPolicies = typeof PlanPolicies.Type
+
+const planContentFields = {
+  recipe: Schema.Struct({
+    name: Schema.String,
+    version: Schema.String,
+    implementationHash: Schema.String,
+    options: Schema.Json,
+  }),
+  toolchain: Schema.Struct({
+    systemVersion: Schema.String,
+    typescriptVersion: Schema.String,
+    effectVersion: Schema.String,
+  }),
+  projects: Schema.Array(Schema.Struct({ id: Schema.String, configFileName: Schema.String })),
+  sources: Schema.Array(SourceFingerprint),
+  edits: Schema.Array(TextEdit),
+  fileOperations: Schema.optional(Schema.Array(PlannedFileOperation)),
+  evidence: Schema.Array(EvidenceRecord),
+  policies: PlanPolicies,
+  measurements: Schema.optional(Schema.Struct({ matches: Schema.optional(NonNegativeInt) })),
 }
 
-export interface CreateFileOperation extends FileOperationBase {
-  readonly kind: "create"
-  readonly content: string
-}
+export const PlanInput = Schema.Struct(planContentFields)
+export type PlanInput = typeof PlanInput.Type
 
-export interface DeleteFileOperation extends FileOperationBase {
-  readonly kind: "delete"
-  readonly initialHash: string
-}
+export const TransformationPlan = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  planId: Schema.String,
+  ...planContentFields,
+  snapshotHash: Schema.String,
+})
+export type TransformationPlan = typeof TransformationPlan.Type
 
-export interface MoveFileOperation extends FileOperationBase {
-  readonly kind: "move"
-  readonly toPath: ProjectRelativePath
-  readonly initialHash: string
-  readonly content?: string | undefined
-}
-
-export type PlannedFileOperation = CreateFileOperation | DeleteFileOperation | MoveFileOperation
-
-export interface PlanPolicies {
-  readonly matchCount: { readonly min?: number | undefined; readonly max?: number | undefined }
-  readonly maxAffectedFiles?: number | undefined
-  readonly diagnostics: "no-new-errors" | "allow-new-errors"
-  readonly idempotence: "required" | "not-promised"
-}
-
-export interface PlanMeasurements {
-  readonly matches?: number | undefined
-}
-
-export interface TransformationPlan {
-  readonly schemaVersion: 1
-  readonly planId: string
-  readonly recipe: {
-    readonly name: string
-    readonly version: string
-    readonly implementationHash: string
-    readonly options: Json
-  }
-  readonly toolchain: {
-    readonly systemVersion: string
-    readonly typescriptVersion: string
-    readonly effectVersion: string
-  }
-  readonly projects: ReadonlyArray<ProjectEvidence>
-  readonly sources: ReadonlyArray<SourceFingerprint>
-  readonly snapshotHash: string
-  readonly edits: ReadonlyArray<TextEdit>
-  readonly fileOperations?: ReadonlyArray<PlannedFileOperation> | undefined
-  readonly evidence: ReadonlyArray<EvidenceRecord>
-  readonly policies: PlanPolicies
-  readonly measurements?: PlanMeasurements | undefined
-}
-
-export interface PlanInput {
-  readonly recipe: TransformationPlan["recipe"]
-  readonly toolchain: TransformationPlan["toolchain"]
-  readonly projects: ReadonlyArray<ProjectEvidence>
-  readonly sources: ReadonlyArray<SourceFingerprint>
-  readonly edits: ReadonlyArray<TextEdit>
-  readonly fileOperations?: ReadonlyArray<PlannedFileOperation> | undefined
-  readonly evidence: ReadonlyArray<EvidenceRecord>
-  readonly policies: PlanPolicies
-  readonly measurements?: PlanMeasurements | undefined
-}
+export const strictPlanParseOptions = { onExcessProperty: "error" } as const
 
 export class PlanBuildError extends Data.TaggedError("PlanBuildError")<{
   readonly reason:

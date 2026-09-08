@@ -1,4 +1,3 @@
-/** Public Draft API assembled from focused domain modules. */
 export {
   audit,
   concat,

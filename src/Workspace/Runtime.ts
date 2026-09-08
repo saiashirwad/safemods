@@ -1,14 +1,12 @@
 /** Synchronous host operations required by TypeScript compiler callbacks. */
-import { Context } from "effect"
-import type { ProjectPathOperations } from "../ProjectPath.ts"
+import { Context, type Path } from "effect"
 
-export interface WorkspaceDirectoryEntries {
+interface WorkspaceDirectoryEntries {
   readonly files: ReadonlyArray<string>
   readonly directories: ReadonlyArray<string>
 }
 
-/** Runtime authority for synchronous TypeScript compiler-host callbacks. */
-export interface WorkspaceRuntimeService extends ProjectPathOperations {
+export interface WorkspaceRuntimeService extends Path.Path {
   readonly readFileText: (path: string) => string | undefined
   readonly fileExists: (path: string) => boolean | undefined
   readonly directoryExists: (path: string) => boolean | undefined

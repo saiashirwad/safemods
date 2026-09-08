@@ -1,19 +1,20 @@
 /** Process-local capability that grants application authority. */
-import { Predicate } from "effect"
-import type { ValidatedPlan } from "../Plan/index.ts"
+import { Brand, Predicate } from "effect"
+import type { ValidatedPlan } from "../Plan/Codec.ts"
 import type { DiagnosticDiff } from "../Policy.ts"
 import type { PlanPreview } from "./Preview.ts"
 
-// Process-local token. Symbol.for would be forgeable across the isolate.
-const VerifiedPlanTypeId: unique symbol = Symbol("@safemods/internal/VerifiedPlan")
+/** Only plans in this set carry application authority; the brand is compile-time only. */
 const issuedVerifiedPlans = new WeakSet<object>()
 
-export interface VerifiedPlan {
-  readonly [VerifiedPlanTypeId]: typeof VerifiedPlanTypeId
-  readonly plan: ValidatedPlan
-  readonly preview: PlanPreview
-  readonly diagnosticDiff: DiagnosticDiff
-}
+export type VerifiedPlan = Brand.Branded<
+  {
+    readonly plan: ValidatedPlan
+    readonly preview: PlanPreview
+    readonly diagnosticDiff: DiagnosticDiff
+  },
+  "VerifiedPlan"
+>
 
 const freezeDeep = <A>(value: A): A => {
   if (Array.isArray(value)) {
@@ -31,13 +32,13 @@ export const issueVerifiedPlan = (
   preview: PlanPreview,
   diagnosticDiff: DiagnosticDiff,
 ): VerifiedPlan => {
-  const verified: VerifiedPlan = {
-    [VerifiedPlanTypeId]: VerifiedPlanTypeId,
-    plan: freezeDeep(plan),
-    preview: freezeDeep(preview),
-    diagnosticDiff: freezeDeep(diagnosticDiff),
-  }
-  const issued = Object.freeze(verified)
+  const issued = Object.freeze(
+    Brand.nominal<VerifiedPlan>()({
+      plan: freezeDeep(plan),
+      preview: freezeDeep(preview),
+      diagnosticDiff: freezeDeep(diagnosticDiff),
+    }),
+  )
   issuedVerifiedPlans.add(issued)
   return issued
 }

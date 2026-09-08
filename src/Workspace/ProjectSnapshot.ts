@@ -70,13 +70,6 @@ export interface ProjectFile {
   readonly symbolNamed: (
     name: string,
   ) => Effect.Effect<NativeSymbol, SymbolNotFound | ProjectSnapshotError>
-  readonly findSymbolNamed: (
-    name: string,
-  ) => Effect.Effect<Option.Option<NativeSymbol>, ProjectSnapshotError>
-  readonly symbolAt: (
-    position: number,
-  ) => Effect.Effect<NativeSymbol | undefined, ProjectSnapshotError>
-  readonly typeAt: (position: number) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
 }
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Type guard boundary for ProjectFile handles.
@@ -152,7 +145,7 @@ export interface ProjectSnapshot {
   ) => Effect.Effect<A, E | SnapshotExpired, R>
 }
 
-export interface ProjectSnapshotOptions {
+interface ProjectSnapshotOptions {
   readonly configured: ConfiguredProject
   readonly nativeProject: NativeProject
   readonly projectRoot: string
@@ -204,7 +197,6 @@ export const projectSnapshotFor = ({
   }
   const isWithinProject = (fileName: string): boolean =>
     isPathContained(runtime, canonicalProjectRoot, comparisonHostPath(fileName), containmentOptions)
-  const containsFileName = isWithinProject
   const resolveFileName = (fileName: string): string => runtime.resolve(projectRoot, fileName)
   const relativeFileName = (fileName: string): string => {
     const resolved = runtime.resolve(fileName)
@@ -557,9 +549,6 @@ export const projectSnapshotFor = ({
       ),
     sourceText: snapshotView.sourceText(relativePath),
     symbolNamed: (name) => snapshotView.symbolNamed(name, { within: relativePath }),
-    findSymbolNamed: (name) => snapshotView.findSymbolNamed(name, { within: relativePath }),
-    symbolAt: (position) => snapshotView.symbolAt(relativePath, position),
-    typeAt: (position) => snapshotView.typeAt(relativePath, position),
   })
 
   const file = Effect.fn("ProjectSnapshot.file")(function* (fileName: string) {
@@ -582,7 +571,7 @@ export const projectSnapshotFor = ({
   const snapshotView: ProjectSnapshot = {
     project: configured,
     root: projectRoot,
-    containsFileName,
+    containsFileName: isWithinProject,
     resolveFileName,
     relativeFileName,
     sourceFileNames,

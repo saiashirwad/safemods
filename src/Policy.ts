@@ -1,4 +1,5 @@
-import type { PlanPolicies } from "./Plan/index.ts"
+import type { Types } from "effect"
+import type { PlanPolicies } from "./Plan/TransformationPlan.ts"
 
 export interface DiagnosticRecord {
   readonly code: number | string
@@ -44,9 +45,7 @@ export interface VerificationRule {
 }
 
 export interface Policy {
-  readonly matchCount?:
-    | { readonly min?: number | undefined; readonly max?: number | undefined }
-    | undefined
+  readonly matchCount?: PlanPolicies["matchCount"] | undefined
   readonly maxAffectedFiles?: number | undefined
   readonly diagnostics?: PlanPolicies["diagnostics"] | undefined
   readonly idempotence?: PlanPolicies["idempotence"] | undefined
@@ -146,13 +145,8 @@ export const diagnosticDiff = (
 
 export const idempotent = (): Policy => ({ idempotence: "required" })
 
-interface MatchCountBounds {
-  min?: number
-  max?: number
-}
-
 export const all = (policies: ReadonlyArray<Policy>): CompiledPolicy => {
-  const matchCount: MatchCountBounds = {}
+  const matchCount: Types.Mutable<PlanPolicies["matchCount"]> = {}
   let maxAffectedFiles: number | undefined
   let diagnostics: PlanPolicies["diagnostics"] = "no-new-errors"
   let idempotence: PlanPolicies["idempotence"] = "not-promised"

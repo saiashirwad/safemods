@@ -6,28 +6,12 @@ import {
   isNamedImports,
   isStringLiteral,
 } from "typescript/unstable/ast/is"
-import {
-  isProjectFile,
-  type ProjectFile,
-  type ProjectSnapshot,
-  type ProjectSnapshotError,
-  type SnapshotExpired,
-} from "../Workspace/index.ts"
+import type { ProjectSnapshot, ProjectSnapshotError, SnapshotExpired } from "../Workspace/index.ts"
 import { draftForRange, empty, type Draft } from "./Draft.ts"
 
-export interface AddNamedImportOptions {
+interface AddNamedImportOptions {
   readonly module: string
   readonly name: string
-  readonly alias?: string
-}
-
-export interface AddNamedImportFn {
-  (file: ProjectFile, options: AddNamedImportOptions): Effect.Effect<Draft, ProjectSnapshotError>
-  (
-    project: ProjectSnapshot,
-    fileName: string,
-    options: AddNamedImportOptions,
-  ): Effect.Effect<Draft, ProjectSnapshotError>
 }
 
 const isTopLevelDirective = (statement: Statement): boolean =>
@@ -56,7 +40,7 @@ const addNamedToProject = (
 
     return yield* project.unsafeNative(() =>
       Effect.sync((): Draft => {
-        const importName = options.alias ? `${options.name} as ${options.alias}` : options.name
+        const importName = options.name
 
         for (const statement of source.statements) {
           if (isImportDeclaration(statement)) {
@@ -72,7 +56,7 @@ const addNamedToProject = (
                   return empty
                 }
                 for (const element of named.elements) {
-                  if (element.name.text === (options.alias ?? options.name)) {
+                  if (element.name.text === options.name) {
                     return empty
                   }
                 }
@@ -112,26 +96,7 @@ const addNamedToProject = (
   })
 
 export const imports = {
-  /** Add a named import to a source file. */
-  // SAFETY: the dispatcher is exhaustive over ProjectFile | ProjectSnapshot
-  // and hands each overload its exact declared parameter shapes.
-  addNamed: ((
-    projectOrFile: ProjectSnapshot | ProjectFile,
-    fileNameOrOptions: string | AddNamedImportOptions,
-    maybeOptions?: AddNamedImportOptions,
-  ): Effect.Effect<Draft, ProjectSnapshotError> => {
-    if (isProjectFile(projectOrFile)) {
-      // SAFETY: the ProjectFile overload passes the options object in the
-      // second argument position.
-      const options = fileNameOrOptions as AddNamedImportOptions
-      return addNamedToProject(projectOrFile.project, projectOrFile.path, options)
-    }
-    // SAFETY: without a ProjectFile the signature is (project, fileName,
-    // options), so fileNameOrOptions is the path and maybeOptions is present.
-    const fileName = fileNameOrOptions as string
-    const options = maybeOptions!
-    return addNamedToProject(projectOrFile, fileName, options)
-  }) as AddNamedImportFn,
+  addNamed: addNamedToProject,
 
   /** Remove a named import from an import declaration. */
   removeNamed: (

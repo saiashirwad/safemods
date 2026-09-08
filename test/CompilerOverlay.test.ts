@@ -1,7 +1,10 @@
-import * as Path from "node:path"
+import { NodePath } from "@effect/platform-node"
+import { Effect, Path as EffectPath } from "effect"
 import { describe, expect, it } from "vitest"
 import type { WorkspaceRuntimeService } from "../src/Workspace/Runtime.ts"
 import { compilerOverlayFor } from "../src/Workspace/internal/CompilerOverlay.ts"
+
+const Path = Effect.runSync(Effect.provide(EffectPath.Path, NodePath.layer))
 
 const runtime = {
   ...Path,

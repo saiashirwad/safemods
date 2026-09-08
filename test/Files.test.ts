@@ -1,7 +1,8 @@
+import { hash } from "node:crypto"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import type { PlannedFileOperation } from "../src/Plan/index.ts"
-import { applyFileEdits, sha256 } from "../src/Edit.ts"
+import type { PlannedFileOperation } from "../src/Plan/TransformationPlan.ts"
+import { applyFileEdits } from "../src/Edit.ts"
 import { withProject } from "./utils/project-fixture.ts"
 import * as Draft from "../src/Draft/index.ts"
 
@@ -49,7 +50,7 @@ describe("Draft.files", () => {
           const draft = yield* Draft.files.delete(project, "src/library.ts")
           const operation = expectKind(draft.fileOperations![0]!, "delete")
           expect(operation.path).toBe("src/library.ts")
-          expect(operation.initialHash).toBe(sha256(source))
+          expect(operation.initialHash).toBe(hash("sha256", source, "hex"))
           expect(draft.evidence[0]!.id).toBe(operation.evidenceIds?.[0])
         }),
       ),

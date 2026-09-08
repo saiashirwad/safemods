@@ -1,13 +1,8 @@
-import { planHashOf } from "../../src/Plan/Codec.ts"
-import type { Json } from "../../src/Evidence.ts"
-import {
-  canonicalJson,
-  finalizePlan,
-  validatePlan,
-  type PlanInput,
-  type TransformationPlan,
-} from "../../src/Plan/index.ts"
-import { requireProjectRelativePath } from "../../src/ProjectPath.ts"
+import type { Schema } from "effect"
+import { canonicalJson } from "../../src/Evidence.ts"
+import { planHashOf, validatePlan } from "../../src/Plan/Codec.ts"
+import { finalizePlan } from "../../src/Plan/Finalize.ts"
+import type { PlanInput, TransformationPlan } from "../../src/Plan/TransformationPlan.ts"
 
 export const richInput = {
   recipe: {
@@ -38,22 +33,22 @@ export const richInput = {
     {
       kind: "create",
       projectId: "app",
-      path: requireProjectRelativePath("src/created.ts"),
+      path: "src/created.ts",
       content: "created",
       evidenceIds: ["create"],
     },
     {
       kind: "delete",
       projectId: "app",
-      path: requireProjectRelativePath("src/delete.ts"),
+      path: "src/delete.ts",
       initialHash: "delete",
       evidenceIds: ["delete"],
     },
     {
       kind: "move",
       projectId: "app",
-      path: requireProjectRelativePath("src/move.ts"),
-      toPath: requireProjectRelativePath("src/moved.ts"),
+      path: "src/move.ts",
+      toPath: "src/moved.ts",
       initialHash: "move",
       content: "moved",
       evidenceIds: ["move"],
@@ -330,7 +325,7 @@ export const validateUnknown = (candidate: unknown) =>
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- exact-structure mutations remain JSON values.
 export const encodeUnknown = (candidate: unknown): string =>
   // SAFETY: exact-structure mutations in this test remain JSON values.
-  canonicalJson(candidate as Json)
+  canonicalJson(candidate as Schema.Json)
 
 export const rehashPlan = (plan: TransformationPlan): TransformationPlan => ({
   ...plan,

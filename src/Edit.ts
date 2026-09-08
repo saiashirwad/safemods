@@ -1,18 +1,21 @@
 /** Hash-guarded text edits: construction, validation, and application. */
 import { hash } from "node:crypto"
-import { Data, Effect } from "effect"
+import { Data, Effect, Schema } from "effect"
 
-export const sha256 = (value: string): string => hash("sha256", value, "hex")
+export const NonNegativeInt = Schema.Finite.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
 
-export interface TextEdit {
-  readonly projectId: string
-  readonly fileName: string
-  readonly start: number
-  readonly end: number
-  readonly expectedTextHash: string
-  readonly newText: string
-  readonly evidenceIds: ReadonlyArray<string>
-}
+export const TextEdit = Schema.Struct({
+  projectId: Schema.String,
+  fileName: Schema.String,
+  start: NonNegativeInt,
+  end: NonNegativeInt,
+  expectedTextHash: Schema.String,
+  newText: Schema.String,
+  evidenceIds: Schema.Array(Schema.String),
+}).check(
+  Schema.makeFilter((edit) => edit.start <= edit.end, { expected: "edit.start <= edit.end" }),
+)
+export type TextEdit = typeof TextEdit.Type
 
 export const textEdit = (options: {
   readonly projectId: string
@@ -28,7 +31,7 @@ export const textEdit = (options: {
   start: options.start,
   end: options.end,
   newText: options.newText,
-  expectedTextHash: sha256(options.sourceText.slice(options.start, options.end)),
+  expectedTextHash: hash("sha256", options.sourceText.slice(options.start, options.end), "hex"),
   evidenceIds: options.evidenceIds ?? [],
 })
 
@@ -115,7 +118,7 @@ export const applyFileEdits = (
     const normalized = yield* normalizeEdits(edits)
     for (const edit of normalized) {
       if (edit.end > sourceText.length) return yield* new InvalidEdit({ edit, reason: "range" })
-      if (sha256(sourceText.slice(edit.start, edit.end)) !== edit.expectedTextHash) {
+      if (hash("sha256", sourceText.slice(edit.start, edit.end), "hex") !== edit.expectedTextHash) {
         return yield* new InvalidEdit({ edit, reason: "source-mismatch" })
       }
     }

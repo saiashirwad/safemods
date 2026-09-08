@@ -1,5 +1,5 @@
 /** Pure evaluation of durable policies and runtime verification rules. */
-import type { PlanPolicies } from "../Plan/index.ts"
+import type { PlanPolicies } from "../Plan/TransformationPlan.ts"
 import {
   type AllowedError,
   type DiagnosticDiff,
@@ -9,13 +9,13 @@ import {
   unpermittedIntroducedErrors,
 } from "../Policy.ts"
 
-export interface PolicyFailure {
+interface PolicyFailure {
   readonly policy: "matches" | "affected-files" | "diagnostics" | "idempotence"
   readonly detail: string
   readonly diagnostics?: ReadonlyArray<DiagnosticRecord> | undefined
 }
 
-export interface BuiltInPolicyInput {
+interface BuiltInPolicyInput {
   readonly policies: PlanPolicies
   readonly actualMatches?: number | undefined
   readonly affectedFiles: number
@@ -24,7 +24,6 @@ export interface BuiltInPolicyInput {
   readonly allowedErrors?: ReadonlyArray<AllowedError> | undefined
 }
 
-/** Evaluate every durable built-in policy in its established order. */
 export const evaluateBuiltInPolicies = (input: BuiltInPolicyInput): PolicyFailure | undefined => {
   const { min, max } = input.policies.matchCount
   const hasMatchBounds = min !== undefined || max !== undefined

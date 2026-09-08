@@ -1,12 +1,12 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Predicate } from "effect"
+import { Effect, Predicate, type Schema } from "effect"
 import * as Draft from "../src/Draft/index.ts"
 import * as Recipe from "../src/Recipe.ts"
 import * as Verification from "../src/Verification/index.ts"
-import type { Json } from "../src/Evidence.ts"
-import { finalizePlan, type TransformationPlan } from "../src/Plan/index.ts"
+import { finalizePlan } from "../src/Plan/Finalize.ts"
+import type { TransformationPlan } from "../src/Plan/TransformationPlan.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
 
@@ -20,8 +20,8 @@ const didMutate = (write: () => void): boolean => {
 }
 
 interface TsConfigDocument {
-  readonly compilerOptions?: Readonly<Record<string, Json>>
-  readonly include?: Json
+  readonly compilerOptions?: Readonly<Record<string, Schema.Json>>
+  readonly include?: Schema.Json
 }
 
 describe("issued verified plans and project identity", () => {

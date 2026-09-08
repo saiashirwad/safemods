@@ -19,7 +19,7 @@ import { type WorkspaceSnapshot, openSnapshotRegion } from "./SnapshotRegion.ts"
 import { compilerOverlayFor } from "./internal/CompilerOverlay.ts"
 import { WorkspaceRuntime } from "./Runtime.ts"
 
-export interface WorkspaceService {
+interface WorkspaceService {
   readonly definition: WorkspaceDefinition
   /** Absolute workspace root. Runtime configuration, not durable identity. */
   readonly root: string

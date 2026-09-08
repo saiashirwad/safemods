@@ -1,19 +1,15 @@
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect } from "effect"
-import {
-  canonicalJson,
-  finalizePlan,
-  parsePlan,
-  serializePlan,
-  type PlanInput,
-} from "../src/Plan/index.ts"
-import { canonicalJson as canonicalEvidenceJson, type Json } from "../src/Evidence.ts"
+import { Effect, type Schema } from "effect"
+import { finalizePlan } from "../src/Plan/Finalize.ts"
+import { parsePlan, serializePlan } from "../src/Plan/Codec.ts"
+import type { PlanInput } from "../src/Plan/TransformationPlan.ts"
+import { canonicalJson } from "../src/Evidence.ts"
 import { richInput } from "./utils/plan-schema.ts"
 
 describe("plan codec and canonicalization", () => {
   effect("uses the evidence canonical JSON operation for durable plan values", () =>
     Effect.sync(() => {
-      const value: Json = {
+      const value: Schema.Json = {
         outer: { zebra: [3, { beta: false, alpha: true }], alpha: null },
         alpha: "first",
       }
@@ -21,7 +17,7 @@ describe("plan codec and canonicalization", () => {
       expect(canonicalJson(value)).toBe(
         '{"alpha":"first","outer":{"alpha":null,"zebra":[3,{"alpha":true,"beta":false}]}}',
       )
-      expect(canonicalJson(value)).toBe(canonicalEvidenceJson(value))
+      expect(canonicalJson(value)).toBe(canonicalJson(value))
     }),
   )
 

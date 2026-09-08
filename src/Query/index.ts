@@ -1,10 +1,5 @@
-import { CriterionBase, type Criterion as CriterionModel } from "./Query.ts"
-
+export { Criterion } from "./Query.ts"
 export type { Query, Selection } from "./Query.ts"
 export * from "./Sources.ts"
 export * from "./Operators.ts"
 export * from "./Semantic.ts"
-
-export type Criterion<A, E = never, R = never> = CriterionModel<A, E, R>
-
-export const Criterion = CriterionBase

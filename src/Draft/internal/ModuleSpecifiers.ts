@@ -2,7 +2,6 @@
  * Module specifier rewriting for file moves.
  */
 import { posix as PathPosix } from "node:path"
-import { applyTextReplacements } from "../../Edit.ts"
 import { SyntaxKind, type Node, type SourceFile, type StringLiteral } from "typescript/unstable/ast"
 import {
   isCallExpression,
@@ -29,11 +28,6 @@ const specifierExtension = (specText: string): string => {
 const isRelativeSpecifier = (specText: string): boolean =>
   specText.startsWith("./") || specText.startsWith("../")
 
-const directoryName = (value: string): string => {
-  const dir = PathPosix.dirname(value)
-  return dir === "." ? "." : dir
-}
-
 const relativePath = (fromDir: string, toPath: string): string => {
   const rel = PathPosix.relative(fromDir, toPath)
   return rel === "" ? "." : rel
@@ -51,7 +45,7 @@ export const resolveRelativeSpecifier = (
   specText: string,
 ): string | undefined => {
   if (!isRelativeSpecifier(specText)) return undefined
-  return resolvedSpecifierPath(directoryName(importerPath), specText)
+  return resolvedSpecifierPath(PathPosix.dirname(importerPath), specText)
 }
 
 const refersToMovedModule = (resolved: string, fromBase: string, sourcePath: string): boolean => {
@@ -87,7 +81,7 @@ const rewriteMovedTargetSpecifier = (
   return withDot === specText ? undefined : withDot
 }
 
-export interface SpecifierReplacement {
+interface SpecifierReplacement {
   readonly start: number
   readonly end: number
   readonly newText: string
@@ -159,9 +153,9 @@ export const specifierReplacements = (
   fromBase: string,
   toBase: string,
 ): Array<SpecifierReplacement> => {
-  const fileDir = directoryName(relFile)
-  const sourceDir = directoryName(sourcePath)
-  const targetDir = directoryName(targetPath)
+  const fileDir = PathPosix.dirname(relFile)
+  const sourceDir = PathPosix.dirname(sourcePath)
+  const targetDir = PathPosix.dirname(targetPath)
   const replacements: Array<SpecifierReplacement> = []
   eachModuleSpecifier(file, (specifier) => {
     const specText = specifier.text
@@ -180,9 +174,3 @@ export const specifierReplacements = (
   })
   return replacements
 }
-
-/** Apply replacements to source text, highest start first so ranges stay valid. */
-export const applySpecifierReplacements = (
-  source: string,
-  replacements: Array<SpecifierReplacement>,
-): string => applyTextReplacements(source, replacements)

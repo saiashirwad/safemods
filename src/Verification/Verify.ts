@@ -7,12 +7,9 @@ import {
   type WorkspaceCompilerError,
   type WorkspaceSnapshot,
 } from "../Workspace/index.ts"
-import {
-  canonicalJson,
-  type PlanDecodeError,
-  type TransformationPlan,
-  validatePlan,
-} from "../Plan/index.ts"
+import { canonicalJson } from "../Evidence.ts"
+import type { PlanDecodeError, TransformationPlan } from "../Plan/TransformationPlan.ts"
+import { validatePlan } from "../Plan/Codec.ts"
 import {
   allowedErrorsFromRules,
   computeDiagnosticDiff,
@@ -30,7 +27,7 @@ import {
   ToolchainMismatch,
   VerificationFailure,
 } from "./Errors.ts"
-import { type PlanPreview, previewValidatedPlan } from "./Preview.ts"
+import { previewValidatedPlan } from "./Preview.ts"
 import { evaluateBuiltInPolicies, evaluateCustomRules } from "./PolicyEvaluation.ts"
 import { absoluteTarget, requireMatchingProjectIdentity } from "./SourceRevalidation.ts"
 import { issueVerifiedPlan, type VerifiedPlan } from "./VerifiedPlan.ts"
@@ -104,10 +101,6 @@ const validateRecipeForPlan = <Input, E, R>(
     return validated.value
   })
 
-export interface VerifyOptions {
-  readonly onPreview?: ((preview: PlanPreview) => Effect.Effect<void>) | undefined
-}
-
 /**
  * Verify a plan with fresh baseline and proposed compiler snapshots. This
  * operation evaluates policies and returns application authority on success.
@@ -116,7 +109,6 @@ export const verify = <Input, E, R>(
   plan: TransformationPlan,
   recipe: Recipe<Input, E, R>,
   input: Input,
-  options?: VerifyOptions | undefined,
 ): Effect.Effect<
   VerifiedPlan,
   | E
@@ -139,7 +131,6 @@ export const verify = <Input, E, R>(
     yield* requireMatchingProjectIdentity(validatedPlan, workspace.definition.projects)
     const validatedInput = yield* validateRecipeForPlan(validatedPlan, recipe, input)
     const proposed = yield* previewValidatedPlan(validatedPlan, workspace.root)
-    if (options?.onPreview !== undefined) yield* options.onPreview(proposed)
 
     const files = new Map<string, string>()
     const created = new Set<string>()
@@ -174,8 +165,6 @@ export const verify = <Input, E, R>(
           return { diagnostics, replayChanges: undefined }
         }
         const replay = yield* recipe.run(validatedInput)
-        // SAFETY: both collections are normalized recipe output. File
-        // operations are changes just like text edits for idempotence.
         return {
           diagnostics,
           replayChanges: replay.edits.length + (replay.fileOperations?.length ?? 0),

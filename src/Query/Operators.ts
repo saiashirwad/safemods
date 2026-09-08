@@ -4,13 +4,7 @@ import { Effect, Function, Predicate, Stream } from "effect"
 import type { CallExpression, Node } from "typescript/unstable/ast"
 import { isProjectFile, type ProjectFile } from "../Workspace/index.ts"
 import { testRegExp } from "../Pattern.ts"
-import {
-  type Criterion,
-  CriterionBase,
-  type Query,
-  QueryContractError,
-  type Selection,
-} from "./Query.ts"
+import { Criterion, type Query, QueryContractError, type Selection } from "./Query.ts"
 
 /** Admit only selections the criterion produces evidence for. */
 export const where = Function.dual<
@@ -54,28 +48,13 @@ export const where = Function.dual<
   ),
 )
 
-const textIncludes =
-  (pattern: string) =>
-  <A extends Node>(selection: Selection<A>) => {
-    const sourceFile = selection.value.getSourceFile()
-    const text = selection.value.getText(sourceFile)
-    return text.includes(pattern) ? { matchedText: text } : undefined
-  }
-
-const textMatchesRegExp =
-  (pattern: RegExp) =>
-  <A extends Node>(selection: Selection<A>) => {
-    const sourceFile = selection.value.getSourceFile()
-    const text = selection.value.getText(sourceFile)
-    return testRegExp(pattern, text) ? { matchedText: text } : undefined
-  }
-
 /** Admit nodes whose text matches a string or regular expression. */
 export const textMatches = <A extends Node>(pattern: string | RegExp): Criterion<A> =>
-  CriterionBase.predicate(
-    `text-matches:${String(pattern)}`,
-    pattern instanceof RegExp ? textMatchesRegExp(pattern) : textIncludes(pattern),
-  )
+  Criterion.predicate(`text-matches:${String(pattern)}`, (selection) => {
+    const text = selection.value.getText(selection.value.getSourceFile())
+    const matched = Predicate.isString(pattern) ? text.includes(pattern) : testRegExp(pattern, text)
+    return matched ? { matchedText: text } : undefined
+  })
 
 /** Selection-level predicate filter; evidence of surviving selections is preserved. */
 export const filter = Function.dual<

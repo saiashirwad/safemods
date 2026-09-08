@@ -1,12 +1,7 @@
+import { hash } from "node:crypto"
 import { Data, Effect } from "effect"
-import {
-  applyFileEdits,
-  sha256,
-  type EditConflict,
-  type InvalidEdit,
-  type TextEdit,
-} from "./Edit.ts"
-import type { PlannedFileOperation } from "./Plan/index.ts"
+import { applyFileEdits, type EditConflict, type InvalidEdit, type TextEdit } from "./Edit.ts"
+import type { PlannedFileOperation } from "./Plan/TransformationPlan.ts"
 
 /** The complete virtual filesystem state presented to an isolated compiler. */
 export interface VirtualFsSnapshot {
@@ -115,7 +110,7 @@ export const materialize = <E>(
       }
 
       const current = yield* requireExisting(operation.projectId, operation.path)
-      const actualHash = sha256(current.content)
+      const actualHash = hash("sha256", current.content, "hex")
       if (actualHash !== operation.initialHash) {
         return yield* new VirtualFsError({
           reason: "source-mismatch",

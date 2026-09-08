@@ -8,7 +8,8 @@ import type { CallExpression, Node } from "typescript/unstable/ast"
 import { executeRecipe } from "./utils/execute-recipe.ts"
 import * as Application from "../src/Application.ts"
 import * as Pattern from "../src/Pattern.ts"
-import * as Plan from "../src/Plan/index.ts"
+import * as Plan from "../src/Plan/Codec.ts"
+import type { TransformationPlan } from "../src/Plan/TransformationPlan.ts"
 import type * as Query from "../src/Query/index.ts"
 import * as Recipe from "../src/Recipe.ts"
 import type * as Verification from "../src/Verification/index.ts"
@@ -41,7 +42,7 @@ export type _CallInference = Assert<
   >
 >
 
-const _rawPlanIsNotApplicationAuthority = (plan: Plan.TransformationPlan) =>
+const _rawPlanIsNotApplicationAuthority = (plan: TransformationPlan) =>
   // @ts-expect-error — Application accepts only a Verified Plan
   Application.applyVerifiedPlan(plan)
 void _rawPlanIsNotApplicationAuthority
@@ -51,7 +52,7 @@ const _verifiedPlanIsApplicationAuthority = (verified: Verification.VerifiedPlan
 void _verifiedPlanIsApplicationAuthority
 
 const _booleanPredicate = Pattern.predicate("boolean-node", (_node: Node) => true)
-type PredicateOutput<P> = P extends Pattern.Pattern<infer _N, infer Out> ? Out : never
+type PredicateOutput<P> = P extends Pattern.Pattern<infer Out> ? Out : never
 export type _BooleanPredicateYieldsNode = Assert<
   Equal<PredicateOutput<typeof _booleanPredicate>, Node>
 >

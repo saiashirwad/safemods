@@ -1,8 +1,8 @@
 /** Verification failures at plan, recipe, policy, and workspace boundaries. */
-import { Data } from "effect"
-import type { Json } from "../Evidence.ts"
-import type { TransformationPlan } from "../Plan/index.ts"
+import { Data, type Schema } from "effect"
+import type { TransformationPlan } from "../Plan/TransformationPlan.ts"
 import type { DiagnosticRecord } from "../Policy.ts"
+import type { ConfiguredProject } from "../Workspace/index.ts"
 
 export class StalePlanError extends Data.TaggedError("StalePlanError")<{
   readonly planId: string
@@ -21,8 +21,8 @@ export class VerificationFailure extends Data.TaggedError("VerificationFailure")
 /** A plan's project identities are not the live Workspace definition. */
 export class ProjectIdentityMismatch extends Data.TaggedError("ProjectIdentityMismatch")<{
   readonly planId: string
-  readonly expected: ReadonlyArray<{ readonly id: string; readonly config: string }>
-  readonly actual: ReadonlyArray<{ readonly id: string; readonly config: string }>
+  readonly expected: ReadonlyArray<ConfiguredProject>
+  readonly actual: ReadonlyArray<ConfiguredProject>
 }> {}
 
 /** The supplied recipe is not the recipe that authored the durable plan. */
@@ -43,8 +43,8 @@ export class RecipeMismatch extends Data.TaggedError("RecipeMismatch")<{
 /** The supplied recipe input does not match the canonical input in the plan. */
 export class RecipeInputMismatch extends Data.TaggedError("RecipeInputMismatch")<{
   readonly planId: string
-  readonly expected: Json
-  readonly actual: Json
+  readonly expected: Schema.Json
+  readonly actual: Schema.Json
 }> {}
 
 /** The running toolchain is not the one that authored the durable plan. */

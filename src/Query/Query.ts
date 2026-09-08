@@ -28,7 +28,6 @@ export class QueryContractError extends Data.TaggedError("QueryContractError")<{
 }> {}
 
 export interface Criterion<A, E = never, R = never> {
-  readonly mode: "selection"
   readonly id: string
   readonly batchSize?: number
   readonly select: (
@@ -36,13 +35,9 @@ export interface Criterion<A, E = never, R = never> {
   ) => Effect.Effect<ReadonlyArray<Readonly<Record<string, EvidenceFact>> | undefined>, E, R>
 }
 
-const criterionMake = <A, E = never, R = never>(options: {
-  readonly id: string
-  readonly batchSize?: number
-  readonly select: (
-    selections: ReadonlyArray<Selection<A>>,
-  ) => Effect.Effect<ReadonlyArray<Readonly<Record<string, EvidenceFact>> | undefined>, E, R>
-}): Criterion<A, E, R> => ({ ...options, mode: "selection" })
+const criterionMake = <A, E = never, R = never>(
+  criterion: Criterion<A, E, R>,
+): Criterion<A, E, R> => criterion
 
 type PredicateOutcome = boolean | Readonly<Record<string, EvidenceFact>> | undefined
 
@@ -50,7 +45,6 @@ const criterionPredicate = <A>(
   id: string,
   predicateFn: (selection: Selection<A>) => PredicateOutcome,
 ): Criterion<A> => ({
-  mode: "selection",
   id,
   select: (selections) =>
     Effect.sync(() =>
@@ -66,7 +60,6 @@ const criterionPredicate = <A>(
 const criterionAll = <A, E, R>(
   ...criteria: ReadonlyArray<Criterion<A, E, R>>
 ): Criterion<A, E, R> => ({
-  mode: "selection",
   id: `all(${criteria.map((c) => c.id).join(", ")})`,
   select: (selections) =>
     Effect.gen(function* () {
@@ -87,7 +80,6 @@ const criterionAll = <A, E, R>(
 const criterionAny = <A, E, R>(
   ...criteria: ReadonlyArray<Criterion<A, E, R>>
 ): Criterion<A, E, R> => ({
-  mode: "selection",
   id: `any(${criteria.map((c) => c.id).join(", ")})`,
   select: (selections) =>
     Effect.gen(function* () {
@@ -107,7 +99,6 @@ const criterionAny = <A, E, R>(
 })
 
 const criterionNot = <A, E, R>(criterion: Criterion<A, E, R>): Criterion<A, E, R> => ({
-  mode: "selection",
   id: `not(${criterion.id})`,
   select: (selections) =>
     Effect.map(criterion.select(selections), (batchResults) =>
@@ -115,7 +106,7 @@ const criterionNot = <A, E, R>(criterion: Criterion<A, E, R>): Criterion<A, E, R
     ),
 })
 
-export const CriterionBase = {
+export const Criterion = {
   make: criterionMake,
   predicate: criterionPredicate,
   all: criterionAll,

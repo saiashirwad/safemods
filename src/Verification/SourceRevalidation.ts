@@ -1,41 +1,26 @@
 /** Project identity and source fingerprint revalidation. */
+import { hash } from "node:crypto"
 import { Effect, FileSystem, Path } from "effect"
-import { sha256 } from "../Edit.ts"
-import type { SourceFingerprint, TransformationPlan } from "../Plan/index.ts"
+import type { SourceFingerprint, TransformationPlan } from "../Plan/TransformationPlan.ts"
 import { resolvePlanFilePath, unsafePlanFilePathMessage } from "../ProjectPath.ts"
+import { ConfiguredProject } from "../Workspace/index.ts"
 import { ProjectIdentityMismatch, StalePlanError, VerificationFailure } from "./Errors.ts"
 
-const liveProjectIdentities = (
-  projects: ReadonlyArray<{ readonly id: string; readonly config: string }>,
-): ReadonlyArray<{ readonly id: string; readonly config: string }> =>
-  [...projects].sort((left, right) => left.id.localeCompare(right.id))
-
-const planProjectIdentities = (
-  plan: TransformationPlan,
-): ReadonlyArray<{ readonly id: string; readonly config: string }> =>
-  [...plan.projects]
-    .map((project) => ({ id: project.id, config: project.configFileName }))
-    .sort((left, right) => left.id.localeCompare(right.id))
-
-const sameIdentities = (
-  expected: ReadonlyArray<{ readonly id: string; readonly config: string }>,
-  actual: ReadonlyArray<{ readonly id: string; readonly config: string }>,
-): boolean =>
-  expected.length === actual.length &&
-  expected.every((project, index) => {
-    const counterpart = actual[index]
-    if (counterpart === undefined) return false
-    return project.id === counterpart.id && project.config === counterpart.config
-  })
-
+/** Plan projects are already sorted by id (see Plan/Codec canonicalizeContent). */
 export const requireMatchingProjectIdentity = (
   plan: TransformationPlan,
-  liveProjects: ReadonlyArray<{ readonly id: string; readonly config: string }>,
+  liveProjects: ReadonlyArray<ConfiguredProject>,
 ): Effect.Effect<void, ProjectIdentityMismatch> => {
-  const expected = liveProjectIdentities(liveProjects)
-  const actual = planProjectIdentities(plan)
-  if (sameIdentities(expected, actual)) return Effect.void
-  return Effect.fail(new ProjectIdentityMismatch({ planId: plan.planId, expected, actual }))
+  const expected = [...liveProjects].sort((left, right) => left.id.localeCompare(right.id))
+  const actual = plan.projects.map((project) =>
+    ConfiguredProject.make({ id: project.id, config: project.configFileName }),
+  )
+  const same =
+    expected.length === actual.length &&
+    expected.every((p, i) => p.id === actual[i]!.id && p.config === actual[i]!.config)
+  return same
+    ? Effect.void
+    : Effect.fail(new ProjectIdentityMismatch({ planId: plan.planId, expected, actual }))
 }
 
 export const absoluteTarget = (
@@ -57,13 +42,6 @@ export const absoluteTarget = (
     return resolved.fileName
   })
 
-const staleSource = (planId: string, source: SourceFingerprint): StalePlanError =>
-  new StalePlanError({
-    planId,
-    projectId: source.projectId,
-    fileName: source.fileName,
-  })
-
 export const revalidateSource = (
   plan: TransformationPlan,
   workspaceRoot: string,
@@ -74,7 +52,11 @@ export const revalidateSource = (
   FileSystem.FileSystem | Path.Path
 > =>
   Effect.gen(function* () {
-    const stale = staleSource(plan.planId, source)
+    const stale = new StalePlanError({
+      planId: plan.planId,
+      projectId: source.projectId,
+      fileName: source.fileName,
+    })
     const absolute = yield* absoluteTarget(plan, workspaceRoot, source.projectId, source.fileName)
     const fs = yield* FileSystem.FileSystem
     if (source.kind === "missing") {
@@ -83,6 +65,6 @@ export const revalidateSource = (
       return undefined
     }
     const content = yield* fs.readFileString(absolute).pipe(Effect.mapError(() => stale))
-    if (sha256(content) !== source.hash) return yield* stale
+    if (hash("sha256", content, "hex") !== source.hash) return yield* stale
     return content
   })

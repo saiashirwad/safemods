@@ -1,13 +1,12 @@
 /** Read-only materialization of a plan's exact proposed bytes. */
+import { hash } from "node:crypto"
 import { Effect, type FileSystem, type Path } from "effect"
-import { sha256 } from "../Edit.ts"
 import {
   isContentFingerprint,
   type PlanDecodeError,
-  type ValidatedPlan,
-  validatePlan,
   type TransformationPlan,
-} from "../Plan/index.ts"
+} from "../Plan/TransformationPlan.ts"
+import { type ValidatedPlan, validatePlan } from "../Plan/Codec.ts"
 import { type ProjectIdentityMismatch, StalePlanError, VerificationFailure } from "./Errors.ts"
 import {
   absoluteTarget,
@@ -22,11 +21,11 @@ import {
 } from "../VirtualFs.ts"
 import { Workspace } from "../Workspace/index.ts"
 
-export type FileState =
+type FileState =
   | { readonly exists: false; readonly text?: undefined; readonly hash?: undefined }
   | { readonly exists: true; readonly text: string; readonly hash: string }
 
-export interface FilePreview {
+interface FilePreview {
   readonly projectId: string
   readonly fileName: string
   /** Explicit operation and virtual existence state; empty text is valid content. */
@@ -148,10 +147,11 @@ export const previewValidatedPlan = (
 
     const filesByKey = new Map<string, FilePreview>()
     const stateOf = (text: string | undefined): FileState =>
-      text === undefined ? { exists: false } : { exists: true, text, hash: sha256(text) }
+      text === undefined
+        ? { exists: false }
+        : { exists: true, text, hash: hash("sha256", text, "hex") }
     for (const key of touched) {
-      // SAFETY: every virtualFileKey is created from exactly one project ID and file name.
-      const [projectId, fileName] = key.split("\0") as [string, string]
+      const [projectId, fileName] = targetPaths.get(key)!
       const absolute = resolvePath(projectId, fileName)
       const before = initial.get(key)
       const after = materialized.deleted.has(absolute)

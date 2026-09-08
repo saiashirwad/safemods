@@ -1,6 +1,10 @@
 /** Snapshot-region lifetime and service provisioning. */
 import { Context, Effect } from "effect"
-import type { FileChanges } from "typescript/unstable/proto"
+import type {
+  FileChangeSummary,
+  FileChanges,
+  UpdateSnapshotParams,
+} from "typescript/unstable/proto"
 import type { NativeCompiler } from "./internal/NativeCompiler.ts"
 import type { WorkspaceCompilerError } from "./NativeRequest.ts"
 import {
@@ -28,28 +32,17 @@ export class WorkspaceSnapshot extends Context.Service<
   "@safemods/WorkspaceSnapshot",
 ) {}
 
-interface NativeFileChangeLists {
-  changed?: Array<string>
-  created?: Array<string>
-  deleted?: Array<string>
-}
-
-interface OpenSnapshotParams {
-  openProjects?: Array<string>
-  fileChanges?: FileChanges
-}
-
 const toNativeChanges = (changes: WorkspaceChanges | undefined): FileChanges | undefined => {
   if (changes === undefined) return undefined
   if ("invalidateAll" in changes) return { invalidateAll: true }
-  const result: NativeFileChangeLists = {}
+  const result: FileChangeSummary = {}
   if (changes.changed !== undefined) result.changed = [...changes.changed]
   if (changes.created !== undefined) result.created = [...changes.created]
   if (changes.deleted !== undefined) result.deleted = [...changes.deleted]
   return result
 }
 
-export interface OpenSnapshotRegionOptions {
+interface OpenSnapshotRegionOptions {
   readonly regionCompiler: NativeCompiler
   readonly projects: ReadonlyArray<ConfiguredProject>
   readonly resolvedById: ReadonlyMap<string, string>
@@ -66,7 +59,7 @@ export const openSnapshotRegion = <A, E, R>(
 ): Effect.Effect<A, E | WorkspaceCompilerError, Exclude<R, WorkspaceSnapshot>> =>
   Effect.scoped(
     Effect.gen(function* () {
-      const params: OpenSnapshotParams = {}
+      const params: UpdateSnapshotParams = {}
       if (options.openProjects !== undefined) {
         params.openProjects = [...options.openProjects]
       }

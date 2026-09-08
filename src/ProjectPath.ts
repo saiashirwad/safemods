@@ -1,14 +1,6 @@
-import { Data } from "effect"
+import { type Brand, Data, type Path } from "effect"
 
-export type ProjectRelativePath = string & { readonly __projectRelativePath: unique symbol }
-
-export interface ProjectPathOperations {
-  readonly resolve: (...paths: ReadonlyArray<string>) => string
-  readonly dirname: (path: string) => string
-  readonly relative: (from: string, to: string) => string
-  readonly isAbsolute: (path: string) => boolean
-  readonly sep: string
-}
+export type ProjectRelativePath = Brand.Branded<string, "ProjectRelativePath">
 
 interface PathContainmentOptions {
   readonly includeRoot?: boolean
@@ -50,11 +42,8 @@ const canonicalPath = (value: string): string | undefined => {
   return result.length === 0 ? undefined : result.join("/")
 }
 
-export const projectRelative = (
-  path: ProjectPathOperations,
-  root: string,
-  absolute: string,
-): string => path.relative(path.resolve(root), path.resolve(absolute)).split(path.sep).join("/")
+export const projectRelative = (path: Path.Path, root: string, absolute: string): string =>
+  path.relative(path.resolve(root), path.resolve(absolute)).split(path.sep).join("/")
 
 export const parseProjectRelativePath = (value: string): ProjectRelativePath | undefined => {
   const normalized = canonicalPath(value)
@@ -72,7 +61,7 @@ export const requireProjectRelativePath = (value: string): ProjectRelativePath =
 }
 
 export const isPathContained = (
-  path: ProjectPathOperations,
+  path: Path.Path,
   root: string,
   candidate: string,
   options: PathContainmentOptions = {},
@@ -93,7 +82,7 @@ export const isPathContained = (
 }
 
 export const resolveContainedProjectPath = (
-  path: ProjectPathOperations,
+  path: Path.Path,
   projectRoot: string,
   fileName: string,
   options: PathContainmentOptions = {},
@@ -111,7 +100,7 @@ export const resolveContainedProjectPath = (
 }
 
 export const resolvePlanFilePath = (
-  path: ProjectPathOperations,
+  path: Path.Path,
   plan: PlanProjectPaths,
   workspaceRoot: string,
   projectId: string,

@@ -1,13 +1,15 @@
 import * as Fs from "node:fs/promises"
-import * as Path from "node:path"
+import { NodePath } from "@effect/platform-node"
 import { workspaceLayerNode } from "../src/Node.ts"
 import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Path as EffectPath } from "effect"
 import { ConfiguredProject, Workspace } from "../src/Workspace/index.ts"
 import { InvalidProjectRelativePath, isPathContained, projectRelative } from "../src/ProjectPath.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
+
+const Path = Effect.runSync(Effect.provide(EffectPath.Path, NodePath.layer))
 
 const stressFixture = fileURLToPath(new URL("../fixtures/stress/", import.meta.url))
 

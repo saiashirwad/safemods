@@ -15,7 +15,6 @@ export const resolvesTo = <A extends Node>(
   symbol: NativeSymbol,
   options?: { readonly location?: (candidate: A) => Node },
 ): Criterion<A, ProjectSnapshotError> => ({
-  mode: "selection",
   id: "resolves-to-symbol",
   select: (selections) =>
     Effect.gen(function* () {
@@ -112,7 +111,6 @@ export const typeAssignableTo = <A extends Node>(
 ): Criterion<A, ProjectSnapshotError> => {
   const targetLabel = isIntrinsicTypeName(target) ? target : "custom-type"
   return {
-    mode: "selection",
     id: `type-assignable-to:${targetLabel}`,
     select: (selections) =>
       eachComputedType(selections, (selection, nodeType) =>

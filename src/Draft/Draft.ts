@@ -15,17 +15,14 @@ import {
   mergeEvidence,
   type EvidenceRecord,
 } from "../Evidence.ts"
-import type { PlannedFileOperation } from "../Plan/index.ts"
+import type { PlannedFileOperation } from "../Plan/TransformationPlan.ts"
 import type { Node, SourceFile } from "typescript/unstable/ast"
 import { textEdit, type TextEdit } from "../Edit.ts"
 import type { Selection } from "../Query/index.ts"
 import type { ProjectSnapshot, SnapshotExpired } from "../Workspace/index.ts"
 
-/** An edit in pre-finalization form; identical in shape to its durable counterpart. */
-export type ProposedEdit = TextEdit
-
 export interface Draft {
-  readonly edits: ReadonlyArray<ProposedEdit>
+  readonly edits: ReadonlyArray<TextEdit>
   readonly fileOperations?: ReadonlyArray<PlannedFileOperation>
   readonly evidence: ReadonlyArray<EvidenceRecord>
   /** Number of matched source targets represented by this draft. */
@@ -79,7 +76,6 @@ export const draftForEdit = (
   }
 }
 
-/** Text edit over a half-open [start, end) range of a native source file. */
 const textEditForRange = (
   project: ProjectSnapshot,
   sourceFile: SourceFile,
@@ -96,7 +92,6 @@ const textEditForRange = (
     newText,
   })
 
-/** Draft for a source-file range, with self-contained operation evidence. */
 export const draftForRange = (
   project: ProjectSnapshot,
   sourceFile: SourceFile,
@@ -124,7 +119,6 @@ const draftForNodeRange = (
     }),
   )
 
-/** Replace a node's source range with new text. */
 export const replace = (
   project: ProjectSnapshot,
   node: Node,
@@ -135,20 +129,17 @@ export const replace = (
     end: node.getEnd(),
   }))
 
-/** Remove a node's source range entirely. */
 export const remove = (
   project: ProjectSnapshot,
   node: Node,
 ): Effect.Effect<Draft, SnapshotExpired> => replace(project, node, "")
 
-/** Insert text immediately before a node's first token. */
 export const insertBefore = (
   project: ProjectSnapshot,
   node: Node,
   text: string,
 ): Effect.Effect<Draft, SnapshotExpired> => insertAtNode(project, node, text, "before")
 
-/** Insert text immediately after a node's end. */
 export const insertAfter = (
   project: ProjectSnapshot,
   node: Node,
@@ -168,8 +159,6 @@ const insertAtNode = (
 
 /** The replacement a selection maps to: text only (replace the selected node) or an explicit target node. */
 export type Replacement = string | { readonly node: Node; readonly text: string }
-
-const isTextReplacement = (val: Replacement): val is string => Predicate.isString(val)
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Type guard boundary for candidate draft values.
 const isDraft = (value: unknown): value is Draft =>
@@ -230,8 +219,8 @@ const draftFromProposal = <A extends Node>(
     }
     return adoptReturnedDraft(selection, evidenceId, proposed)
   }
-  const node = isTextReplacement(proposed) ? selection.value : proposed.node
-  const text = isTextReplacement(proposed) ? proposed : proposed.text
+  const node = Predicate.isString(proposed) ? selection.value : proposed.node
+  const text = Predicate.isString(proposed) ? proposed : proposed.text
   return selection.project.unsafeNative(() =>
     Effect.sync(() => {
       const sourceFile = node.getSourceFile()

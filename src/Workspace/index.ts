@@ -1,4 +1,3 @@
-/** Public assembly for Workspace values, snapshot regions, and services. */
 export { ConfiguredProject, ProjectNotInSnapshot } from "./ConfiguredProject.ts"
 export type { SnapshotTransition, WorkspaceDefinition } from "./ConfiguredProject.ts"
 export {

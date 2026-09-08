@@ -1,3 +1,4 @@
+import { hash } from "node:crypto"
 import { Effect } from "effect"
 import type { DraftEvidenceConflict } from "../Evidence.ts"
 import {
@@ -11,13 +12,9 @@ import type {
   ProjectSnapshotError,
   SnapshotExpired,
 } from "../Workspace/index.ts"
-import { sha256, textEdit } from "../Edit.ts"
-import {
-  applySpecifierReplacements,
-  specifierReplacements,
-  stripModuleExtension,
-} from "./internal/ModuleSpecifiers.ts"
-import { concat, type Draft, type ProposedEdit } from "./Draft.ts"
+import { applyTextReplacements, textEdit, type TextEdit } from "../Edit.ts"
+import { specifierReplacements, stripModuleExtension } from "./internal/ModuleSpecifiers.ts"
+import { concat, type Draft } from "./Draft.ts"
 
 export const files = {
   /** Propose creating a new source file in the project with initial content. */
@@ -65,7 +62,7 @@ export const files = {
             kind: "delete",
             projectId: project.project.id,
             path,
-            initialHash: sha256(source),
+            initialHash: hash("sha256", source, "hex"),
             evidenceIds: [`file:delete:${project.project.id}:${path}`],
           },
         ],
@@ -108,7 +105,7 @@ export const files = {
             path: sourcePath,
             toPath: targetPath,
             content: source,
-            initialHash: sha256(source),
+            initialHash: hash("sha256", source, "hex"),
             evidenceIds: [moveEvidence],
           },
         ],
@@ -129,7 +126,7 @@ export const files = {
 
       const fromBase = stripModuleExtension(sourcePath)
       const toBase = stripModuleExtension(targetPath)
-      const importEdits: Array<ProposedEdit> = []
+      const importEdits: Array<TextEdit> = []
       const owned = yield* project.files
       let movedContent = source
 
@@ -145,7 +142,7 @@ export const files = {
           toBase,
         )
         if (relFile === sourcePath) {
-          movedContent = applySpecifierReplacements(source, replacements)
+          movedContent = applyTextReplacements(source, replacements)
           continue
         }
         for (const replacement of replacements) {

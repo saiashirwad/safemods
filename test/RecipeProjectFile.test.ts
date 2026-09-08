@@ -37,10 +37,14 @@ describe("recipe project-file composition", () => {
                 )
                 expect(callsInConsumer.length).toBe(1)
 
-                const importDraft = yield* Draft.imports.addNamed(consumerFile, {
-                  module: "./library.js",
-                  name: "TargetInput",
-                })
+                const importDraft = yield* Draft.imports.addNamed(
+                  consumerFile.project,
+                  consumerFile.path,
+                  {
+                    module: "./library.js",
+                    name: "TargetInput",
+                  },
+                )
 
                 const replaceDraft = yield* Draft.replaceEach(
                   callsInConsumer,

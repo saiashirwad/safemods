@@ -1,14 +1,15 @@
 /** Recipes: definition, input validation, workspace fingerprinting, and planning. */
+import { hash } from "node:crypto"
 import { Data, Effect, FileSystem, Path, Schema } from "effect"
 import type { Draft } from "./Draft/index.ts"
-import {
-  compareSourceFingerprints,
-  finalizePlan,
-  type PlanBuildError,
-  type PlanPolicies,
-  type SourceFingerprint,
-  type TransformationPlan,
-} from "./Plan/index.ts"
+import { compareSourceFingerprints } from "./Plan/Validate.ts"
+import { finalizePlan } from "./Plan/Finalize.ts"
+import type {
+  PlanBuildError,
+  PlanPolicies,
+  SourceFingerprint,
+  TransformationPlan,
+} from "./Plan/TransformationPlan.ts"
 import {
   type ProjectNotInSnapshot,
   type SnapshotExpired,
@@ -18,14 +19,8 @@ import {
   WorkspaceSnapshot,
   type WorkspaceSnapshotService,
 } from "./Workspace/index.ts"
-import { type DraftEvidenceConflict, finalizeDraftEvidence, type Json } from "./Evidence.ts"
-import { sha256 } from "./Edit.ts"
-import {
-  all as allPolicies,
-  type CompiledPolicy,
-  type Policy,
-  type VerificationRule,
-} from "./Policy.ts"
+import { type DraftEvidenceConflict, finalizeDraftEvidence } from "./Evidence.ts"
+import { all as allPolicies, type Policy, type VerificationRule } from "./Policy.ts"
 import {
   parseProjectRelativePath,
   projectRelative,
@@ -62,7 +57,7 @@ export class RecipeInputError extends Data.TaggedError("RecipeInputError")<{
 
 interface ValidatedRecipeInput<Input> {
   readonly value: Input
-  readonly encoded: Json
+  readonly encoded: Schema.Json
 }
 
 /** Validate recipe input and encode the exact durable plan options. */
@@ -84,35 +79,20 @@ export const validateRecipeInput = <Input, E, R>(
     return { value, encoded }
   }).pipe(Effect.mapError((cause) => new RecipeInputError({ recipe: recipe.name, cause })))
 
-/** Construct a recipe from durable policies and runtime rules. */
-const fromCompiled = <Input, E, R>(
-  name: string,
-  version: string,
-  compiled: CompiledPolicy,
-  run: Recipe<Input, E, R>["run"],
-  options: {
-    readonly schema?: Recipe<Input>["schema"]
-    readonly implementationHash?: string | undefined
-  } = {},
-): Recipe<Input, E, R> =>
-  Object.freeze({
-    name,
-    version,
-    schema: options.schema,
-    implementationHash: options.implementationHash ?? sha256(`${name}@${version}`),
-    policies: compiled.policy,
-    rules: compiled.rules,
-    run,
-  })
-
 export const define = <Input = undefined, E = never, R = never>(
   name: string,
   definition: RecipeDefinition<Input, E, R>,
 ): Recipe<Input, E, R> => {
   const compiled = allPolicies(definition.policies ?? [])
-  return fromCompiled(name, definition.version, compiled, definition.run, {
+  return Object.freeze({
+    name,
+    version: definition.version,
     schema: definition.schema,
-    implementationHash: definition.implementationHash,
+    implementationHash:
+      definition.implementationHash ?? hash("sha256", `${name}@${definition.version}`, "hex"),
+    policies: compiled.policy,
+    rules: compiled.rules,
+    run: definition.run,
   })
 }
 
@@ -164,7 +144,7 @@ const fingerprintWorkspace = (
         (fileName) =>
           parseProjectRelativePath(projectRelative(path, project.root, fileName)) !== undefined,
       )
-      const files = [...new Set(owned)].sort()
+      const files = [...new Set(owned)]
       const configFileName = path.resolve(workspaceRoot, configured.config)
       const contentFiles = [configFileName, ...files]
 
@@ -185,7 +165,7 @@ const fingerprintWorkspace = (
           addFingerprint(sources, {
             projectId: configured.id,
             fileName: relative,
-            hash: sha256(content),
+            hash: hash("sha256", content, "hex"),
           })
         }
       }

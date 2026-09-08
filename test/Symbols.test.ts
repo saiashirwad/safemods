@@ -90,7 +90,9 @@ describe("Draft symbol renaming", () => {
           // `other` is declared in library.ts and imported by consumer.ts.
           // The ProjectFile only scopes where the name is looked up; the
           // rename follows the symbol everywhere it would otherwise break.
-          const draft = yield* Draft.renameSymbolNamed(library!, "other", "renamedOther")
+          const draft = yield* Draft.renameSymbolNamed(library!.project, "other", "renamedOther", {
+            lookupIn: library!.path,
+          })
           expect(draft.edits.map((edit) => edit.fileName).sort()).toEqual([
             "src/consumer.ts",
             "src/library.ts",

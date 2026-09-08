@@ -14,12 +14,7 @@ import {
 } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol } from "typescript/unstable/async"
 import * as Query from "../Query/index.ts"
-import {
-  isProjectFile,
-  type ProjectFile,
-  type ProjectSnapshot,
-  type ProjectSnapshotError,
-} from "../Workspace/index.ts"
+import type { ProjectSnapshot, ProjectSnapshotError } from "../Workspace/index.ts"
 import type { DraftEvidenceConflict } from "../Evidence.ts"
 import { empty, replaceEach, type Draft, type Replacement } from "./Draft.ts"
 import { resolveRelativeSpecifier, stripModuleExtension } from "./internal/ModuleSpecifiers.ts"
@@ -212,20 +207,6 @@ export const renameSymbol = (
     )
   })
 
-export interface RenameSymbolNamedFn {
-  (
-    file: ProjectFile,
-    oldName: string,
-    newName: string,
-  ): Effect.Effect<Draft, ProjectSnapshotError | DraftEvidenceConflict>
-  (
-    project: ProjectSnapshot,
-    oldName: string,
-    newName: string,
-    options: { readonly lookupIn: string },
-  ): Effect.Effect<Draft, ProjectSnapshotError | DraftEvidenceConflict>
-}
-
 /**
  * Find a symbol by name and rename it. The file or `lookupIn` path only
  * locates which symbol the name refers to; the rename itself always applies
@@ -234,17 +215,14 @@ export interface RenameSymbolNamedFn {
  *
  * Returns `Draft.empty` if the symbol is not found (natural idempotency).
  */
-export const renameSymbolNamed: RenameSymbolNamedFn = (
-  projectOrFile: ProjectSnapshot | ProjectFile,
+export const renameSymbolNamed = (
+  project: ProjectSnapshot,
   oldName: string,
   newName: string,
-  maybeOptions?: { readonly lookupIn: string },
+  options: { readonly lookupIn: string },
 ): Effect.Effect<Draft, ProjectSnapshotError | DraftEvidenceConflict> =>
   Effect.gen(function* () {
-    const isFile = isProjectFile(projectOrFile)
-    const project = isFile ? projectOrFile.project : projectOrFile
-    const lookupIn = isFile ? projectOrFile.path : maybeOptions!.lookupIn
-    const symbolOption = yield* project.findSymbolNamed(oldName, { within: lookupIn })
+    const symbolOption = yield* project.findSymbolNamed(oldName, { within: options.lookupIn })
     if (Option.isNone(symbolOption)) {
       return empty
     }

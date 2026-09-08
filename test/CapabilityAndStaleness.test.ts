@@ -7,14 +7,19 @@ import * as Application from "../src/Application.ts"
 import * as Draft from "../src/Draft/index.ts"
 import * as Recipe from "../src/Recipe.ts"
 import * as Verification from "../src/Verification/index.ts"
-import type { TransformationPlan } from "../src/Plan/index.ts"
+import type { TransformationPlan } from "../src/Plan/TransformationPlan.ts"
 import type { DiagnosticDiff } from "../src/Policy.ts"
 import type { VerifiedPlan } from "../src/Verification/index.ts"
 import { ConfiguredProject } from "../src/Workspace/index.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
 
-type ForgedPlanValue = symbol | TransformationPlan | Verification.PlanPreview | DiagnosticDiff
+type ForgedPlanValue =
+  | symbol
+  | TransformationPlan
+  | Verification.PlanPreview
+  | DiagnosticDiff
+  | { readonly VerifiedPlan: "VerifiedPlan" }
 
 interface ForgedPlanCapability extends Partial<VerifiedPlan> {
   readonly [key: PropertyKey]: ForgedPlanValue

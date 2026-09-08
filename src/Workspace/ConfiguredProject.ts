@@ -1,37 +1,25 @@
 /** Workspace identity, definition, and snapshot-transition contracts. */
-import { Data } from "effect"
-
-const ConfiguredProjectTypeId: unique symbol = Symbol.for("@safemods/ConfiguredProject")
+import { Brand, Data } from "effect"
 
 /** A stable project identity within a Workspace. */
-export interface ConfiguredProject {
-  readonly [ConfiguredProjectTypeId]: typeof ConfiguredProjectTypeId
-  readonly id: string
-  readonly config: string
-}
+export type ConfiguredProject = Brand.Branded<
+  { readonly id: string; readonly config: string },
+  "ConfiguredProject"
+>
 
-export const ConfiguredProject = {
-  make: (options: { readonly id: string; readonly config: string }): ConfiguredProject => {
-    const project: ConfiguredProject = {
-      [ConfiguredProjectTypeId]: ConfiguredProjectTypeId,
-      id: options.id,
-      config: options.config,
-    }
-    return Object.freeze(project)
-  },
-}
+export const ConfiguredProject = { make: Brand.nominal<ConfiguredProject>() }
 
 export interface WorkspaceDefinition {
   readonly projects: readonly [ConfiguredProject, ...ReadonlyArray<ConfiguredProject>]
 }
 
-export type WorkspaceChanges =
-  | { readonly invalidateAll: true }
-  | {
-      readonly changed?: ReadonlyArray<string>
-      readonly created?: ReadonlyArray<string>
-      readonly deleted?: ReadonlyArray<string>
-    }
+export interface WorkspaceFileChanges {
+  readonly changed?: ReadonlyArray<string>
+  readonly created?: ReadonlyArray<string>
+  readonly deleted?: ReadonlyArray<string>
+}
+
+export type WorkspaceChanges = { readonly invalidateAll: true } | WorkspaceFileChanges
 
 export interface SnapshotTransition {
   readonly changes?: WorkspaceChanges

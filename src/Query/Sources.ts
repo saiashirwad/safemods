@@ -1,5 +1,5 @@
 /** Query sources over workspace snapshots and structural patterns. */
-import { Effect, Stream } from "effect"
+import { Effect, Option, Stream } from "effect"
 import {
   type CallExpression,
   type Identifier,
@@ -181,7 +181,7 @@ export const referencesTo = (
 /** Structural pattern matching query. */
 export const match = <Out>(
   target: ProjectScope,
-  pattern: Pattern<Node, Out>,
+  pattern: Pattern<Out>,
 ): Query<Out, ProjectSnapshotError> =>
   resolveScope(target).pipe(
     Stream.flatMap(({ project, fileName }) =>
@@ -198,9 +198,9 @@ export const match = <Out>(
             Stream.mapEffect((node) =>
               pattern.match(node, project).pipe(
                 Effect.map((result): Selection<Out> | undefined => {
-                  if (!result.matched) return undefined
+                  if (Option.isNone(result)) return undefined
                   return {
-                    value: result.value,
+                    value: result.value.value,
                     project,
                     fileName: relFileName,
                     start: node.getStart(sourceFile),
@@ -209,9 +209,9 @@ export const match = <Out>(
                       {
                         criterion: pattern.kind ?? "pattern-match",
                         facts:
-                          result.facts === undefined
+                          result.value.facts === undefined
                             ? { kind: syntaxKindName(node.kind) }
-                            : { kind: syntaxKindName(node.kind), ...result.facts },
+                            : { kind: syntaxKindName(node.kind), ...result.value.facts },
                       },
                     ],
                   }

@@ -1,6 +1,7 @@
+import { hash } from "node:crypto"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Exit } from "effect"
-import { applyFileEdits, normalizeEdits, sha256, textEdit, type TextEdit } from "../src/Edit.ts"
+import { applyFileEdits, normalizeEdits, textEdit, type TextEdit } from "../src/Edit.ts"
 
 const edit = (start: number, end: number, newText: string): TextEdit => ({
   projectId: "app",
@@ -8,7 +9,7 @@ const edit = (start: number, end: number, newText: string): TextEdit => ({
   start,
   end,
   newText,
-  expectedTextHash: sha256("abcdef".slice(start, end)),
+  expectedTextHash: hash("sha256", "abcdef".slice(start, end), "hex"),
   evidenceIds: [],
 })
 

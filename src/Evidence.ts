@@ -1,13 +1,5 @@
 /** Evidence records attached to plans, and their canonical identity. */
-import { Data, Effect, Predicate } from "effect"
-
-export type Json =
-  | null
-  | boolean
-  | number
-  | string
-  | ReadonlyArray<Json>
-  | { readonly [key: string]: Json }
+import { Data, Effect, Predicate, Schema } from "effect"
 
 export type EvidenceFact = string | number | boolean | null
 
@@ -16,14 +8,15 @@ export interface QueryEvidence {
   readonly facts: Readonly<Record<string, EvidenceFact>>
 }
 
-export interface EvidenceRecord {
-  readonly id: string
-  readonly kind: string
-  readonly facts: { readonly [key: string]: Json }
-}
+export const EvidenceRecord = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.String,
+  facts: Schema.Record(Schema.String, Schema.Json),
+})
+export type EvidenceRecord = typeof EvidenceRecord.Type
 
-export const canonicalJson = (value: Json): string =>
-  JSON.stringify(value, (_, v: Json) =>
+export const canonicalJson = (value: Schema.Json): string =>
+  JSON.stringify(value, (_, v: Schema.Json) =>
     Predicate.isObject(v) && !Array.isArray(v)
       ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
       : v,
@@ -65,7 +58,6 @@ interface DraftEvidenceTarget {
 }
 
 interface MissingEvidence {
-  readonly kind?: string | undefined
   readonly facts?: EvidenceRecord["facts"] | undefined
 }
 
@@ -84,7 +76,7 @@ export const finalizeDraftEvidence = <A extends DraftEvidenceTarget>(
       if (evidence.has(id)) continue
       evidence.set(id, {
         id,
-        kind: missing.kind ?? "draft-operation",
+        kind: "draft-operation",
         facts: missing.facts ?? {},
       })
     }

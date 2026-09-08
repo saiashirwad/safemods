@@ -6,18 +6,18 @@ import {
   isContentFingerprint,
   PlanBuildError,
   type PlannedFileOperation,
-  type PlanInput,
+  PlanInput,
   type SourceFingerprint,
+  strictPlanParseOptions,
   type TransformationPlan,
 } from "./TransformationPlan.ts"
-import { PlanInputSchema, strictPlanParseOptions } from "./Structure.ts"
 
 const fail = (
   reason: PlanBuildError["reason"],
   detail: string,
 ): Effect.Effect<never, PlanBuildError> => Effect.fail(new PlanBuildError({ reason, detail }))
 
-const decodePlanInput = Schema.decodeUnknownEffect(PlanInputSchema, strictPlanParseOptions)
+const decodePlanInput = Schema.decodeUnknownEffect(PlanInput, strictPlanParseOptions)
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Plan finalize I/O boundary; Schema is the parser.
 const validateInputStructure = (input: unknown): Effect.Effect<void, PlanBuildError> =>

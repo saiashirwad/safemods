@@ -1,8 +1,9 @@
 /** Native compiler filesystem options for an isolated virtual snapshot. */
+import type { Types } from "effect"
 import type { APIOptions } from "typescript/unstable/async"
 import { isPathContained } from "../../ProjectPath.ts"
 import type { VirtualFsSnapshot } from "../../VirtualFs.ts"
-import type { SnapshotTransition } from "../ConfiguredProject.ts"
+import type { SnapshotTransition, WorkspaceFileChanges } from "../ConfiguredProject.ts"
 import type { WorkspaceRuntimeService } from "../Runtime.ts"
 
 export interface CompilerOverlay {
@@ -10,13 +11,6 @@ export interface CompilerOverlay {
   readonly transition: SnapshotTransition
 }
 
-interface WorkspaceFileChanges {
-  changed?: ReadonlyArray<string>
-  created?: ReadonlyArray<string>
-  deleted?: ReadonlyArray<string>
-}
-
-/** Build the compiler overlay without writing to the workspace. */
 export const compilerOverlayFor = (
   runtime: WorkspaceRuntimeService,
   apiOptions: APIOptions,
@@ -82,7 +76,7 @@ export const compilerOverlayFor = (
   const changed = [...overlay.files.keys()].filter(
     (path) => !created.has(path) && !deleted.has(path),
   )
-  const fileChanges: WorkspaceFileChanges = {}
+  const fileChanges: Types.Mutable<WorkspaceFileChanges> = {}
   if (changed.length > 0) fileChanges.changed = changed
   if (created.size > 0) fileChanges.created = [...created]
   if (deleted.size > 0) fileChanges.deleted = [...deleted]
