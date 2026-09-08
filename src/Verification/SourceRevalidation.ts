@@ -6,7 +6,7 @@ import { resolvePlanFilePath, unsafePlanFilePathMessage } from "../ProjectPath.t
 import { ConfiguredProject } from "../Workspace/index.ts"
 import { ProjectIdentityMismatch, StalePlanError, VerificationFailure } from "./Errors.ts"
 
-/** Plan projects are already sorted by id (see Plan/Codec canonicalizeContent). */
+/** Plan projects are already sorted by id (see Plan/Finalize canonicalizeContent). */
 export const requireMatchingProjectIdentity = (
   plan: TransformationPlan,
   liveProjects: ReadonlyArray<ConfiguredProject>,

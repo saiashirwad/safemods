@@ -1,7 +1,5 @@
 import { hash } from "node:crypto"
 import { Effect, Schema } from "effect"
-import { parseProjectRelativePath } from "../ProjectPath.ts"
-import { compareEdits } from "../Edit.ts"
 import { canonicalJson } from "../Evidence.ts"
 import {
   PlanDecodeError,
@@ -9,12 +7,7 @@ import {
   strictPlanParseOptions,
   TransformationPlan,
 } from "./TransformationPlan.ts"
-import {
-  compareFileOperations,
-  compareIds,
-  compareSourceFingerprints,
-  validateDecodedPlan,
-} from "./Validate.ts"
+import { validateDecodedPlan } from "./Validate.ts"
 
 declare const ValidatedPlanTypeId: unique symbol
 export type ValidatedPlan = TransformationPlan & {
@@ -32,49 +25,6 @@ const asEncodedJson = (
 ): Schema.Json =>
   // SAFETY: plan schemas contain only JSON values.
   value as Schema.Json
-
-export const canonicalizeContent = (input: PlanInput): PlanInput => {
-  const projects = input.projects
-    .map((project) => ({
-      ...project,
-      configFileName: parseProjectRelativePath(project.configFileName)!,
-    }))
-    .sort(compareIds)
-  const sources = input.sources
-    .map((source) => ({
-      ...source,
-      fileName: parseProjectRelativePath(source.fileName)!,
-    }))
-    .sort(compareSourceFingerprints)
-  const edits = input.edits
-    .map((edit) => ({
-      ...edit,
-      fileName: parseProjectRelativePath(edit.fileName)!,
-      evidenceIds: [...edit.evidenceIds].sort(),
-    }))
-    .sort(compareEdits)
-  const evidence = [...input.evidence].sort(compareIds)
-  const fileOperations = input.fileOperations
-    ?.map((operation) =>
-      operation.kind === "move"
-        ? {
-            ...operation,
-            path: parseProjectRelativePath(operation.path)!,
-            toPath: parseProjectRelativePath(operation.toPath)!,
-            evidenceIds:
-              operation.evidenceIds === undefined ? undefined : [...operation.evidenceIds].sort(),
-          }
-        : {
-            ...operation,
-            path: parseProjectRelativePath(operation.path)!,
-            evidenceIds:
-              operation.evidenceIds === undefined ? undefined : [...operation.evidenceIds].sort(),
-          },
-    )
-    .sort(compareFileOperations)
-  const content = { ...input, projects, sources, edits, evidence }
-  return fileOperations === undefined ? content : { ...content, fileOperations }
-}
 
 export const snapshotHashOf = ({
   projects,
