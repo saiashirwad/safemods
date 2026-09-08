@@ -57,9 +57,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
 
                 const typedCallPattern = Pattern.callExpression({
                   expression: Pattern.any,
-                  arguments: Pattern.tuple([
-                    Pattern.bind("arg", Pattern.typed({ assignableTo: "number" })),
-                  ]),
+                  arguments: Pattern.tuple([Pattern.bind("arg", Pattern.any)]),
                 })
 
                 const matches = yield* Query.match(project, typedCallPattern).pipe(Query.collect)

@@ -10,5 +10,3 @@ export type {
 } from "./Pattern.ts"
 export * from "./Expressions.ts"
 export * from "./Declarations.ts"
-export * from "./ControlFlow.ts"
-export * from "./Semantic.ts"
