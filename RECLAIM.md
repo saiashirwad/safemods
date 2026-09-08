@@ -4,6 +4,8 @@ Working document, 2026-09-08. Written from the code at commit `021b56e`, the aud
 
 Claims marked **(verified)** were checked by hand against source or `node_modules`. Everything else is from reading and should be re-checked as you reach that file.
 
+> **Status 2026-09-08, after cleanup commits b0fb461..817633b:** Cli, bin, examples, Overlay, Recipe combinators (pipe/all/branch/when), Execution, Query/Relations, Pattern ControlFlow and typed, the unused Query criteria, and imports.updateSource are removed. Tests now live in test/ with helpers in test/utils/. The module table in section 4 predates this and lists some modules that no longer exist.
+
 ---
 
 ## 1. The one idea
