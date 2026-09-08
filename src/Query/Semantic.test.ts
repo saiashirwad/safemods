@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Option } from "effect"
-import { SyntaxKind, type FunctionDeclaration, type NumericLiteral } from "typescript/unstable/ast"
-import { isFunctionDeclaration, isNumericLiteral } from "typescript/unstable/ast/is"
+import { SyntaxKind, type NumericLiteral } from "typescript/unstable/ast"
+import { isNumericLiteral } from "typescript/unstable/ast/is"
 import type { ProjectSnapshot } from "../Workspace/index.ts"
 import { withProject } from "../test/project-fixture.ts"
 import * as Query from "./index.ts"
@@ -27,59 +27,10 @@ const SEM_SOURCE = [
 const inSem = <A, E, R>(self: Query.Query<A, E, R>): Query.Query<A, E, R> =>
   Query.within(self, "src/sem.ts")
 
-const functionNames = (project: ProjectSnapshot) =>
-  Query.nodes<FunctionDeclaration>(
-    project,
-    isFunctionDeclaration,
-    SyntaxKind.FunctionDeclaration,
-  ).pipe(inSem)
-
 const numericLiterals = (project: ProjectSnapshot) =>
   Query.nodes<NumericLiteral>(project, isNumericLiteral, SyntaxKind.NumericLiteral).pipe(inSem)
 
 describe("Query semantic criteria", () => {
-  effect(
-    "hasJSDocTag admits nodes carrying the tag, with or without the @ prefix",
-    () =>
-      withProject({ "src/sem.ts": SEM_SOURCE }, (project) =>
-        Effect.gen(function* () {
-          const deprecated = yield* functionNames(project).pipe(
-            Query.where(Query.hasJSDocTag("deprecated")),
-            Query.collect,
-          )
-          expect(
-            deprecated.map((selection) => selection.value.name?.text ?? "<anonymous>"),
-          ).toEqual(["oldThing"])
-
-          const prefixed = yield* functionNames(project).pipe(
-            Query.where(Query.hasJSDocTag("@deprecated")),
-            Query.collect,
-          )
-          expect(prefixed.map((selection) => selection.value.name?.text ?? "<anonymous>")).toEqual([
-            "oldThing",
-          ])
-        }),
-      ),
-    60_000,
-  )
-
-  effect(
-    "isExported admits only declarations with an export modifier",
-    () =>
-      withProject({ "src/sem.ts": SEM_SOURCE }, (project) =>
-        Effect.gen(function* () {
-          const exported = yield* functionNames(project).pipe(
-            Query.where(Query.isExported()),
-            Query.collect,
-          )
-          expect(
-            exported.map((selection) => selection.value.name?.text ?? "<anonymous>").sort(),
-          ).toEqual(["nextThing", "oldThing"])
-        }),
-      ),
-    60_000,
-  )
-
   effect(
     "referencesTo finds canonical occurrences of a resolved symbol",
     () =>
@@ -137,30 +88,6 @@ describe("Query semantic criteria", () => {
             Query.collect,
           )
           expect(strings).toEqual([])
-        }),
-      ),
-    60_000,
-  )
-
-  effect(
-    "typeSatisfies admits nodes whose computed type passes the predicate",
-    () =>
-      withProject({ "src/sem.ts": SEM_SOURCE }, (project) =>
-        Effect.gen(function* () {
-          const satisfied = yield* numericLiterals(project).pipe(
-            Query.where(
-              Query.typeSatisfies("numeric-text", (_type, rendered) =>
-                Number.isFinite(Number(rendered)),
-              ),
-            ),
-            Query.collect,
-          )
-          expect(satisfied.length).toBeGreaterThan(0)
-          expect(
-            satisfied.every(
-              (selection) => selection.evidence.at(-1)?.criterion === "type-satisfies:numeric-text",
-            ),
-          ).toBe(true)
         }),
       ),
     60_000,

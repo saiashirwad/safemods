@@ -1,11 +1,11 @@
 /** TypeScript semantic and declaration criteria. */
 import { Effect } from "effect"
-import { getJSDocTags, SyntaxKind, type Node } from "typescript/unstable/ast"
+import type { Node } from "typescript/unstable/ast"
 import type { Symbol as NativeSymbol, Type as NativeType } from "typescript/unstable/async"
 import type { ProjectSnapshotError } from "../Workspace/index.ts"
 import { isIntrinsicTypeName, type IntrinsicTypeName } from "../Workspace/ProjectSnapshot.ts"
 import type { EvidenceFact } from "../Evidence/Evidence.ts"
-import { CriterionBase, type Criterion, type Selection } from "./Query.ts"
+import type { Criterion, Selection } from "./Query.ts"
 
 /**
  * Admit nodes that resolve to the given canonical symbol, through import
@@ -64,33 +64,6 @@ export const resolvesTo = <A extends Node>(
       return facts
     }),
 })
-
-/** Admit nodes that have a specific JSDoc tag (e.g. `@deprecated`, `@internal`). */
-export const hasJSDocTag = <A extends Node>(tagName: string): Criterion<A> =>
-  CriterionBase.predicate(`jsdoc-tag:${tagName}`, (selection) => {
-    const normalizedTag = tagName.replace(/^@/, "")
-    const tags = getJSDocTags(selection.value)
-    const match = tags.find((t) => t.tagName.text === normalizedTag)
-    return match !== undefined ? { tag: normalizedTag } : undefined
-  })
-
-interface NodeWithModifiers extends Node {
-  readonly modifiers?: ReadonlyArray<{ readonly kind: SyntaxKind }>
-}
-
-const hasModifiers = (node: Node): node is NodeWithModifiers => "modifiers" in node
-
-const readModifiers = (node: Node): ReadonlyArray<{ readonly kind: SyntaxKind }> | undefined =>
-  hasModifiers(node) ? node.modifiers : undefined
-
-/** Admit nodes that have an export modifier. */
-export const isExported = <A extends Node>(): Criterion<A> =>
-  CriterionBase.predicate("is-exported", (selection) => {
-    const modifiers = readModifiers(selection.value)
-    const hasExport =
-      modifiers?.some((modifier) => modifier.kind === SyntaxKind.ExportKeyword) ?? false
-    return hasExport ? { exported: true } : undefined
-  })
 
 /**
  * Compute the TypeScript type of each selection's node in order, skipping
@@ -157,18 +130,3 @@ export const typeAssignableTo = <A extends Node>(
       ),
   }
 }
-
-/** Admit nodes whose computed type satisfies a custom predicate. */
-export const typeSatisfies = <A extends Node>(
-  id: string,
-  predicate: (type: NativeType, typeString: string) => boolean,
-): Criterion<A, ProjectSnapshotError> => ({
-  mode: "selection",
-  id: `type-satisfies:${id}`,
-  select: (selections) =>
-    eachComputedType(selections, (selection, nodeType) =>
-      Effect.map(selection.project.typeToString(nodeType), (typeStr) =>
-        predicate(nodeType, typeStr) ? { type: typeStr, predicate: id } : undefined,
-      ),
-    ),
-})
