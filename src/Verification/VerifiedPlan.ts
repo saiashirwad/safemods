@@ -1,7 +1,7 @@
 /** Process-local capability that grants application authority. */
 import { Predicate } from "effect"
 import type { ValidatedPlan } from "../Plan/index.ts"
-import type { DiagnosticDiff } from "../Policy/index.ts"
+import type { DiagnosticDiff } from "../Policy.ts"
 import type { PlanPreview } from "./Preview.ts"
 
 // Process-local token. Symbol.for would be forgeable across the isolate.

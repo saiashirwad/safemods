@@ -1,4 +1,5 @@
-import { path as Path, nodeFsPromises as Fs } from "../src/platform/node.ts"
+import * as Fs from "node:fs/promises"
+import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Predicate } from "effect"
 import * as Draft from "../src/Draft/index.ts"

@@ -10,7 +10,7 @@ import {
 } from "typescript/unstable/ast"
 import { isCallExpression, isIdentifier, isImportDeclaration } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol } from "typescript/unstable/async"
-import { requireProjectRelativePath } from "../ProjectPath/index.ts"
+import { requireProjectRelativePath } from "../ProjectPath.ts"
 import {
   isProjectFile,
   type ProjectFile,

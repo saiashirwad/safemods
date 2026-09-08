@@ -8,7 +8,7 @@ import {
   type PlanInput,
   type TransformationPlan,
 } from "../../src/Plan/index.ts"
-import { requireProjectRelativePath } from "../../src/ProjectPath/index.ts"
+import { requireProjectRelativePath } from "../../src/ProjectPath.ts"
 
 export const richInput = {
   recipe: {

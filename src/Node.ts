@@ -1,12 +1,19 @@
+/**
+ * Node composition boundary: the one module that touches Node APIs directly.
+ *
+ * Library code depends on `FileSystem.FileSystem`, `Path.Path`, and
+ * `WorkspaceRuntime`; this module provides their Node implementations.
+ */
+import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import * as Fs from "node:fs"
 import * as Path from "node:path"
 import { Layer } from "effect"
 import type { APIOptions } from "typescript/unstable/async"
-import type { WorkspaceDefinition } from "../Workspace/index.ts"
-import { layer as workspaceLayer } from "../Workspace/Service.ts"
-import { WorkspaceRuntime } from "../Workspace/Runtime.ts"
+import type { WorkspaceDefinition } from "./Workspace/index.ts"
+import { layer as workspaceLayer } from "./Workspace/Service.ts"
+import { WorkspaceRuntime } from "./Workspace/Runtime.ts"
 
-export const workspaceRuntimeLayer = Layer.sync(WorkspaceRuntime, () =>
+const workspaceRuntimeLayer = Layer.sync(WorkspaceRuntime, () =>
   WorkspaceRuntime.of({
     resolve: (...paths) => Path.resolve(...paths),
     dirname: Path.dirname,
@@ -57,3 +64,6 @@ export const workspaceRuntimeLayer = Layer.sync(WorkspaceRuntime, () =>
 
 export const workspaceLayerNode = (definition: WorkspaceDefinition, options: APIOptions = {}) =>
   workspaceLayer(definition, options).pipe(Layer.provide(workspaceRuntimeLayer))
+
+/** Every Node service the library needs: filesystem, path, and workspace runtime. */
+export const layer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, workspaceRuntimeLayer)

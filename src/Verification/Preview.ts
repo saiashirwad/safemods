@@ -19,7 +19,7 @@ import {
   virtualFileKey,
   type VirtualFsInitialFile,
   VirtualFsError,
-} from "../VirtualFs/index.ts"
+} from "../VirtualFs.ts"
 import { Workspace } from "../Workspace/index.ts"
 
 export type FileState =

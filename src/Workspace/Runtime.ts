@@ -1,6 +1,6 @@
 /** Synchronous host operations required by TypeScript compiler callbacks. */
 import { Context } from "effect"
-import type { ProjectPathOperations } from "../ProjectPath/index.ts"
+import type { ProjectPathOperations } from "../ProjectPath.ts"
 
 export interface WorkspaceDirectoryEntries {
   readonly files: ReadonlyArray<string>

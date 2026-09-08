@@ -2,7 +2,7 @@
 import type { Effect, Schema } from "effect"
 import type { Draft } from "../Draft/index.ts"
 import type { PlanPolicies } from "../Plan/index.ts"
-import type { Policy, VerificationRule } from "../Policy/index.ts"
+import type { Policy, VerificationRule } from "../Policy.ts"
 import type { Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"
 
 /**

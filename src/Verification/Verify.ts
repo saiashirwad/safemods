@@ -17,10 +17,10 @@ import {
   allowedErrorsFromRules,
   computeDiagnosticDiff,
   type PolicyEvaluationContext,
-} from "../Policy/index.ts"
+} from "../Policy.ts"
 import { TOOLCHAIN, type Recipe } from "../Recipe/index.ts"
 import { validateRecipeInput } from "../Recipe/Input.ts"
-import type { VirtualFsSnapshot } from "../VirtualFs/index.ts"
+import type { VirtualFsSnapshot } from "../VirtualFs.ts"
 import { collectDiagnostics } from "./Diagnostics.ts"
 import {
   PolicyMismatch,

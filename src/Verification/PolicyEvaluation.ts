@@ -7,7 +7,7 @@ import {
   type PolicyEvaluationContext,
   type VerificationRule,
   unpermittedIntroducedErrors,
-} from "../Policy/index.ts"
+} from "../Policy.ts"
 
 export interface PolicyFailure {
   readonly policy: "matches" | "affected-files" | "diagnostics" | "idempotence"

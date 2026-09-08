@@ -1,7 +1,6 @@
 /** Recipe execution from input to a durable Plan. */
 import { Effect, type FileSystem, type Path } from "effect"
 import { finalizeDraftEvidence, type DraftEvidenceConflict } from "../Evidence/index.ts"
-import { SYSTEM_VERSION } from "../generated/version.ts"
 import { finalizePlan, type PlanBuildError, type TransformationPlan } from "../Plan/index.ts"
 import {
   Workspace,
@@ -17,7 +16,7 @@ import type { Recipe } from "./Recipe.ts"
 
 /** Toolchain identity recorded in each Plan. */
 export const TOOLCHAIN = {
-  systemVersion: SYSTEM_VERSION,
+  systemVersion: "0.2.0",
   typescriptVersion: "7.0.2",
   effectVersion: "4.0.0-rc.109",
 } as const

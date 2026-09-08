@@ -6,7 +6,7 @@ import {
   parseProjectRelativePath,
   projectRelative,
   type ProjectRelativePath,
-} from "../ProjectPath/index.ts"
+} from "../ProjectPath.ts"
 import type {
   ProjectNotInSnapshot,
   SnapshotExpired,

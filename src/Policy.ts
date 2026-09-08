@@ -1,4 +1,4 @@
-import type { PlanPolicies } from "../Plan/index.ts"
+import type { PlanPolicies } from "./Plan/index.ts"
 
 export interface DiagnosticRecord {
   readonly code: number | string

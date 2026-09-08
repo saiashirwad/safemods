@@ -4,12 +4,15 @@ import { dirname, relative, resolve, sep } from "node:path"
 const TYPESCRIPT_SOURCE = /\.(?:[cm]?ts|tsx)$/
 const TYPESCRIPT_TEST = /\.test\.(?:[cm]?ts|tsx)$/
 
+/** `src/Plan/Codec.ts` and `src/Policy.ts` are both owned by their first segment, minus extension. */
+const ownerName = (segment) => segment.replace(TYPESCRIPT_SOURCE, "")
+
 export const architectureLayers = [
-  ["Edit", "Evidence", "Plan", "Policy", "ProjectPath", "VirtualFs", "generated"],
+  ["Edit", "Evidence", "Plan", "Policy", "ProjectPath", "VirtualFs"],
   ["Pattern", "Query", "Workspace"],
   ["Draft"],
   ["Application", "Recipe", "Verification"],
-  ["Node", "platform"],
+  ["Node"],
 ]
 
 const layerByOwner = new Map(
@@ -31,7 +34,6 @@ const exactDependencies = new Map([
       "ProjectPath",
       "VirtualFs",
       "Workspace",
-      "generated",
     ]),
   ],
   [
@@ -72,7 +74,7 @@ const ownerOf = (repositoryRoot, file) => {
   const sourceRoot = resolve(repositoryRoot, "src")
   const sourceRelative = relative(sourceRoot, file)
   if (!sourceRelative.startsWith(`..${sep}`) && sourceRelative !== "..") {
-    return sourceRelative.split(sep)[0]
+    return ownerName(sourceRelative.split(sep)[0])
   }
   return undefined
 }
@@ -83,7 +85,7 @@ const targetDetails = (repositoryRoot, file, specifier) => {
   const sourceRelative = relative(sourceRoot, target)
   if (!sourceRelative.startsWith(`..${sep}`) && sourceRelative !== "..") {
     return {
-      owner: sourceRelative.split(sep)[0],
+      owner: ownerName(sourceRelative.split(sep)[0]),
       parts: sourceRelative.split(sep),
     }
   }

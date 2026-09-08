@@ -1,7 +1,7 @@
 /** Compiler diagnostic collection and normalization. */
 import { Effect } from "effect"
 import { DiagnosticCategory, type Diagnostic } from "typescript/unstable/async"
-import { diagnosticIdentity, type DiagnosticRecord } from "../Policy/index.ts"
+import { diagnosticIdentity, type DiagnosticRecord } from "../Policy.ts"
 import { WorkspaceSnapshot } from "../Workspace/index.ts"
 import { nativeRequest } from "../Workspace/NativeRequest.ts"
 

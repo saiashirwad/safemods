@@ -1,14 +1,11 @@
-import { nodeFsPromises as Fs, path as Path } from "../src/platform/node.ts"
+import * as Fs from "node:fs/promises"
+import * as Path from "node:path"
+import { workspaceLayerNode } from "../src/Node.ts"
 import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { ConfiguredProject, Workspace } from "../src/Workspace/index.ts"
-import {
-  InvalidProjectRelativePath,
-  isPathContained,
-  projectRelative,
-} from "../src/ProjectPath/index.ts"
-import { workspaceLayerNode } from "../src/Node/index.ts"
+import { InvalidProjectRelativePath, isPathContained, projectRelative } from "../src/ProjectPath.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
 

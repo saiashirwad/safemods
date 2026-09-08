@@ -1,12 +1,7 @@
 import { Data, Effect } from "effect"
-import {
-  applyFileEdits,
-  type EditConflict,
-  type InvalidEdit,
-  type TextEdit,
-} from "../Edit/index.ts"
-import { sha256 } from "../Edit/Hash.ts"
-import type { PlannedFileOperation } from "../Plan/index.ts"
+import { applyFileEdits, type EditConflict, type InvalidEdit, type TextEdit } from "./Edit/index.ts"
+import { sha256 } from "./Edit/Hash.ts"
+import type { PlannedFileOperation } from "./Plan/index.ts"
 
 /** The complete virtual filesystem state presented to an isolated compiler. */
 export interface VirtualFsSnapshot {

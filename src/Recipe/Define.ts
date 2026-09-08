@@ -1,7 +1,7 @@
 /** Recipe construction. */
 import { sha256 } from "../Edit/Hash.ts"
-import * as Policy from "../Policy/index.ts"
-import type { CompiledPolicy } from "../Policy/index.ts"
+import * as Policy from "../Policy.ts"
+import type { CompiledPolicy } from "../Policy.ts"
 import type { Recipe, RecipeDefinition } from "./Recipe.ts"
 
 /** Construct a recipe from durable policies and runtime rules. */

@@ -7,8 +7,8 @@ import {
   InvalidProjectRelativePath,
   isPathContained,
   parseProjectRelativePath,
-} from "../ProjectPath/index.ts"
-import type { VirtualFsSnapshot } from "../VirtualFs/index.ts"
+} from "../ProjectPath.ts"
+import type { VirtualFsSnapshot } from "../VirtualFs.ts"
 import {
   DuplicateConfiguredProject,
   type ProjectNotInSnapshot,

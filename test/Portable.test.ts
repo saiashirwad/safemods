@@ -1,4 +1,4 @@
-import { path as Path } from "../src/platform/node.ts"
+import * as Path from "node:path"
 import { describe, expect, it } from "vitest"
 import {
   InvalidProjectRelativePath,
@@ -7,7 +7,7 @@ import {
   parseProjectRelativePath,
   requireProjectRelativePath,
   resolveContainedProjectPath,
-} from "../src/ProjectPath/index.ts"
+} from "../src/ProjectPath.ts"
 
 describe("portable project paths", () => {
   it("normalizes portable relative paths", () => {

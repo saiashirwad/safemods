@@ -6,7 +6,7 @@
 import { Effect } from "effect"
 import { isStringLiteral } from "typescript/unstable/ast/is"
 import * as Draft from "../../src/Draft/index.ts"
-import * as Policy from "../../src/Policy/index.ts"
+import * as Policy from "../../src/Policy.ts"
 import * as Query from "../../src/Query/index.ts"
 import * as Recipe from "../../src/Recipe/index.ts"
 import { type ConfiguredProject, WorkspaceSnapshot } from "../../src/Workspace/index.ts"

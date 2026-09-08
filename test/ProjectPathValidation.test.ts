@@ -1,6 +1,6 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import { parseProjectRelativePath } from "../src/ProjectPath/index.ts"
+import { parseProjectRelativePath } from "../src/ProjectPath.ts"
 
 describe("plan project path validation", () => {
   effect("rejects unsafe project-relative path spellings", () =>

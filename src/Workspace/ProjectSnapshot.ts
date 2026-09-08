@@ -23,7 +23,7 @@ import {
   requireProjectRelativePath,
   resolveContainedProjectPath,
   type ProjectRelativePath,
-} from "../ProjectPath/index.ts"
+} from "../ProjectPath.ts"
 import type { ConfiguredProject } from "./ConfiguredProject.ts"
 import type { WorkspaceRuntimeService } from "./Runtime.ts"
 

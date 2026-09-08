@@ -1,4 +1,5 @@
-import { path as Path, nodeFsPromises as Fs } from "../../src/platform/node.ts"
+import * as Fs from "node:fs/promises"
+import * as Path from "node:path"
 import { Effect } from "effect"
 import {
   Workspace,

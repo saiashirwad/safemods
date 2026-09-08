@@ -4,7 +4,7 @@ import {
   InvalidProjectRelativePath,
   parseProjectRelativePath,
   type ProjectRelativePath,
-} from "../ProjectPath/index.ts"
+} from "../ProjectPath.ts"
 import type {
   FileNotFound,
   ProjectSnapshot,

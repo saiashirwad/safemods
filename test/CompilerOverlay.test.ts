@@ -1,4 +1,4 @@
-import { path as Path } from "../src/platform/node.ts"
+import * as Path from "node:path"
 import { describe, expect, it } from "vitest"
 import type { WorkspaceRuntimeService } from "../src/Workspace/Runtime.ts"
 import { compilerOverlayFor } from "../src/Workspace/internal/CompilerOverlay.ts"

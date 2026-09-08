@@ -1,8 +1,8 @@
-import { nodeFsPromises as Fs } from "../../src/platform/node.ts"
+import * as Fs from "node:fs/promises"
+import { layer as nodeLayer, workspaceLayerNode } from "../../src/Node.ts"
 import { fileURLToPath } from "node:url"
 import type { APIOptions } from "typescript/unstable/async"
 import { Effect, Layer, type FileSystem, type Path } from "effect"
-import { layer as nodeLayer, workspaceLayerNode } from "../../src/Node/index.ts"
 import {
   ConfiguredProject,
   type Workspace,

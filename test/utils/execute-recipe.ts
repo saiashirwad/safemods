@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { applyVerifiedPlan } from "../../src/Application/index.ts"
+import { applyVerifiedPlan } from "../../src/Application.ts"
 import { run, type Recipe } from "../../src/Recipe/index.ts"
 import { verify } from "../../src/Verification/index.ts"
 

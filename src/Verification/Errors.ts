@@ -2,7 +2,7 @@
 import { Data } from "effect"
 import type { Json } from "../Evidence/index.ts"
 import type { TransformationPlan } from "../Plan/index.ts"
-import type { DiagnosticRecord } from "../Policy/index.ts"
+import type { DiagnosticRecord } from "../Policy.ts"
 
 export class StalePlanError extends Data.TaggedError("StalePlanError")<{
   readonly planId: string

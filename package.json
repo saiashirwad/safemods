@@ -9,8 +9,8 @@
   "sideEffects": false,
   "exports": {
     "./Application": {
-      "types": "./dist/src/Application/index.d.ts",
-      "default": "./dist/src/Application/index.js"
+      "types": "./dist/src/Application.d.ts",
+      "default": "./dist/src/Application.js"
     },
     "./Draft": {
       "types": "./dist/src/Draft/index.d.ts",
@@ -21,8 +21,8 @@
       "default": "./dist/src/Pattern/index.js"
     },
     "./Policy": {
-      "types": "./dist/src/Policy/index.d.ts",
-      "default": "./dist/src/Policy/index.js"
+      "types": "./dist/src/Policy.d.ts",
+      "default": "./dist/src/Policy.js"
     },
     "./Query": {
       "types": "./dist/src/Query/index.d.ts",
@@ -41,12 +41,12 @@
       "default": "./dist/src/Workspace/index.js"
     },
     "./Node": {
-      "types": "./dist/src/Node/index.d.ts",
-      "default": "./dist/src/Node/index.js"
+      "types": "./dist/src/Node.d.ts",
+      "default": "./dist/src/Node.js"
     }
   },
   "scripts": {
-    "build": "node tools/generate-version.mjs && rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "prepack": "pnpm build",
     "check": "pnpm fmt:check && pnpm typecheck && pnpm effect:check && pnpm lint && pnpm test && pnpm test:package",
     "check:fast": "pnpm fmt:check && pnpm typecheck && pnpm effect:check && pnpm lint",

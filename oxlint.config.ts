@@ -351,7 +351,6 @@ export default defineConfig({
               "../Draft/*",
               "../Edit/*",
               "../Plan/*",
-              "../Overlay/*",
               "../Verification/*",
               "../Application/*",
             ],
@@ -385,7 +384,7 @@ export default defineConfig({
       },
     },
     {
-      files: ["bin/**/*.ts", "tools/**/*.mjs", "examples/**/*.ts"],
+      files: ["tools/**/*.mjs"],
       rules: {
         // These are human-facing scripts and examples; console output is
         // their API rather than application Effect logging.

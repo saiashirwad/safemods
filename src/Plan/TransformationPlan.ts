@@ -1,7 +1,7 @@
 import { Data } from "effect"
 import type { TextEdit } from "../Edit/TextEdit.ts"
 import type { EvidenceRecord, Json } from "../Evidence/Evidence.ts"
-import type { ProjectRelativePath } from "../ProjectPath/index.ts"
+import type { ProjectRelativePath } from "../ProjectPath.ts"
 
 export interface ProjectEvidence {
   readonly id: string

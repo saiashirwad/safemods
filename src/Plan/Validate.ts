@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import { compareEdits, editsConflict } from "../Edit/index.ts"
-import { virtualFileKey } from "../VirtualFs/index.ts"
-import { parseProjectRelativePath, type ProjectRelativePath } from "../ProjectPath/index.ts"
+import { virtualFileKey } from "../VirtualFs.ts"
+import { parseProjectRelativePath, type ProjectRelativePath } from "../ProjectPath.ts"
 import {
   isContentFingerprint,
   PlanBuildError,

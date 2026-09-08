@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { DiagnosticDiff, PolicyEvaluationContext } from "../src/Policy/index.ts"
+import type { DiagnosticDiff, PolicyEvaluationContext } from "../src/Policy.ts"
 import {
   evaluateBuiltInPolicies,
   evaluateCustomRules,

@@ -2,7 +2,7 @@
 import { Effect, FileSystem, Path } from "effect"
 import { sha256 } from "../Edit/Hash.ts"
 import type { SourceFingerprint, TransformationPlan } from "../Plan/index.ts"
-import { resolvePlanFilePath, unsafePlanFilePathMessage } from "../ProjectPath/index.ts"
+import { resolvePlanFilePath, unsafePlanFilePathMessage } from "../ProjectPath.ts"
 import { ProjectIdentityMismatch, StalePlanError, VerificationFailure } from "./Errors.ts"
 
 const liveProjectIdentities = (
