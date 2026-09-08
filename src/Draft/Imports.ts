@@ -181,34 +181,4 @@ export const imports = {
         })
       }),
     ),
-
-  /** Update an import module specifier source path. */
-  updateSource: (
-    project: ProjectSnapshot,
-    declaration: ImportDeclaration,
-    newModule: string,
-  ): Effect.Effect<Draft, SnapshotExpired> =>
-    project.unsafeNative(() =>
-      Effect.sync((): Draft => {
-        const specifier = declaration.moduleSpecifier
-        if (!isStringLiteral(specifier)) return empty
-        if (specifier.text === newModule) return empty
-
-        const sourceFile = declaration.getSourceFile()
-        const quote = specifier.getText(sourceFile)[0] ?? '"'
-        const newSpecifierText = `${quote}${newModule}${quote}`
-        const start = specifier.getStart(sourceFile)
-        const end = specifier.getEnd()
-
-        return draftForRange(
-          project,
-          sourceFile,
-          start,
-          end,
-          newSpecifierText,
-          `import:update-source:${newModule}`,
-          { module: newModule },
-        )
-      }),
-    ),
 }
