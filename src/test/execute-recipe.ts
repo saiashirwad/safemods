@@ -3,10 +3,7 @@ import { applyVerifiedPlan } from "../Application/index.ts"
 import { run, type Recipe } from "../Recipe/index.ts"
 import { verify } from "../Verification/index.ts"
 
-/**
- * Run, verify, and apply a recipe. Call the three stages directly when a
- * caller needs to stop between them.
- */
+/** Test helper: run, verify, and apply a recipe in one step. */
 export const executeRecipe = <Input, E, R>(recipe: Recipe<Input, E, R>, input: Input) =>
   Effect.gen(function* () {
     const plan = yield* run(recipe, input)

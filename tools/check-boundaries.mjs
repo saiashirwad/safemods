@@ -8,7 +8,7 @@ export const architectureLayers = [
   ["Edit", "Evidence", "Plan", "Policy", "ProjectPath", "VirtualFs", "generated"],
   ["Pattern", "Query", "Workspace"],
   ["Draft", "Overlay"],
-  ["Application", "Execution", "Recipe", "Verification"],
+  ["Application", "Recipe", "Verification"],
   ["Node", "platform"],
 ]
 
@@ -49,19 +49,6 @@ const exactDependencies = new Map([
     ]),
   ],
   ["Application", new Set(["Edit", "Plan", "ProjectPath", "Verification", "Workspace"])],
-  [
-    "Execution",
-    new Set([
-      "Application",
-      "Draft",
-      "Evidence",
-      "Plan",
-      "Policy",
-      "Recipe",
-      "Verification",
-      "Workspace",
-    ]),
-  ],
 ])
 
 const files = async (directory) =>

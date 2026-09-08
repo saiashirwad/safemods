@@ -1,4 +1,4 @@
-import { executeRecipe } from "../../Execution/index.ts"
+import { executeRecipe } from "../../test/execute-recipe.ts"
 import { nodeFsPromises as Fs, path as Path, layer as nodeLayer } from "../../platform/node.ts"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"

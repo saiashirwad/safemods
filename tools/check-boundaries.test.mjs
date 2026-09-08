@@ -36,7 +36,6 @@ describe("architecture boundaries", () => {
         mkdir(join(root, "src", "Query", "internal"), { recursive: true }),
         mkdir(join(root, "src", "Recipe"), { recursive: true }),
         mkdir(join(root, "src", "Application"), { recursive: true }),
-        mkdir(join(root, "src", "Execution"), { recursive: true }),
         mkdir(join(root, "src", "Verification"), { recursive: true }),
         mkdir(join(root, "src", "Workspace"), { recursive: true }),
         mkdir(join(root, "src", "Node"), { recursive: true }),
@@ -60,7 +59,6 @@ describe("architecture boundaries", () => {
           'import "../Application/index.ts"\n',
         ),
         writeFile(join(root, "src", "Application", "index.ts"), "export {}\n"),
-        writeFile(join(root, "src", "Execution", "index.ts"), "export {}\n"),
         writeFile(join(root, "src", "Draft", "Good.ts"), 'import "../Query/index.ts"\n'),
       ])
 
