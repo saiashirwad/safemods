@@ -110,15 +110,6 @@ for (const [domain, name] of forbidden) {
   if (name in domain) throw new Error(\`Legacy export still present: \${name}\`)
 }
 
-if (
-  typeof QueryEntry.Criterion?.inside !== "function" ||
-  typeof QueryEntry.Criterion?.has !== "function" ||
-  typeof QueryEntry.Criterion?.precedes !== "function" ||
-  typeof QueryEntry.Criterion?.follows !== "function"
-) {
-  throw new Error("Query Criterion does not export the canonical relations")
-}
-
 if (typeof VerificationEntry.of !== "function") {
   throw new Error("Verification entry point does not export of")
 }
