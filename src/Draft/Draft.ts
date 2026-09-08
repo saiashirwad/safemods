@@ -14,10 +14,10 @@ import {
   finalizeDraftEvidence,
   mergeEvidence,
   type EvidenceRecord,
-} from "../Evidence/index.ts"
+} from "../Evidence.ts"
 import type { PlannedFileOperation } from "../Plan/index.ts"
 import type { Node, SourceFile } from "typescript/unstable/ast"
-import { textEdit, type TextEdit } from "../Edit/TextEdit.ts"
+import { textEdit, type TextEdit } from "../Edit.ts"
 import type { Selection } from "../Query/index.ts"
 import type { ProjectSnapshot, SnapshotExpired } from "../Workspace/index.ts"
 

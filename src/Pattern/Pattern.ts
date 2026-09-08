@@ -1,7 +1,7 @@
 import { Effect, Predicate } from "effect"
 import { SyntaxKind, type Node } from "typescript/unstable/ast"
 import { isCallExpression } from "typescript/unstable/ast/is"
-import type { EvidenceFact } from "../Evidence/Evidence.ts"
+import type { EvidenceFact } from "../Evidence.ts"
 import type { ProjectSnapshot, ProjectSnapshotError } from "../Workspace/index.ts"
 
 export const syntaxKindName = (kind: number): string =>

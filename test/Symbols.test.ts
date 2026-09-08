@@ -1,6 +1,6 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Option } from "effect"
-import { applyFileEdits } from "../src/Edit/index.ts"
+import { applyFileEdits } from "../src/Edit.ts"
 import { withProject } from "./utils/project-fixture.ts"
 import * as Draft from "../src/Draft/index.ts"
 

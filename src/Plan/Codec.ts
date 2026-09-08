@@ -1,8 +1,6 @@
 import { Effect, Schema } from "effect"
-import { sha256 } from "../Edit/Hash.ts"
-import { compareEdits } from "../Edit/index.ts"
-import { canonicalJson } from "../Evidence/Canonical.ts"
-import type { Json } from "../Evidence/Evidence.ts"
+import { compareEdits, sha256 } from "../Edit.ts"
+import { canonicalJson, type Json } from "../Evidence.ts"
 import { PlanDecodeError, type PlanInput, type TransformationPlan } from "./TransformationPlan.ts"
 import { strictPlanParseOptions, TransformationPlanSchema } from "./Structure.ts"
 import {

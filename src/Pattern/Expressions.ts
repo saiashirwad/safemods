@@ -7,7 +7,7 @@ import {
 } from "typescript/unstable/ast"
 import { isCallExpression, isIdentifier } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol } from "typescript/unstable/async"
-import type { EvidenceFact } from "../Evidence/Evidence.ts"
+import type { EvidenceFact } from "../Evidence.ts"
 import {
   matchFailure,
   matchSuccess,

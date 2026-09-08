@@ -1,6 +1,6 @@
 /** Read-only materialization of a plan's exact proposed bytes. */
 import { Effect, type FileSystem, type Path } from "effect"
-import { sha256 } from "../Edit/Hash.ts"
+import { sha256 } from "../Edit.ts"
 import {
   isContentFingerprint,
   type PlanDecodeError,

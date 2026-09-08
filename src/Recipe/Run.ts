@@ -1,6 +1,6 @@
 /** Recipe execution from input to a durable Plan. */
 import { Effect, type FileSystem, type Path } from "effect"
-import { finalizeDraftEvidence, type DraftEvidenceConflict } from "../Evidence/index.ts"
+import { finalizeDraftEvidence, type DraftEvidenceConflict } from "../Evidence.ts"
 import { finalizePlan, type PlanBuildError, type TransformationPlan } from "../Plan/index.ts"
 import {
   Workspace,

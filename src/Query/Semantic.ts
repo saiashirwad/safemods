@@ -4,7 +4,7 @@ import type { Node } from "typescript/unstable/ast"
 import type { Symbol as NativeSymbol, Type as NativeType } from "typescript/unstable/async"
 import type { ProjectSnapshotError } from "../Workspace/index.ts"
 import { isIntrinsicTypeName, type IntrinsicTypeName } from "../Workspace/ProjectSnapshot.ts"
-import type { EvidenceFact } from "../Evidence/Evidence.ts"
+import type { EvidenceFact } from "../Evidence.ts"
 import type { Criterion, Selection } from "./Query.ts"
 
 /**

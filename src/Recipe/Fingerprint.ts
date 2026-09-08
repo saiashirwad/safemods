@@ -1,6 +1,6 @@
 /** Durable workspace input fingerprinting. */
 import { Effect, FileSystem, Path } from "effect"
-import { sha256 } from "../Edit/Hash.ts"
+import { sha256 } from "../Edit.ts"
 import { compareSourceFingerprints, type SourceFingerprint } from "../Plan/index.ts"
 import {
   parseProjectRelativePath,

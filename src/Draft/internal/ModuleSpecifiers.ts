@@ -2,7 +2,7 @@
  * Module specifier rewriting for file moves.
  */
 import { posix as PathPosix } from "node:path"
-import { applyTextReplacements } from "../../Edit/index.ts"
+import { applyTextReplacements } from "../../Edit.ts"
 import { SyntaxKind, type Node, type SourceFile, type StringLiteral } from "typescript/unstable/ast"
 import {
   isCallExpression,

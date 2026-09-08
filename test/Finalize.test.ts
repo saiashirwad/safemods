@@ -1,10 +1,6 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import {
-  DraftEvidenceConflict,
-  finalizeDraftEvidence,
-  mergeEvidence,
-} from "../src/Evidence/Finalize.ts"
+import { DraftEvidenceConflict, finalizeDraftEvidence, mergeEvidence } from "../src/Evidence.ts"
 
 describe("draft evidence finalization", () => {
   effect("merges records and completes every referenced ID in stable order", () =>

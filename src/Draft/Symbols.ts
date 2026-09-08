@@ -20,7 +20,7 @@ import {
   type ProjectSnapshot,
   type ProjectSnapshotError,
 } from "../Workspace/index.ts"
-import type { DraftEvidenceConflict } from "../Evidence/index.ts"
+import type { DraftEvidenceConflict } from "../Evidence.ts"
 import { empty, replaceEach, type Draft, type Replacement } from "./Draft.ts"
 import { resolveRelativeSpecifier, stripModuleExtension } from "./internal/ModuleSpecifiers.ts"
 

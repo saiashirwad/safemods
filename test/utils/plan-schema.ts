@@ -1,6 +1,6 @@
-import { sha256 } from "../../src/Edit/Hash.ts"
+import { sha256 } from "../../src/Edit.ts"
 import { planHashOf } from "../../src/Plan/Codec.ts"
-import type { Json } from "../../src/Evidence/index.ts"
+import type { Json } from "../../src/Evidence.ts"
 import {
   canonicalJson,
   finalizePlan,

@@ -1,6 +1,6 @@
 /** Verification failures at plan, recipe, policy, and workspace boundaries. */
 import { Data } from "effect"
-import type { Json } from "../Evidence/index.ts"
+import type { Json } from "../Evidence.ts"
 import type { TransformationPlan } from "../Plan/index.ts"
 import type { DiagnosticRecord } from "../Policy.ts"
 

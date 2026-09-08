@@ -1,6 +1,5 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import type { Json } from "../src/Evidence/index.ts"
 import {
   canonicalJson,
   finalizePlan,
@@ -8,7 +7,7 @@ import {
   serializePlan,
   type PlanInput,
 } from "../src/Plan/index.ts"
-import { canonicalJson as canonicalEvidenceJson } from "../src/Evidence/Canonical.ts"
+import { canonicalJson as canonicalEvidenceJson, type Json } from "../src/Evidence.ts"
 import { richInput } from "./utils/plan-schema.ts"
 
 describe("plan codec and canonicalization", () => {

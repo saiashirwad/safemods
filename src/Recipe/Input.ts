@@ -1,6 +1,6 @@
 /** Recipe input validation and durable encoding. */
 import { Data, Effect, Schema } from "effect"
-import type { Json } from "../Evidence/index.ts"
+import type { Json } from "../Evidence.ts"
 import type { Recipe } from "./Recipe.ts"
 
 export class RecipeInputError extends Data.TaggedError("RecipeInputError")<{

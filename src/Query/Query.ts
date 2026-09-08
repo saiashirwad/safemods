@@ -1,5 +1,5 @@
 import { Data, Effect, type Stream } from "effect"
-import type { EvidenceFact, QueryEvidence } from "../Evidence/Evidence.ts"
+import type { EvidenceFact, QueryEvidence } from "../Evidence.ts"
 import type { ProjectRelativePath } from "../ProjectPath.ts"
 import type { ProjectFile, ProjectSnapshot } from "../Workspace/index.ts"
 

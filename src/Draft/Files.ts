@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import type { DraftEvidenceConflict } from "../Evidence/index.ts"
+import type { DraftEvidenceConflict } from "../Evidence.ts"
 import {
   InvalidProjectRelativePath,
   parseProjectRelativePath,
@@ -11,8 +11,7 @@ import type {
   ProjectSnapshotError,
   SnapshotExpired,
 } from "../Workspace/index.ts"
-import { sha256 } from "../Edit/Hash.ts"
-import { textEdit } from "../Edit/TextEdit.ts"
+import { sha256, textEdit } from "../Edit.ts"
 import {
   applySpecifierReplacements,
   specifierReplacements,

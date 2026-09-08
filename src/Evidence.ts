@@ -1,6 +1,33 @@
-import { Data, Effect } from "effect"
-import type { EvidenceRecord } from "./Evidence.ts"
-import { canonicalJson } from "./Canonical.ts"
+/** Evidence records attached to plans, and their canonical identity. */
+import { Data, Effect, Predicate } from "effect"
+
+export type Json =
+  | null
+  | boolean
+  | number
+  | string
+  | ReadonlyArray<Json>
+  | { readonly [key: string]: Json }
+
+export type EvidenceFact = string | number | boolean | null
+
+export interface QueryEvidence {
+  readonly criterion: string
+  readonly facts: Readonly<Record<string, EvidenceFact>>
+}
+
+export interface EvidenceRecord {
+  readonly id: string
+  readonly kind: string
+  readonly facts: { readonly [key: string]: Json }
+}
+
+export const canonicalJson = (value: Json): string =>
+  JSON.stringify(value, (_, v: Json) =>
+    Predicate.isObject(v) && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
+      : v,
+  )
 
 export class DraftEvidenceConflict extends Data.TaggedError("DraftEvidenceConflict")<{
   readonly id: string
@@ -31,7 +58,7 @@ interface EvidenceReference {
   readonly evidenceIds?: ReadonlyArray<string> | undefined
 }
 
-export interface DraftEvidenceTarget {
+interface DraftEvidenceTarget {
   readonly edits: ReadonlyArray<EvidenceReference>
   readonly fileOperations?: ReadonlyArray<EvidenceReference> | undefined
   readonly evidence: ReadonlyArray<EvidenceRecord>

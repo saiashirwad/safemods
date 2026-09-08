@@ -1,8 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import type { PlannedFileOperation } from "../src/Plan/index.ts"
-import { applyFileEdits } from "../src/Edit/index.ts"
-import { sha256 } from "../src/Edit/Hash.ts"
+import { applyFileEdits, sha256 } from "../src/Edit.ts"
 import { withProject } from "./utils/project-fixture.ts"
 import * as Draft from "../src/Draft/index.ts"
 

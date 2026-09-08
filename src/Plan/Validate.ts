@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import { compareEdits, editsConflict } from "../Edit/index.ts"
+import { compareEdits, editsConflict } from "../Edit.ts"
 import { virtualFileKey } from "../VirtualFs.ts"
 import { parseProjectRelativePath, type ProjectRelativePath } from "../ProjectPath.ts"
 import {
