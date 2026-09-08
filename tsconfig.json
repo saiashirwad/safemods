@@ -26,5 +26,5 @@
       }
     ]
   },
-  "include": ["src/**/*.ts", "examples/**/*.ts"]
+  "include": ["src/**/*.ts"]
 }
