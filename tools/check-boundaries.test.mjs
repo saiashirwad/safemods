@@ -14,7 +14,7 @@ describe("architecture boundaries", () => {
 
   it("rejects upward and restricted semantic dependencies", () => {
     assert.equal(dependencyFailure("Edit", "Workspace"), "Edit imports higher layer Workspace")
-    assert.equal(dependencyFailure("Pattern", "Query"), "Pattern must not depend on Query")
+    assert.equal(dependencyFailure("Query", "Draft"), "Query must not depend on Draft")
     assert.equal(dependencyFailure("Workspace", "Draft"), "Workspace must not depend on Draft")
     assert.equal(
       dependencyFailure("Recipe", "Application"),
@@ -32,7 +32,6 @@ describe("architecture boundaries", () => {
       await Promise.all([
         mkdir(join(root, "src", "Draft"), { recursive: true }),
         mkdir(join(root, "src", "Edit"), { recursive: true }),
-        mkdir(join(root, "src", "Pattern"), { recursive: true }),
         mkdir(join(root, "src", "Query", "internal"), { recursive: true }),
         mkdir(join(root, "src", "Recipe"), { recursive: true }),
         mkdir(join(root, "src", "Application"), { recursive: true }),
@@ -49,10 +48,7 @@ describe("architecture boundaries", () => {
           join(root, "src", "Edit", "Bad.ts"),
           'import "../Workspace/index.ts"\nimport "safemods/Plan"\n',
         ),
-        writeFile(
-          join(root, "src", "Pattern", "Bad.ts"),
-          'import "../Query/internal/Private.ts"\n',
-        ),
+        writeFile(join(root, "src", "Draft", "Bad.ts"), 'import "../Query/internal/Private.ts"\n'),
         writeFile(join(root, "src", "Recipe", "Bad.ts"), 'import "../Application/index.ts"\n'),
         writeFile(
           join(root, "src", "Verification", "Bad.ts"),

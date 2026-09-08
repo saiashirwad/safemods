@@ -9,7 +9,7 @@ const ownerName = (segment) => segment.replace(TYPESCRIPT_SOURCE, "")
 
 export const architectureLayers = [
   ["Edit", "Evidence", "Plan", "Policy", "ProjectPath", "VirtualFs"],
-  ["Pattern", "Query", "Workspace"],
+  ["Query", "Workspace"],
   ["Draft"],
   ["Application", "Recipe", "Verification"],
   ["Node"],
@@ -20,8 +20,7 @@ const layerByOwner = new Map(
 )
 
 const exactDependencies = new Map([
-  ["Pattern", new Set(["Evidence", "Workspace"])],
-  ["Query", new Set(["Evidence", "Pattern", "ProjectPath", "Workspace"])],
+  ["Query", new Set(["Evidence", "ProjectPath", "Workspace"])],
   ["Workspace", new Set(["Edit", "ProjectPath", "VirtualFs"])],
   [
     "Recipe",
