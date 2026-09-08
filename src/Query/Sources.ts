@@ -18,7 +18,12 @@ import {
   type ProjectSnapshotError,
 } from "../Workspace/ProjectSnapshot.ts"
 import { type Pattern, type SyntaxKindFilter, syntaxKindName } from "../Pattern.ts"
-import type { ProjectScope, Query, Selection, TargetFileScope } from "./Query.ts"
+import type { ProjectScope, Query, Selection } from "./Query.ts"
+
+interface TargetFileScope {
+  readonly project: ProjectSnapshot
+  readonly fileName: string
+}
 
 const isProjectFileArray = (value: ProjectScope): value is ReadonlyArray<ProjectFile> =>
   Array.isArray(value)

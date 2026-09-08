@@ -6,7 +6,7 @@ import * as Draft from "../src/Draft/index.ts"
 import * as Recipe from "../src/Recipe.ts"
 import * as Verification from "../src/Verification/index.ts"
 import { finalizePlan } from "../src/Plan/Finalize.ts"
-import type { TransformationPlan } from "../src/Plan/TransformationPlan.ts"
+import type { TransformationPlan } from "../src/Plan/index.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
 
@@ -51,7 +51,7 @@ describe("issued verified plans and project identity", () => {
           const verified = yield* Verification.verify(unvalidated, recipe, undefined).pipe(
             Effect.result,
           )
-          const previewed = yield* Verification.of(unvalidated).pipe(Effect.result)
+          const previewed = yield* Verification.preview(unvalidated).pipe(Effect.result)
           expect(verified._tag).toBe("Failure")
           expect(previewed._tag).toBe("Failure")
         }),
@@ -85,7 +85,7 @@ describe("issued verified plans and project identity", () => {
           const verified = yield* Verification.verify(mismatched, recipe, undefined).pipe(
             Effect.result,
           )
-          const previewed = yield* Verification.of(mismatched).pipe(Effect.result)
+          const previewed = yield* Verification.preview(mismatched).pipe(Effect.result)
           expect(verified._tag).toBe("Failure")
           expect(previewed._tag).toBe("Failure")
         }),
@@ -144,7 +144,7 @@ describe("issued verified plans and project identity", () => {
             ),
           )
           const verified = yield* Verification.verify(plan, recipe, undefined).pipe(Effect.result)
-          const previewed = yield* Verification.of(plan).pipe(Effect.result)
+          const previewed = yield* Verification.preview(plan).pipe(Effect.result)
           expect(verified._tag).toBe("Failure")
           expect(previewed._tag).toBe("Failure")
           if (verified._tag === "Failure") expect(verified.failure._tag).toBe("StalePlanError")

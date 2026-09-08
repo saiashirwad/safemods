@@ -5,11 +5,6 @@ import type { ProjectFile, ProjectSnapshot } from "../Workspace/index.ts"
 
 export type ProjectScope = ProjectSnapshot | ProjectFile | ReadonlyArray<ProjectFile>
 
-export interface TargetFileScope {
-  readonly project: ProjectSnapshot
-  readonly fileName: string
-}
-
 export interface Selection<A> {
   readonly value: A
   readonly project: ProjectSnapshot

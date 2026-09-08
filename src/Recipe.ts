@@ -40,7 +40,7 @@ export interface Recipe<Input = undefined, E = never, R = never> {
   readonly run: (input: Input) => Effect.Effect<Draft, E, R | WorkspaceSnapshot | Workspace>
 }
 
-interface RecipeDefinition<Input, E, R> {
+export interface RecipeDefinition<Input, E, R> {
   readonly version: string
   readonly schema?: Schema.Codec<Input, unknown>
   /** Digest supplied by release tooling. The development default uses name and version. */

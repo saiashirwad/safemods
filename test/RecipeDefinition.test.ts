@@ -1,6 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import * as Draft from "../src/Draft/index.ts"
+import { PlanBuildError } from "../src/Plan/index.ts"
+import * as Policy from "../src/Policy.ts"
 import { RecipeInputError } from "../src/Recipe.ts"
 import * as Recipe from "../src/Recipe.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
@@ -33,6 +35,30 @@ describe("recipe definition and input validation", () => {
             multiplier: 42,
           } as any).pipe(Effect.flip)
           expect(failure).toBeInstanceOf(RecipeInputError)
+        }),
+      ),
+    60_000,
+  )
+
+  effect(
+    "rejects unsatisfiable or non-finite policy bounds when the plan is built",
+    () =>
+      withFixture(() =>
+        Effect.gen(function* () {
+          for (const policy of [
+            Policy.matches({ min: 4, max: 3 }),
+            Policy.matches({ min: -1 }),
+            Policy.matches({ max: 1.5 }),
+            { maxAffectedFiles: Infinity },
+          ]) {
+            const recipe = Recipe.define("bad-bounds", {
+              version: "1.0.0",
+              policies: [policy],
+              run: () => Effect.succeed(Draft.empty),
+            })
+            const failure = yield* Recipe.run(recipe, undefined).pipe(Effect.flip)
+            expect(failure).toBeInstanceOf(PlanBuildError)
+          }
         }),
       ),
     60_000,

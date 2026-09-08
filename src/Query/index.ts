@@ -1,5 +1,5 @@
-export { Criterion } from "./Query.ts"
-export type { Query, Selection } from "./Query.ts"
+export { Criterion, QueryContractError } from "./Query.ts"
+export type { ProjectScope, Query, Selection } from "./Query.ts"
 export * from "./Sources.ts"
 export * from "./Operators.ts"
 export * from "./Semantic.ts"

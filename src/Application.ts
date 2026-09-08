@@ -13,7 +13,7 @@ export class ApplicationFailure extends Data.TaggedError("ApplicationFailure")<{
   readonly cause: unknown
 }> {}
 
-interface ApplicationReceipt {
+export interface ApplicationReceipt {
   readonly planId: string
   readonly snapshotHash: string
   readonly outputs: ReadonlyArray<{

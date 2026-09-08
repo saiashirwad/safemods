@@ -353,4 +353,34 @@ describe("verification diagnostics and policies", () => {
       ),
     60_000,
   )
+
+  effect(
+    "stops custom rules at the first failure",
+    () =>
+      withFixture((_, app) =>
+        Effect.gen(function* () {
+          const visited: Array<string> = []
+          const rule = (name: string, verdict: boolean | string) =>
+            Policy.diagnosticDiff(name, () => {
+              visited.push(name)
+              return verdict
+            })
+          const recipe = Recipe.define("short-circuit-rules", {
+            version: "1.0.0",
+            policies: [rule("first", true), rule("second", "failed"), rule("third", true)],
+            run: () =>
+              Effect.gen(function* () {
+                const project = yield* fixtureProject(app)
+                return yield* Draft.files.create(project, "src/noop.ts", "export {}\n")
+              }),
+          })
+          const plan = yield* Recipe.run(recipe, undefined)
+          const failure = yield* Verification.verify(plan, recipe, undefined).pipe(Effect.flip)
+          expect(failure).toBeInstanceOf(VerificationFailure)
+          if (failure instanceof VerificationFailure) expect(failure.detail).toBe("failed")
+          expect(visited).toEqual(["first", "second"])
+        }),
+      ),
+    60_000,
+  )
 })

@@ -16,6 +16,10 @@
       "types": "./dist/src/Draft/index.d.ts",
       "default": "./dist/src/Draft/index.js"
     },
+    "./Plan": {
+      "types": "./dist/src/Plan/index.d.ts",
+      "default": "./dist/src/Plan/index.js"
+    },
     "./Pattern": {
       "types": "./dist/src/Pattern.d.ts",
       "default": "./dist/src/Pattern.js"

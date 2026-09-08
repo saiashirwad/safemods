@@ -1,4 +1,9 @@
-export { ConfiguredProject, ProjectNotInSnapshot } from "./ConfiguredProject.ts"
+export {
+  ConfiguredProject,
+  DuplicateConfiguredProject,
+  ProjectNotInSnapshot,
+} from "./ConfiguredProject.ts"
+export { InvalidProjectRelativePath } from "../ProjectPath.ts"
 export type { SnapshotTransition, WorkspaceDefinition } from "./ConfiguredProject.ts"
 export { FileNotFound, SnapshotExpired, SymbolNotFound } from "./ProjectSnapshot.ts"
 export { WorkspaceCompilerError } from "./NativeRequest.ts"

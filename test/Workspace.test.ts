@@ -4,16 +4,20 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Path as EffectPath } from "effect"
 import { NodePath } from "@effect/platform-node"
 import { fileURLToPath } from "node:url"
-import { InvalidProjectRelativePath } from "../src/ProjectPath.ts"
-import { ConfiguredProject, Workspace } from "../src/Workspace/index.ts"
+import {
+  ConfiguredProject,
+  DuplicateConfiguredProject,
+  InvalidProjectRelativePath,
+  Workspace,
+} from "../src/Workspace/index.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
 
 const Path = Effect.runSync(Effect.provide(EffectPath.Path, NodePath.layer))
 
 describe("workspace path confinement, overlay FS, and symbol lookup", () => {
-  effect("rejects absolute and escaping project configs", () =>
-    withFixture((root) =>
+  effect("rejects escaping and duplicate project configs", () =>
+    withFixture((root, app) =>
       Effect.gen(function* () {
         for (const config of [
           "../tsconfig.json",
@@ -27,6 +31,11 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
           )
           expect(failure).toBeInstanceOf(InvalidProjectRelativePath)
         }
+        const twice = yield* Effect.void.pipe(
+          Effect.provide(workspaceLayerNode({ projects: [app, app] }, { cwd: root })),
+          Effect.flip,
+        )
+        expect(twice).toBeInstanceOf(DuplicateConfiguredProject)
       }),
     ),
   )

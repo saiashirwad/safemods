@@ -5,6 +5,7 @@
     "src/Draft/index.ts",
     "src/Node.ts",
     "src/Pattern.ts",
+    "src/Plan/index.ts",
     "src/Policy.ts",
     "src/Query/index.ts",
     "src/Recipe.ts",

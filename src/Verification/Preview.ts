@@ -179,7 +179,7 @@ export const previewValidatedPlan = (
   })
 
 /** Materialize a validated preview against the active Workspace. Never writes. */
-export const of = (
+export const preview = (
   plan: TransformationPlan,
 ): Effect.Effect<
   PlanPreview,

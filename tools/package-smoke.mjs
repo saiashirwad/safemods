@@ -66,7 +66,7 @@ try {
   await writeFile(
     join(fixture, "smoke.ts"),
     `${imports}
-import { of as preview, type PlanPreview } from "safemods/Verification"
+import { preview, type PlanPreview } from "safemods/Verification"
 void preview
 declare const previewValue: PlanPreview
 void previewValue
@@ -103,8 +103,8 @@ for (const [domain, name] of forbidden) {
   if (name in domain) throw new Error(\`Legacy export still present: \${name}\`)
 }
 
-if (typeof VerificationEntry.of !== "function") {
-  throw new Error("Verification entry point does not export of")
+if (typeof VerificationEntry.preview !== "function") {
+  throw new Error("Verification entry point does not export preview")
 }
 
 const removedEntryPoints = [
@@ -112,7 +112,6 @@ const removedEntryPoints = [
   "safemods/Cli",
   "safemods/Edit",
   "safemods/Evidence",
-  "safemods/Plan",
   "safemods/ProjectPath",
   "safemods/VirtualFs",
 ]
