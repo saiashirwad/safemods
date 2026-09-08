@@ -9,12 +9,6 @@ import {
   unpermittedIntroducedErrors,
 } from "../Policy/index.ts"
 
-export interface PolicyResult {
-  readonly name: string
-  readonly passed: boolean
-  readonly detail?: string
-}
-
 export interface PolicyFailure {
   readonly policy: "matches" | "affected-files" | "diagnostics" | "idempotence"
   readonly detail: string
@@ -30,14 +24,8 @@ export interface BuiltInPolicyInput {
   readonly allowedErrors?: ReadonlyArray<AllowedError> | undefined
 }
 
-export interface PolicyEvaluation {
-  readonly results: ReadonlyArray<PolicyResult>
-  readonly failure?: PolicyFailure | undefined
-}
-
 /** Evaluate every durable built-in policy in its established order. */
-export const evaluateBuiltInPolicies = (input: BuiltInPolicyInput): PolicyEvaluation => {
-  const results: Array<PolicyResult> = []
+export const evaluateBuiltInPolicies = (input: BuiltInPolicyInput): PolicyFailure | undefined => {
   const { min, max } = input.policies.matchCount
   const hasMatchBounds = min !== undefined || max !== undefined
   const missingMatchMeasurement = hasMatchBounds && input.actualMatches === undefined
@@ -46,14 +34,9 @@ export const evaluateBuiltInPolicies = (input: BuiltInPolicyInput): PolicyEvalua
     (min === undefined || input.actualMatches! >= min) &&
     (max === undefined || input.actualMatches! <= max)
 
-  if (hasMatchBounds) results.push({ name: "match-count", passed: matchesPassed })
-
   const affectedFilesPassed =
     input.policies.maxAffectedFiles === undefined ||
     input.affectedFiles <= input.policies.maxAffectedFiles
-  if (input.policies.maxAffectedFiles !== undefined) {
-    results.push({ name: "affected-files", passed: affectedFilesPassed })
-  }
 
   const unpermittedErrors = unpermittedIntroducedErrors(
     input.diagnosticDiff,
@@ -61,60 +44,41 @@ export const evaluateBuiltInPolicies = (input: BuiltInPolicyInput): PolicyEvalua
   )
   const diagnosticsPassed =
     input.policies.diagnostics === "allow-new-errors" || unpermittedErrors.length === 0
-  results.push({ name: input.policies.diagnostics, passed: diagnosticsPassed })
 
   const idempotencePassed =
     input.policies.idempotence !== "required" || input.secondPlanChangeCount === 0
-  if (input.policies.idempotence === "required") {
-    results.push({ name: "idempotence", passed: idempotencePassed })
-  }
 
-  let failure: PolicyFailure | undefined
   if (missingMatchMeasurement) {
-    failure = {
-      policy: "matches",
-      detail: "Plan carries no primary-run match measurement",
-    }
-  } else if (!matchesPassed) {
-    failure = { policy: "matches", detail: `Observed ${input.actualMatches}` }
-  } else if (!affectedFilesPassed) {
-    failure = { policy: "affected-files", detail: `Observed ${input.affectedFiles}` }
-  } else if (!diagnosticsPassed) {
-    failure = {
+    return { policy: "matches", detail: "Plan carries no primary-run match measurement" }
+  }
+  if (!matchesPassed) return { policy: "matches", detail: `Observed ${input.actualMatches}` }
+  if (!affectedFilesPassed) {
+    return { policy: "affected-files", detail: `Observed ${input.affectedFiles}` }
+  }
+  if (!diagnosticsPassed) {
+    return {
       policy: "diagnostics",
       detail: `Introduced ${unpermittedErrors.length} new error diagnostic(s): ${unpermittedErrors.map((error) => `TS${error.code}: ${error.message}`).join("; ")}`,
       diagnostics: unpermittedErrors,
     }
-  } else if (!idempotencePassed) {
-    failure = { policy: "idempotence", detail: "Second recipe run was not empty" }
   }
-
-  return { results, failure }
+  if (!idempotencePassed) {
+    return { policy: "idempotence", detail: "Second recipe run was not empty" }
+  }
+  return undefined
 }
 
 /** Evaluate custom rules in declaration order and stop at the first failure. */
 export const evaluateCustomRules = (
   rules: ReadonlyArray<VerificationRule>,
   context: PolicyEvaluationContext,
-): PolicyEvaluation => {
-  const results: Array<PolicyResult> = []
+): PolicyFailure | undefined => {
   for (const rule of rules) {
     if (rule.evaluate === undefined) continue
     const result = rule.evaluate(context)
-    if (result === true) {
-      results.push({ name: rule.name, passed: true })
-      continue
-    }
+    if (result === true) continue
     const detail = result === false ? `Policy rule '${rule.name}' failed` : result
-    results.push({ name: rule.name, passed: false, detail })
-    return {
-      results,
-      failure: {
-        policy: "diagnostics",
-        detail,
-        diagnostics: context.diagnosticDiff.introduced,
-      },
-    }
+    return { policy: "diagnostics", detail, diagnostics: context.diagnosticDiff.introduced }
   }
-  return { results }
+  return undefined
 }

@@ -188,7 +188,7 @@ export const verify = <Input, E, R>(
     const allowedErrors = allowedErrorsFromRules(recipe.rules)
     const matches = validatedPlan.measurements?.matches
     const affectedFiles = proposed.files.length
-    const builtIn = evaluateBuiltInPolicies({
+    const builtInFailure = evaluateBuiltInPolicies({
       policies: validatedPlan.policies,
       actualMatches: matches,
       affectedFiles,
@@ -196,8 +196,8 @@ export const verify = <Input, E, R>(
       secondPlanChangeCount: proposedRun.replayChanges,
       allowedErrors,
     })
-    if (builtIn.failure !== undefined) {
-      return yield* new VerificationFailure({ planId: validatedPlan.planId, ...builtIn.failure })
+    if (builtInFailure !== undefined) {
+      return yield* new VerificationFailure({ planId: validatedPlan.planId, ...builtInFailure })
     }
 
     const context: PolicyEvaluationContext = {
@@ -206,9 +206,9 @@ export const verify = <Input, E, R>(
       diagnosticDiff,
       allowedErrors,
     }
-    const custom = evaluateCustomRules(recipe.rules, context)
-    if (custom.failure !== undefined) {
-      return yield* new VerificationFailure({ planId: validatedPlan.planId, ...custom.failure })
+    const customFailure = evaluateCustomRules(recipe.rules, context)
+    if (customFailure !== undefined) {
+      return yield* new VerificationFailure({ planId: validatedPlan.planId, ...customFailure })
     }
 
     return issueVerifiedPlan(validatedPlan, proposed, diagnosticDiff)

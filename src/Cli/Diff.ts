@@ -47,19 +47,6 @@ const createUnifiedDiff = (
     useColor,
   )
 
-export const computeUnifiedDiff = (
-  fileName: string,
-  beforeText: string,
-  afterText: string,
-  options: DiffOptions = {},
-): string => {
-  const useColor = options.color ?? true
-  if (beforeText === afterText) {
-    return colorize(`  ${fileName} (no changes)`, "dim", useColor)
-  }
-  return createUnifiedDiff(`a/${fileName}`, `b/${fileName}`, beforeText, afterText, useColor)
-}
-
 export const renderFilePreview = (file: FilePreview, options: DiffOptions = {}): string => {
   const useColor = options.color ?? true
   const badge =

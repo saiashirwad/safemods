@@ -9,10 +9,4 @@ export {
   resolvePlanFilePath,
   unsafePlanFilePathMessage,
 } from "./Portable.ts"
-export type {
-  PathContainmentOptions,
-  PlanProjectPaths,
-  ProjectPathOperations,
-  ProjectRelativePath,
-  ResolvedPlanFilePath,
-} from "./Portable.ts"
+export type { ProjectPathOperations, ProjectRelativePath } from "./Portable.ts"

@@ -9,8 +9,8 @@ const emptyDiagnosticDiff: DiagnosticDiff = {
 }
 
 describe("policy evaluation", () => {
-  it("reports built-in policies in their stable order", () => {
-    const evaluation = evaluateBuiltInPolicies({
+  it("passes when every built-in policy holds", () => {
+    const failure = evaluateBuiltInPolicies({
       policies: {
         matchCount: { min: 1, max: 2 },
         maxAffectedFiles: 2,
@@ -23,13 +23,7 @@ describe("policy evaluation", () => {
       secondPlanChangeCount: 0,
     })
 
-    expect(evaluation.failure).toBeUndefined()
-    expect(evaluation.results).toEqual([
-      { name: "match-count", passed: true },
-      { name: "affected-files", passed: true },
-      { name: "no-new-errors", passed: true },
-      { name: "idempotence", passed: true },
-    ])
+    expect(failure).toBeUndefined()
   })
 
   it("keeps the established built-in failure order", () => {
@@ -37,7 +31,7 @@ describe("policy evaluation", () => {
       ...emptyDiagnosticDiff,
       introduced: [{ code: 1, message: "new error", category: "error" }],
     }
-    const evaluation = evaluateBuiltInPolicies({
+    const failure = evaluateBuiltInPolicies({
       policies: {
         matchCount: { min: 2 },
         maxAffectedFiles: 0,
@@ -50,11 +44,11 @@ describe("policy evaluation", () => {
       secondPlanChangeCount: 1,
     })
 
-    expect(evaluation.failure).toEqual({ policy: "matches", detail: "Observed 1" })
+    expect(failure).toEqual({ policy: "matches", detail: "Observed 1" })
   })
 
   it("reports introduced error details from the durable diagnostics policy", () => {
-    const evaluation = evaluateBuiltInPolicies({
+    const failure = evaluateBuiltInPolicies({
       policies: {
         matchCount: {},
         diagnostics: "no-new-errors",
@@ -67,8 +61,7 @@ describe("policy evaluation", () => {
       },
     })
 
-    expect(evaluation.results).toEqual([{ name: "no-new-errors", passed: false }])
-    expect(evaluation.failure).toEqual({
+    expect(failure).toEqual({
       policy: "diagnostics",
       detail: "Introduced 1 new error diagnostic(s): TS2322: Type mismatch",
       diagnostics: [{ code: 2322, message: "Type mismatch", category: "error" }],
@@ -82,7 +75,7 @@ describe("policy evaluation", () => {
       affectedFiles: 0,
       diagnosticDiff: emptyDiagnosticDiff,
     }
-    const evaluation = evaluateCustomRules(
+    const failure = evaluateCustomRules(
       [
         {
           name: "first",
@@ -110,10 +103,6 @@ describe("policy evaluation", () => {
     )
 
     expect(visited).toEqual(["first", "second"])
-    expect(evaluation.results).toEqual([
-      { name: "first", passed: true },
-      { name: "second", passed: false, detail: "failed" },
-    ])
-    expect(evaluation.failure?.policy).toBe("diagnostics")
+    expect(failure).toEqual({ policy: "diagnostics", detail: "failed", diagnostics: [] })
   })
 })

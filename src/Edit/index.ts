@@ -1,5 +1,4 @@
 export { applyFileEdits, applyTextReplacements } from "./Apply.ts"
-export type { TextReplacement } from "./Apply.ts"
 export { EditConflict, InvalidEdit, textEdit } from "./TextEdit.ts"
 export type { TextEdit } from "./TextEdit.ts"
 export { compareEdits, editsConflict, normalizeEdits } from "./Validate.ts"
