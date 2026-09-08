@@ -1,13 +1,11 @@
 import { path as Path, nodeFsPromises as Fs } from "../platform/node.ts"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Layer } from "effect"
-import { sha256 } from "../Edit/Hash.ts"
 import * as Draft from "../Draft/index.ts"
 import { executeRecipe } from "../test/execute-recipe.ts"
 import { layer as nodeLayer } from "../Node/index.ts"
-import * as Overlay from "../Overlay/index.ts"
 import * as Recipe from "../Recipe/index.ts"
-import { Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"
+import { Workspace } from "../Workspace/index.ts"
 import { withFixture } from "../test/declarative-fixture.ts"
 import { fixtureProject } from "../test/project-fixture.ts"
 
@@ -123,36 +121,6 @@ describe("declarative transformations API (@effect/vitest)", () => {
                   return yield* Draft.files.move(project, "src/movable.ts", "src/nested/moved.ts")
                 }),
             })
-
-            const workspace = yield* Workspace
-            const preMoveFail = yield* workspace.withSnapshot(
-              {},
-              Effect.gen(function* () {
-                const snapshot = yield* WorkspaceSnapshot
-                const project = yield* fixtureProject(app)
-                const moveDraft = yield* Draft.files.move(
-                  project,
-                  "src/movable.ts",
-                  "src/nested/moved.ts",
-                )
-                return yield* Overlay.materialize(
-                  snapshot,
-                  [
-                    {
-                      projectId: app.id,
-                      fileName: "src/movable.ts",
-                      start: 0,
-                      end: 0,
-                      expectedTextHash: sha256(""),
-                      newText: "// pre-move\n",
-                      evidenceIds: [],
-                    },
-                  ],
-                  moveDraft.fileOperations,
-                ).pipe(Effect.result)
-              }),
-            )
-            expect(preMoveFail._tag).toBe("Failure")
 
             const execution = yield* executeRecipe(moveRecipe, undefined).pipe(
               Effect.provide(mainLayer),

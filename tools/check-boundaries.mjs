@@ -7,7 +7,7 @@ const TYPESCRIPT_TEST = /\.test\.(?:[cm]?ts|tsx)$/
 export const architectureLayers = [
   ["Edit", "Evidence", "Plan", "Policy", "ProjectPath", "VirtualFs", "generated"],
   ["Pattern", "Query", "Workspace"],
-  ["Draft", "Overlay"],
+  ["Draft"],
   ["Application", "Recipe", "Verification"],
   ["Node", "platform"],
 ]
@@ -26,7 +26,6 @@ const exactDependencies = new Map([
       "Draft",
       "Edit",
       "Evidence",
-      "Overlay",
       "Plan",
       "Policy",
       "ProjectPath",

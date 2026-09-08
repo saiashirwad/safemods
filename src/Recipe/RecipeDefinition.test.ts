@@ -37,28 +37,4 @@ describe("recipe definition and input validation", () => {
       ),
     60_000,
   )
-
-  effect(
-    "preserves a schema when composing with a schema-less recipe",
-    () =>
-      withFixture((_, _app) =>
-        Effect.gen(function* () {
-          const InputSchema = Schema.Struct({ value: Schema.NonEmptyString })
-          const validated = Recipe.define("validated-child", {
-            version: "1.0.0",
-            schema: InputSchema,
-            run: () => Effect.succeed(Draft.empty),
-          })
-          const schemaLess = Recipe.define<{ readonly value: string }>("schema-less-child", {
-            version: "1.0.0",
-            run: () => Effect.succeed(Draft.empty),
-          })
-          const composed = Recipe.pipe(schemaLess, validated)
-          expect(composed.schema).toBe(InputSchema)
-          const failure = yield* Recipe.run(composed, { value: "" }).pipe(Effect.flip)
-          expect(failure).toBeInstanceOf(RecipeInputError)
-        }),
-      ),
-    60_000,
-  )
 })

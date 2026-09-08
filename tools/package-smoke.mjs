@@ -81,7 +81,6 @@ void stateValue
     `
 import * as ApplicationEntry from "safemods/Application"
 import * as DraftEntry from "safemods/Draft"
-import * as OverlayEntry from "safemods/Overlay"
 import * as PolicyEntry from "safemods/Policy"
 import * as QueryEntry from "safemods/Query"
 import * as RecipeEntry from "safemods/Recipe"
@@ -91,8 +90,6 @@ const forbidden = [
   [ApplicationEntry, "Application"],
   [DraftEntry, "Draft"],
   [DraftEntry, "arguments"],
-  [OverlayEntry, "overlay"],
-  [OverlayEntry, "computeOverlayMap"],
   [PolicyEntry, "Policy"],
   [QueryEntry, "Query"],
   [QueryEntry, "preceding"],

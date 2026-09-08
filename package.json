@@ -16,10 +16,6 @@
       "types": "./dist/src/Draft/index.d.ts",
       "default": "./dist/src/Draft/index.js"
     },
-    "./Overlay": {
-      "types": "./dist/src/Overlay/index.d.ts",
-      "default": "./dist/src/Overlay/index.js"
-    },
     "./Pattern": {
       "types": "./dist/src/Pattern/index.d.ts",
       "default": "./dist/src/Pattern/index.js"
