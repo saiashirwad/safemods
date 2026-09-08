@@ -8,6 +8,7 @@ import {
   ConfiguredProject,
   DuplicateConfiguredProject,
   InvalidProjectRelativePath,
+  SnapshotExpired,
   Workspace,
 } from "../src/Workspace/index.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
@@ -179,6 +180,24 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
               expect(symbols).toHaveLength(1)
             }),
           )
+        }),
+      ),
+    60_000,
+  )
+
+  effect(
+    "fails with SnapshotExpired when a project snapshot outlives its region",
+    () =>
+      withFixture((_, app) =>
+        Effect.gen(function* () {
+          const workspace = yield* Workspace
+          const escaped = yield* workspace.withSnapshot({}, fixtureProject(app))
+          const sourceText = yield* escaped.sourceText("src/library.ts").pipe(Effect.flip)
+          const symbol = yield* escaped
+            .symbolNamed("target", { within: "src/library.ts" })
+            .pipe(Effect.flip)
+          expect(sourceText).toBeInstanceOf(SnapshotExpired)
+          expect(symbol).toBeInstanceOf(SnapshotExpired)
         }),
       ),
     60_000,
