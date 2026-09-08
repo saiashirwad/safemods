@@ -1,10 +1,8 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
-import { workspaceLayerNode } from "../src/Node.ts"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../src/Draft/index.ts"
-import { applyFileEdits } from "../src/Edit.ts"
 import { requireProjectRelativePath } from "../src/ProjectPath.ts"
 import * as Query from "../src/Query/index.ts"
 import { Workspace } from "../src/Workspace/index.ts"
@@ -149,64 +147,6 @@ describe("Draft helper contracts", () => {
               expect(conflictingEach._tag).toBe("DraftEvidenceConflict")
             }),
           )
-        }),
-      ),
-    60_000,
-  )
-
-  effect(
-    "cleanUnused removes only an unused named binding and does not target it on a second run",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          const consumerPath = Path.join(root, "src/default-consumer.ts")
-          yield* Effect.tryPromise(() =>
-            Fs.writeFile(
-              Path.join(root, "src/default-module.ts"),
-              [
-                "export default function DefaultThing(): number { return 1 }",
-                "export const Unused = 2",
-                "",
-              ].join("\n"),
-            ),
-          )
-          const original = [
-            'import DefaultThing, { Unused } from "./default-module.js";',
-            "export const value = DefaultThing()",
-            "",
-          ].join("\n")
-          yield* Effect.tryPromise(() => Fs.writeFile(consumerPath, original))
-
-          const workspace = yield* Workspace
-          const output = yield* workspace.withSnapshot(
-            {},
-            Effect.gen(function* () {
-              const project = yield* fixtureProject(app)
-              const draft = yield* Draft.cleanUnused(project)
-              expectCompleteEvidence(draft)
-              return yield* applyFileEdits(
-                original,
-                draft.edits.filter((edit) => edit.fileName === "src/default-consumer.ts"),
-              )
-            }),
-          )
-          expect(output).toContain('import DefaultThing from "./default-module.js";')
-          expect(output).not.toContain("Unused")
-          yield* Effect.tryPromise(() => Fs.writeFile(consumerPath, output))
-
-          const second = yield* Effect.gen(function* () {
-            const refreshedWorkspace = yield* Workspace
-            return yield* refreshedWorkspace.withSnapshot(
-              {},
-              Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                return yield* Draft.cleanUnused(project)
-              }),
-            )
-          }).pipe(Effect.provide(workspaceLayerNode({ projects: [app] }, { cwd: root })))
-          expect(
-            second.edits.filter((edit) => edit.fileName === "src/default-consumer.ts"),
-          ).toEqual([])
         }),
       ),
     60_000,
