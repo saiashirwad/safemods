@@ -66,14 +66,10 @@ try {
   await writeFile(
     join(fixture, "smoke.ts"),
     `${imports}
-import { of as preview, type FilePreview, type FileState, type PlanPreview } from "safemods/Verification"
+import { of as preview, type PlanPreview } from "safemods/Verification"
 void preview
 declare const previewValue: PlanPreview
-declare const fileValue: FilePreview
-declare const stateValue: FileState
 void previewValue
-void fileValue
-void stateValue
 `,
   )
   await writeFile(

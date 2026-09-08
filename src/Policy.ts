@@ -116,29 +116,8 @@ export const matches = (bounds: { readonly min?: number; readonly max?: number }
   matchCount: bounds,
 })
 
-export const exactly = (count: number): Policy => ({ matchCount: { min: count, max: count } })
-
-export const atMostFiles = (count: number): Policy => ({ maxAffectedFiles: count })
-
 export const noNewErrors = (): Policy => ({
   diagnostics: "no-new-errors",
-})
-
-export const fixesError = (code: number | string): Policy => ({
-  rules: [
-    {
-      name: `fixes-error:TS${code}`,
-      evaluate: (ctx) => {
-        const targetStr = diagnosticCodeKey(code)
-        const resolved = ctx.diagnosticDiff.resolved.some(
-          (d) => diagnosticCodeKey(d.code) === targetStr,
-        )
-        return resolved
-          ? true
-          : `Expected transformation to resolve diagnostic TS${code}, but it was not resolved.`
-      },
-    },
-  ],
 })
 
 export const allowErrors = (options: {

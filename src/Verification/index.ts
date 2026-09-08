@@ -1,12 +1,4 @@
-export {
-  StalePlanError,
-  VerificationFailure,
-  ProjectIdentityMismatch,
-  RecipeMismatch,
-  RecipeInputMismatch,
-  PolicyMismatch,
-  ToolchainMismatch,
-} from "./Errors.ts"
-export { of, type FilePreview, type FileState, type PlanPreview } from "./Preview.ts"
-export { verify, type VerifyOptions } from "./Verify.ts"
+export { VerificationFailure } from "./Errors.ts"
+export { of, type PlanPreview } from "./Preview.ts"
+export { verify } from "./Verify.ts"
 export type { VerifiedPlan } from "./VerifiedPlan.ts"

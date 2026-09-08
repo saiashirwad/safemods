@@ -1,7 +1,6 @@
 import { CriterionBase, type Criterion as CriterionModel } from "./Query.ts"
 
-export { QueryContractError } from "./Query.ts"
-export type { ProjectScope, Query, Selection, TargetFileScope } from "./Query.ts"
+export type { Query, Selection } from "./Query.ts"
 export * from "./Sources.ts"
 export * from "./Operators.ts"
 export * from "./Semantic.ts"

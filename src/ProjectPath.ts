@@ -10,19 +10,19 @@ export interface ProjectPathOperations {
   readonly sep: string
 }
 
-export interface PathContainmentOptions {
+interface PathContainmentOptions {
   readonly includeRoot?: boolean
   readonly caseInsensitive?: boolean
 }
 
-export interface PlanProjectPaths {
+interface PlanProjectPaths {
   readonly projects: ReadonlyArray<{
     readonly id: string
     readonly configFileName: string
   }>
 }
 
-export interface ResolvedPlanFilePath {
+interface ResolvedPlanFilePath {
   readonly projectRoot: string
   readonly fileName: string
 }

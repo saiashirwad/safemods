@@ -2,18 +2,12 @@
 import { Effect, Predicate } from "effect"
 import {
   type CallExpression,
-  type ClassDeclaration,
   type FunctionDeclaration,
   type Identifier,
   type Node,
   SyntaxKind,
 } from "typescript/unstable/ast"
-import {
-  isCallExpression,
-  isClassDeclaration,
-  isFunctionDeclaration,
-  isIdentifier,
-} from "typescript/unstable/ast/is"
+import { isCallExpression, isFunctionDeclaration, isIdentifier } from "typescript/unstable/ast/is"
 import type { EvidenceFact } from "./Evidence.ts"
 import type { ProjectSnapshot, ProjectSnapshotError } from "./Workspace/index.ts"
 import type { Symbol as NativeSymbol } from "typescript/unstable/async"
@@ -21,19 +15,19 @@ import type { Symbol as NativeSymbol } from "typescript/unstable/async"
 export const syntaxKindName = (kind: number): string =>
   // SAFETY: reverse-map coverage of every numeric member makes this total.
   SyntaxKind[kind]!
-export interface PatternMatchResult<Out> {
+interface PatternMatchResult<Out> {
   readonly matched: true
   readonly value: Out
   readonly facts?: Readonly<Record<string, EvidenceFact>>
 }
-export interface PatternMismatch {
+interface PatternMismatch {
   readonly matched: false
 }
-export type PatternResult<Out> = PatternMatchResult<Out> | PatternMismatch
+type PatternResult<Out> = PatternMatchResult<Out> | PatternMismatch
 
 export type SyntaxKindFilter = SyntaxKind | ReadonlyArray<SyntaxKind>
 
-export interface NodeCriterion<N extends Node = Node, Out = N> {
+interface NodeCriterion<N extends Node = Node, Out = N> {
   readonly mode: "node"
   readonly kind?: string
   readonly syntaxKind?: SyntaxKindFilter
@@ -46,18 +40,18 @@ export interface NodeCriterion<N extends Node = Node, Out = N> {
 export type Pattern<N extends Node = Node, Out = N> = NodeCriterion<N, Out>
 
 type Binding<K extends string, Out> = { readonly [P in K]: Out }
-export type AnyPattern = Pattern<Node, unknown>
+type AnyPattern = Pattern<Node, unknown>
 type TupleMatch<P extends ReadonlyArray<AnyPattern>> = {
   [K in keyof P]: P[K] extends Pattern<Node, infer Out> ? Out : never
 }
 
-export const matchSuccess = <Out>(
+const matchSuccess = <Out>(
   value: Out,
   facts?: Readonly<Record<string, EvidenceFact>>,
 ): PatternResult<Out> =>
   facts === undefined ? { matched: true, value } : { matched: true, value, facts }
 
-export const matchFailure: PatternMismatch = { matched: false }
+const matchFailure: PatternMismatch = { matched: false }
 
 export const testRegExp = (pattern: RegExp, value: string): boolean => {
   if (!pattern.global && !pattern.sticky) return pattern.test(value)
@@ -70,7 +64,7 @@ export const testRegExp = (pattern: RegExp, value: string): boolean => {
   }
 }
 
-export const matchesName = (name: string | RegExp, text: string): boolean =>
+const matchesName = (name: string | RegExp, text: string): boolean =>
   Predicate.isString(name) ? text === name : testRegExp(name, text)
 
 const bindingOf = <K extends string, Out>(key: K, value: Out): Binding<K, Out> =>
@@ -191,7 +185,7 @@ export const identifier = (options?: {
     }),
 })
 
-export interface CallExpressionMatch<EOut, AOut> {
+interface CallExpressionMatch<EOut, AOut> {
   readonly call: CallExpression
   readonly expression: EOut
   readonly args: AOut
@@ -240,7 +234,7 @@ export const callExpression = <EOut = Node, AOut = ReadonlyArray<Node>>(options?
   }
 }
 
-type ExportableDeclaration = FunctionDeclaration | ClassDeclaration
+type ExportableDeclaration = FunctionDeclaration
 
 const matchesExportModifier = (
   node: ExportableDeclaration,
@@ -250,7 +244,7 @@ const matchesExportModifier = (
   (node.modifiers?.some((modifier) => modifier.kind === SyntaxKind.ExportKeyword) ?? false) ===
     expected
 
-export interface FunctionDeclarationPatternOptions {
+interface FunctionDeclarationPatternOptions {
   readonly name?: string | RegExp
   readonly async?: boolean
   readonly exported?: boolean
@@ -272,34 +266,6 @@ export const functionDeclaration = (
       if (
         options?.async !== undefined &&
         (node.modifiers?.some((m) => m.kind === SyntaxKind.AsyncKeyword) ?? false) !== options.async
-      )
-        return matchFailure
-      if (!matchesExportModifier(node, options?.exported)) return matchFailure
-      return matchSuccess(
-        node,
-        node.name === undefined
-          ? { kind: syntaxKindName(node.kind) }
-          : { kind: syntaxKindName(node.kind), name: node.name.text },
-      )
-    }),
-})
-
-export interface ClassDeclarationPatternOptions {
-  readonly name?: string | RegExp
-  readonly exported?: boolean
-}
-export const classDeclaration = (
-  options?: ClassDeclarationPatternOptions,
-): Pattern<ClassDeclaration, ClassDeclaration> => ({
-  mode: "node",
-  kind: "classDeclaration",
-  syntaxKind: SyntaxKind.ClassDeclaration,
-  match: (node) =>
-    Effect.sync(() => {
-      if (!isClassDeclaration(node)) return matchFailure
-      if (
-        options?.name !== undefined &&
-        (node.name === undefined || !matchesName(options.name, node.name.text))
       )
         return matchFailure
       if (!matchesExportModifier(node, options?.exported)) return matchFailure

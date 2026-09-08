@@ -15,4 +15,3 @@ export type {
   SourceFingerprint,
   TransformationPlan,
 } from "./TransformationPlan.ts"
-export { TransformationPlanSchema } from "./Structure.ts"

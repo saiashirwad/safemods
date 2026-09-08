@@ -32,7 +32,7 @@ export class VirtualFsError extends Data.TaggedError("VirtualFsError")<{
   readonly actualHash?: string
 }> {}
 
-export interface VirtualFsMaterializeOptions<E> {
+interface VirtualFsMaterializeOptions<E> {
   readonly initialFiles?: ReadonlyArray<VirtualFsInitialFile>
   readonly load: (projectId: string, fileName: string) => Effect.Effect<string, E>
   readonly resolvePath: (projectId: string, fileName: string) => string

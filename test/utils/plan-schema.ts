@@ -1,4 +1,3 @@
-import { sha256 } from "../../src/Edit.ts"
 import { planHashOf } from "../../src/Plan/Codec.ts"
 import type { Json } from "../../src/Evidence.ts"
 import {
@@ -332,8 +331,6 @@ export const validateUnknown = (candidate: unknown) =>
 export const encodeUnknown = (candidate: unknown): string =>
   // SAFETY: exact-structure mutations in this test remain JSON values.
   canonicalJson(candidate as Json)
-
-export const hashJson = (value: Json): string => sha256(canonicalJson(value))
 
 export const rehashPlan = (plan: TransformationPlan): TransformationPlan => ({
   ...plan,

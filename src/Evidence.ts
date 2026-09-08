@@ -64,7 +64,7 @@ interface DraftEvidenceTarget {
   readonly evidence: ReadonlyArray<EvidenceRecord>
 }
 
-export interface MissingEvidence {
+interface MissingEvidence {
   readonly kind?: string | undefined
   readonly facts?: EvidenceRecord["facts"] | undefined
 }

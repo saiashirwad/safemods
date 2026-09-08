@@ -46,7 +46,7 @@ export interface Recipe<Input = undefined, E = never, R = never> {
   readonly run: (input: Input) => Effect.Effect<Draft, E, R | WorkspaceSnapshot | Workspace>
 }
 
-export interface RecipeDefinition<Input, E, R> {
+interface RecipeDefinition<Input, E, R> {
   readonly version: string
   readonly schema?: Schema.Codec<Input, unknown>
   /** Digest supplied by release tooling. The development default uses name and version. */
@@ -60,7 +60,7 @@ export class RecipeInputError extends Data.TaggedError("RecipeInputError")<{
   readonly cause: unknown
 }> {}
 
-export interface ValidatedRecipeInput<Input> {
+interface ValidatedRecipeInput<Input> {
   readonly value: Input
   readonly encoded: Json
 }
@@ -85,7 +85,7 @@ export const validateRecipeInput = <Input, E, R>(
   }).pipe(Effect.mapError((cause) => new RecipeInputError({ recipe: recipe.name, cause })))
 
 /** Construct a recipe from durable policies and runtime rules. */
-export const fromCompiled = <Input, E, R>(
+const fromCompiled = <Input, E, R>(
   name: string,
   version: string,
   compiled: CompiledPolicy,
@@ -146,7 +146,7 @@ const addFingerprint = (
 }
 
 /** Record compiler inputs that verification can revalidate. */
-export const fingerprintWorkspace = (
+const fingerprintWorkspace = (
   workspaceRoot: string,
   snapshot: WorkspaceSnapshotService,
 ): Effect.Effect<
