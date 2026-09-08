@@ -47,7 +47,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
             const execution = yield* executeRecipe(fileLifecycleRecipe, undefined).pipe(
               Effect.provide(mainLayer),
             )
-            expect(execution.plan.fileOperations?.length).toBe(2)
+            expect(execution.plan.fileOperations.length).toBe(2)
             expect(execution.plan.edits).toEqual([])
             expect(execution.verified.preview.files.length).toBeGreaterThanOrEqual(2)
 

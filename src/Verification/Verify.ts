@@ -8,8 +8,7 @@ import {
   type WorkspaceSnapshot,
 } from "../Workspace/index.ts"
 import { canonicalJson } from "../Evidence.ts"
-import type { PlanDecodeError, TransformationPlan } from "../Plan/TransformationPlan.ts"
-import { validatePlan } from "../Plan/Codec.ts"
+import { type PlanDecodeError, type TransformationPlan, validatePlan } from "../Plan.ts"
 import { type Recipe, TOOLCHAIN, validateRecipeInput } from "../Recipe.ts"
 import type { VirtualFsSnapshot } from "../VirtualFs.ts"
 import { collectDiagnostics } from "./Diagnostics.ts"
@@ -168,7 +167,7 @@ export const verify = <Input, E, R>(
     )
 
     const diagnosticDiff = computeDiagnosticDiff(baselineDiagnostics, proposedRun.diagnostics)
-    const matches = validatedPlan.measurements?.matches
+    const matches = validatedPlan.measurements.matches
     const affectedFiles = proposed.files.length
     const builtInFailure = evaluateBuiltInPolicies({
       policies: validatedPlan.policies,

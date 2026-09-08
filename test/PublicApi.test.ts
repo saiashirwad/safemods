@@ -7,8 +7,7 @@ import { Effect, Layer, type Stream } from "effect"
 import type { CallExpression } from "typescript/unstable/ast"
 import { executeRecipe } from "./utils/execute-recipe.ts"
 import * as Application from "../src/Application.ts"
-import * as Plan from "../src/Plan/index.ts"
-import type { TransformationPlan } from "../src/Plan/index.ts"
+import * as Plan from "../src/Plan.ts"
 import type * as Query from "../src/Query/index.ts"
 import * as Recipe from "../src/Recipe.ts"
 import type * as Verification from "../src/Verification/index.ts"
@@ -41,7 +40,7 @@ export type _CallInference = Assert<
   >
 >
 
-const _rawPlanIsNotApplicationAuthority = (plan: TransformationPlan) =>
+const _rawPlanIsNotApplicationAuthority = (plan: Plan.TransformationPlan) =>
   // @ts-expect-error — Application accepts only a Verified Plan
   Application.applyVerifiedPlan(plan)
 void _rawPlanIsNotApplicationAuthority
@@ -67,7 +66,7 @@ describe("candidate public API (@effect/vitest)", () => {
           const { plan, receipt, verified } = yield* executeRecipe(wrapTargetInput, input)
 
           expect(plan.recipe.name).toBe("wrap-target-input")
-          expect(plan.measurements?.matches).toBe(2)
+          expect(plan.measurements.matches).toBe(2)
           expect(verified.preview.files).toHaveLength(2)
           expect(verified.diagnosticDiff.introduced).toHaveLength(0)
           expect(receipt.outputs).toHaveLength(2)
@@ -92,7 +91,7 @@ describe("candidate public API (@effect/vitest)", () => {
             Effect.provide(Layer.merge(freshWorkspaceLayer, nodeLayer)),
           )
           expect(second.edits).toHaveLength(0)
-          expect(second.measurements?.matches).toBe(0)
+          expect(second.measurements.matches).toBe(0)
         }),
       ),
     60_000,

@@ -1,12 +1,12 @@
 /** Project identity and source fingerprint revalidation. */
 import { hash } from "node:crypto"
 import { Effect, FileSystem, Path } from "effect"
-import type { SourceFingerprint, TransformationPlan } from "../Plan/TransformationPlan.ts"
+import type { SourceFingerprint, TransformationPlan } from "../Plan.ts"
 import { resolvePlanFilePath, unsafePlanFilePathMessage } from "../ProjectPath.ts"
 import { ConfiguredProject } from "../Workspace/index.ts"
 import { ProjectIdentityMismatch, StalePlanError, VerificationFailure } from "./Errors.ts"
 
-/** Plan projects are already sorted by id (see Plan/Finalize canonicalizeContent). */
+/** Plan projects are already sorted by id (see Plan.ts canonicalize). */
 export const requireMatchingProjectIdentity = (
   plan: TransformationPlan,
   liveProjects: ReadonlyArray<ConfiguredProject>,

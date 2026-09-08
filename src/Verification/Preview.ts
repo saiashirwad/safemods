@@ -2,11 +2,11 @@
 import { hash } from "node:crypto"
 import { Effect, type FileSystem, type Path } from "effect"
 import {
-  isContentFingerprint,
   type PlanDecodeError,
   type TransformationPlan,
-} from "../Plan/TransformationPlan.ts"
-import { type ValidatedPlan, validatePlan } from "../Plan/Codec.ts"
+  type ValidatedPlan,
+  validatePlan,
+} from "../Plan.ts"
 import { type ProjectIdentityMismatch, StalePlanError, VerificationFailure } from "./Errors.ts"
 import {
   absoluteTarget,
@@ -56,7 +56,7 @@ export const previewValidatedPlan = (
     const initial = new Map<string, string>()
     for (const source of plan.sources) {
       const content = yield* revalidateSource(plan, workspaceRoot, source)
-      if (!isContentFingerprint(source) || content === undefined) continue
+      if (source.kind !== "file" || content === undefined) continue
       initialFiles.push({
         projectId: source.projectId,
         fileName: source.fileName,
@@ -72,7 +72,7 @@ export const previewValidatedPlan = (
     }
     for (const source of plan.sources) addTarget(source.projectId, source.fileName)
     for (const edit of plan.edits) addTarget(edit.projectId, edit.fileName)
-    for (const operation of plan.fileOperations ?? []) {
+    for (const operation of plan.fileOperations) {
       addTarget(operation.projectId, operation.path)
       if (operation.kind === "move") addTarget(operation.projectId, operation.toPath)
     }
@@ -124,7 +124,7 @@ export const previewValidatedPlan = (
     const touched = new Set<string>()
     const moveCounterpart = new Map<string, string>()
     const operationKinds = new Map<string, "create" | "delete" | "move">()
-    for (const operation of plan.fileOperations ?? []) {
+    for (const operation of plan.fileOperations) {
       const sourceKey = virtualFileKey(operation.projectId, operation.path)
       touched.add(sourceKey)
       if (operation.kind === "create") {

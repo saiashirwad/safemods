@@ -4,7 +4,7 @@
     "src/Application.ts",
     "src/Draft/index.ts",
     "src/Node.ts",
-    "src/Plan/index.ts",
+    "src/Plan.ts",
     "src/Policy.ts",
     "src/Query/index.ts",
     "src/Recipe.ts",

@@ -1,5 +1,5 @@
 /** Pure evaluation of durable plan policies. */
-import type { PlanPolicies } from "../Plan/TransformationPlan.ts"
+import type { PlanPolicies } from "../Plan.ts"
 import type { DiagnosticDiff, DiagnosticRecord } from "../Policy.ts"
 
 export const diagnosticIdentity = (diagnostic: DiagnosticRecord): string =>

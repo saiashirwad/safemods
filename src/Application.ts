@@ -1,7 +1,7 @@
 /** Apply a verified plan to the real filesystem. */
 import { hash, randomUUID } from "node:crypto"
 import { Data, Effect, FileSystem, Path } from "effect"
-import type { TransformationPlan } from "./Plan/TransformationPlan.ts"
+import type { TransformationPlan } from "./Plan.ts"
 import { isPathContained, resolvePlanFilePath, unsafePlanFilePathMessage } from "./ProjectPath.ts"
 import { StalePlanError } from "./Verification/Errors.ts"
 import { requireMatchingProjectIdentity } from "./Verification/SourceRevalidation.ts"

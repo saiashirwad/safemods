@@ -10,7 +10,7 @@ import { computeDiagnosticDiff } from "../src/Verification/PolicyEvaluation.ts"
 import * as Recipe from "../src/Recipe.ts"
 import { VerificationFailure } from "../src/Verification/index.ts"
 import * as Verification from "../src/Verification/index.ts"
-import { finalizePlan } from "../src/Plan/Finalize.ts"
+import { finalizePlan } from "../src/Plan.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
 

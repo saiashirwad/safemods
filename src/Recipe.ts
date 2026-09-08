@@ -2,14 +2,13 @@
 import { hash } from "node:crypto"
 import { Data, Effect, FileSystem, Path, Schema } from "effect"
 import type { Draft } from "./Draft/index.ts"
-import { compareSourceFingerprints } from "./Plan/Validate.ts"
-import { finalizePlan } from "./Plan/Finalize.ts"
-import type {
-  PlanBuildError,
-  PlanPolicies,
-  SourceFingerprint,
-  TransformationPlan,
-} from "./Plan/TransformationPlan.ts"
+import {
+  finalizePlan,
+  type PlanBuildError,
+  type PlanPolicies,
+  type SourceFingerprint,
+  type TransformationPlan,
+} from "./Plan.ts"
 import {
   type ProjectNotInSnapshot,
   type SnapshotExpired,
@@ -108,7 +107,7 @@ const observationRelativePath = (
   })
 
 const fingerprintKey = (source: SourceFingerprint): string =>
-  `${source.projectId}\0${source.kind ?? "file"}\0${source.fileName}`
+  `${source.projectId}\0${source.kind}\0${source.fileName}`
 
 const addFingerprint = (
   sources: Map<string, SourceFingerprint>,
@@ -161,11 +160,12 @@ const fingerprintWorkspace = (
             projectId: configured.id,
             fileName: relative,
             hash: hash("sha256", content, "hex"),
+            kind: "file",
           })
         }
       }
     }
-    return [...sources.values()].sort(compareSourceFingerprints)
+    return [...sources.values()]
   })
 
 /** Toolchain identity recorded in each Plan. */
@@ -216,16 +216,12 @@ export const run = <Input, E, R>(
           })),
           sources,
           edits: completeDraft.edits,
+          fileOperations: completeDraft.fileOperations ?? [],
           evidence: completeDraft.evidence,
           policies: recipe.policies,
           measurements: { matches: completeDraft.matches },
         }
-        const finalizedInput =
-          completeDraft.fileOperations !== undefined
-            ? { ...planInput, fileOperations: completeDraft.fileOperations }
-            : planInput
-
-        return yield* finalizePlan(finalizedInput)
+        return yield* finalizePlan(planInput)
       }),
     )
   })

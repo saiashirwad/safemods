@@ -15,7 +15,7 @@ const expectCompleteEvidence = (draft: Draft.Draft): void => {
 
   const referencedIds = [
     ...draft.edits.flatMap((edit) => edit.evidenceIds),
-    ...(draft.fileOperations ?? []).flatMap((operation) => operation.evidenceIds ?? []),
+    ...(draft.fileOperations ?? []).flatMap((operation) => operation.evidenceIds),
   ]
   for (const id of referencedIds) {
     expect(evidenceIds.filter((candidate) => candidate === id)).toHaveLength(1)

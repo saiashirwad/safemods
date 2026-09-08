@@ -1,5 +1,5 @@
 import type { Types } from "effect"
-import type { PlanPolicies } from "./Plan/TransformationPlan.ts"
+import type { PlanPolicies } from "./Plan.ts"
 
 export interface DiagnosticRecord {
   readonly code: number | string

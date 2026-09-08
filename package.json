@@ -17,8 +17,8 @@
       "default": "./dist/src/Draft/index.js"
     },
     "./Plan": {
-      "types": "./dist/src/Plan/index.d.ts",
-      "default": "./dist/src/Plan/index.js"
+      "types": "./dist/src/Plan.d.ts",
+      "default": "./dist/src/Plan.js"
     },
     "./Policy": {
       "types": "./dist/src/Policy.d.ts",

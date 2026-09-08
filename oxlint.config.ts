@@ -350,7 +350,7 @@ export default defineConfig({
             patterns: [
               "../Draft/*",
               "../Edit/*",
-              "../Plan/*",
+              "../Plan.ts",
               "../Verification/*",
               "../Application/*",
             ],

@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import * as Draft from "../src/Draft/index.ts"
-import { PlanBuildError } from "../src/Plan/index.ts"
+import { PlanBuildError } from "../src/Plan.ts"
 import * as Policy from "../src/Policy.ts"
 import { RecipeInputError } from "../src/Recipe.ts"
 import * as Recipe from "../src/Recipe.ts"

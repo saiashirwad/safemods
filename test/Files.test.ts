@@ -1,7 +1,7 @@
 import { hash } from "node:crypto"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import type { PlannedFileOperation } from "../src/Plan/TransformationPlan.ts"
+import type { PlannedFileOperation } from "../src/Plan.ts"
 import { withProject } from "./utils/project-fixture.ts"
 import * as Draft from "../src/Draft/index.ts"
 
@@ -34,7 +34,7 @@ describe("Draft.files", () => {
           const record = draft.evidence[0]!
           expect(record.kind).toBe("file-operation")
           expect(record.facts.kind).toBe("create")
-          expect(record.id).toBe(operation.evidenceIds?.[0])
+          expect(record.id).toBe(operation.evidenceIds[0])
         }),
       ),
     60_000,
@@ -50,7 +50,7 @@ describe("Draft.files", () => {
           const operation = expectKind(draft.fileOperations![0]!, "delete")
           expect(operation.path).toBe("src/library.ts")
           expect(operation.initialHash).toBe(hash("sha256", source, "hex"))
-          expect(draft.evidence[0]!.id).toBe(operation.evidenceIds?.[0])
+          expect(draft.evidence[0]!.id).toBe(operation.evidenceIds[0])
         }),
       ),
     60_000,

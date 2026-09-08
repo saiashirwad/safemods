@@ -15,7 +15,7 @@ import {
   mergeEvidence,
   type EvidenceRecord,
 } from "../Evidence.ts"
-import type { PlannedFileOperation } from "../Plan/TransformationPlan.ts"
+import type { PlannedFileOperation } from "../Plan.ts"
 import type { Node, SourceFile } from "typescript/unstable/ast"
 import { textEdit, type TextEdit } from "../Edit.ts"
 import type { Selection } from "../Query/index.ts"
@@ -200,7 +200,7 @@ const adoptReturnedDraft = <A extends Node>(
       })),
       fileOperations: (proposed.fileOperations ?? []).map((operation) => ({
         ...operation,
-        evidenceIds: [...new Set([...(operation.evidenceIds ?? []), evidenceId])],
+        evidenceIds: [...new Set([...operation.evidenceIds, evidenceId])],
       })),
       evidence: [...proposed.evidence, selectionEvidence(selection, evidenceId)],
       matches: 1,

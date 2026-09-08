@@ -1,6 +1,6 @@
 /** Process-local capability that grants application authority. */
 import { Brand, Predicate } from "effect"
-import type { ValidatedPlan } from "../Plan/Codec.ts"
+import type { ValidatedPlan } from "../Plan.ts"
 import type { DiagnosticDiff } from "../Policy.ts"
 import type { PlanPreview } from "./Preview.ts"
 

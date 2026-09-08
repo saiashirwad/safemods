@@ -1,6 +1,6 @@
 /** Verification failures at plan, recipe, policy, and workspace boundaries. */
 import { Data, type Schema } from "effect"
-import type { TransformationPlan } from "../Plan/TransformationPlan.ts"
+import type { TransformationPlan } from "../Plan.ts"
 import type { DiagnosticRecord } from "../Policy.ts"
 import type { ConfiguredProject } from "../Workspace/index.ts"
 

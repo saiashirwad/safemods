@@ -1,7 +1,7 @@
 import { hash } from "node:crypto"
 import { Data, Effect } from "effect"
 import { applyFileEdits, type EditConflict, type InvalidEdit, type TextEdit } from "./Edit.ts"
-import type { PlannedFileOperation } from "./Plan/TransformationPlan.ts"
+import type { PlannedFileOperation } from "./Plan.ts"
 
 /** The complete virtual filesystem state presented to an isolated compiler. */
 export interface VirtualFsSnapshot {

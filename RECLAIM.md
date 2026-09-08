@@ -49,7 +49,7 @@ Every arrow is a boundary where the previous artifact is checked, never trusted.
 
 Edits are derived from AST nodes inside `unsafeNative` via `getStart`/`getEnd`. `replaceEach(selections, fn)` is the main authoring call; the callback returns a string, a `{node, text}`, or a whole Draft to adopt. `concat` merges drafts and rejects evidence records with the same id but different facts. `Draft.files.move` now moves a file with its content unchanged; it no longer rewrites importers. Nothing is ordered or conflict-checked at this stage.
 
-**Plan.** The Draft frozen into a serializable, content-addressed artifact. `src/Plan/TransformationPlan.ts`, types derived from the schema since `6358736`. Adds recipe identity (name, version, implementation hash, options), toolchain versions, project list, a `SourceFingerprint` for every owned source file plus the root tsconfig, `snapshotHash`, `planId`, and the policies. The plan file must round-trip byte-exactly through canonical JSON.
+**Plan.** The Draft frozen into a serializable, content-addressed artifact. `src/Plan.ts`, types derived from the schema since `6358736`. Adds recipe identity (name, version, implementation hash, options), toolchain versions, project list, a `SourceFingerprint` for every owned source file plus the root tsconfig, `snapshotHash`, `planId`, and the policies. The plan file must round-trip byte-exactly through canonical JSON.
 
 **VirtualFs.** `VirtualFsSnapshot` is three collections keyed by absolute path: `files` (path to new content), `created`, `deleted`. `src/VirtualFs.ts` turns operations plus edits into that state; `Workspace/internal/CompilerOverlay.ts` wraps the compiler's filesystem callbacks so virtual content wins. Used only by verification now.
 
@@ -66,7 +66,7 @@ Edits are derived from AST nodes inside `unsafeNative` via `getStart`/`getEnd`. 
 3. Call `recipe.run(input)`, which returns a Draft.
 4. `finalizeDraftEvidence` (`src/Evidence.ts`): merge evidence, then back-fill a `draft-operation` record for any evidence id an edit references but no record supplies. **(verified)** This silently invents justification for unjustified edits. It should fail.
 5. `fingerprintWorkspace`: sha256 the root tsconfig and every owned source file. Only the root config is hashed, so `extends` chains and `paths` in a base config are invisible to freshness.
-6. `finalizePlan` (`src/Plan/Finalize.ts`): canonically order edits and operations, reject overlaps, compute hashes, stamp `TOOLCHAIN`.
+6. `finalizePlan` (`src/Plan.ts`): canonically order edits and operations, reject overlaps, compute hashes, stamp `TOOLCHAIN`.
 
 `TOOLCHAIN` (`Recipe.ts:172`) **(verified)** has all three versions as string literals. Verify compares them byte for byte, so a dependency bump that does not edit this file makes every old plan fail with `ToolchainMismatch`.
 
@@ -102,7 +102,7 @@ Layer order is enforced by `tools/check-boundaries.mjs`. Keep it. Dead exports a
 | ----- | ---------------- | ----: | -------------------------------------------------------- | ------------------------------------------------------------------- |
 | 0     | `Edit.ts`        |   126 | TextEdit, hash guard, overlap rules, right-to-left apply | solid; uses `localeCompare` (section 6.3)                           |
 | 0     | `Evidence.ts`    |    84 | evidence records, canonical JSON, finalize               | fix silent back-fill; uses `localeCompare`                          |
-| 0     | `Plan/`          |   509 | the durable artifact, codec, validation, finalize        | types from schema; uses `localeCompare`                             |
+| 0     | `Plan.ts`        |   350 | the durable artifact, codec, validation, finalize        | types from schema; validate = re-finalize and compare               |
 | 0     | `Policy.ts`      |    48 | four-field policy record and constructors                | `all` still last-write-wins (section 5)                             |
 | 0     | `ProjectPath.ts` |   109 | portable relative paths, traversal defence               | security boundary; `caseInsensitive` option folds whole path        |
 | 0     | `VirtualFs.ts`   |   170 | operations + edits to overlay state                      | no direct tests                                                     |
@@ -160,14 +160,14 @@ Module specifier resolution is deliberately out of the core now. When `files.mov
 ### 6.3 Domain logic that is wrongly specified
 
 - **Diagnostic identity** `Verification/PolicyEvaluation.ts:5-13` **(verified)**: includes `start` and `length`. A plan that inserts one line above an existing error moves it, and the diff reports one resolved and one introduced, so `no-new-errors` fails on a change that introduced nothing. Drop position from the diff key. Keep it for the separate cross-project dedup in `Verification/Diagnostics.ts`, which needs position. Two call sites, two keys. `test/VerificationPolicies.test.ts:100` currently asserts the wrong behaviour ("treats a diagnostic category or span change as a real transition"); that test flips.
-- **Plan identity uses `localeCompare`** **(verified)**: `Evidence.ts:21`, `Edit.ts:49-53`, and every comparator in `Plan/Validate.ts:32-47`. `localeCompare` is ICU and locale dependent. `planId` and `snapshotHash` are sha256 over that ordering, and `parsePlan` requires byte-exact canonical JSON, so a plan written on one machine can fail to parse on another. Replace with plain code-point comparison (`Order.string` from Effect) everywhere. This is the most important open bug.
+- **Plan identity uses `localeCompare`** **(verified)**: `Evidence.ts:21`, `Edit.ts:49-53`, and the plan comparators (fixed in `src/Plan.ts`, which now uses code-point order). `localeCompare` is ICU and locale dependent. `planId` and `snapshotHash` are sha256 over that ordering, and `parsePlan` requires byte-exact canonical JSON, so a plan written on one machine can fail to parse on another. Replace with plain code-point comparison (`Order.string` from Effect) everywhere. This is the most important open bug.
 - **Evidence back-fill** `Evidence.ts:76-82` **(verified)**: invents records for dangling ids. Should fail with a typed error.
 
 ## 7. Tests: what the suite protects
 
 The mutant results below were taken at `021b56e`, before the suite was cut and moved. Re-run them before trusting them; some of the tests they refer to were deleted as tautological.
 
-- `Plan/Validate.ts` "create path already exists" guard: deleting it kept the suite green.
+- `Plan.ts` "create path already exists" guard: now covered by the "create over an existing source" case.
 - `computeDiagnosticDiff` duplicate cap: `test/VerificationPolicies.test.ts` now calls the real function (`:18`), so this may be covered. Confirm.
 - `Query/Operators.ts` `within` project-id check: dropping it kept the suite green.
 - `CompilerOverlay`: no test exercises it with a real compiler, so the `directoryExists` gap cannot be seen.
