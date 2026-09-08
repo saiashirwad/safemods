@@ -10,7 +10,6 @@ export const architectureLayers = [
   ["Draft", "Overlay"],
   ["Application", "Execution", "Recipe", "Verification"],
   ["Node", "platform"],
-  ["Cli", "bin"],
 ]
 
 const layerByOwner = new Map(
@@ -63,7 +62,6 @@ const exactDependencies = new Map([
       "Workspace",
     ]),
   ],
-  ["bin", new Set(["Cli"])],
 ])
 
 const files = async (directory) =>
@@ -90,9 +88,6 @@ const ownerOf = (repositoryRoot, file) => {
   if (!sourceRelative.startsWith(`..${sep}`) && sourceRelative !== "..") {
     return sourceRelative.split(sep)[0]
   }
-  const binRoot = resolve(repositoryRoot, "bin")
-  const binRelative = relative(binRoot, file)
-  if (!binRelative.startsWith(`..${sep}`) && binRelative !== "..") return "bin"
   return undefined
 }
 
@@ -105,11 +100,6 @@ const targetDetails = (repositoryRoot, file, specifier) => {
       owner: sourceRelative.split(sep)[0],
       parts: sourceRelative.split(sep),
     }
-  }
-  const binRoot = resolve(repositoryRoot, "bin")
-  const binRelative = relative(binRoot, target)
-  if (!binRelative.startsWith(`..${sep}`) && binRelative !== "..") {
-    return { owner: "bin", parts: ["bin", ...binRelative.split(sep)] }
   }
   return undefined
 }
@@ -131,10 +121,7 @@ export const dependencyFailure = (owner, targetOwner) => {
 
 export const checkArchitectureBoundaries = async (repositoryRoot) => {
   const failures = []
-  const sourceFiles = [
-    ...(await files(resolve(repositoryRoot, "src"))),
-    ...(await files(resolve(repositoryRoot, "bin"))),
-  ]
+  const sourceFiles = await files(resolve(repositoryRoot, "src"))
 
   for (const file of sourceFiles) {
     if (!TYPESCRIPT_SOURCE.test(file) || TYPESCRIPT_TEST.test(file)) continue

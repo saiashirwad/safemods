@@ -30,7 +30,6 @@ describe("architecture boundaries", () => {
     const root = await mkdtemp(join(tmpdir(), "safemods-boundaries-"))
     try {
       await Promise.all([
-        mkdir(join(root, "bin"), { recursive: true }),
         mkdir(join(root, "src", "Draft"), { recursive: true }),
         mkdir(join(root, "src", "Edit"), { recursive: true }),
         mkdir(join(root, "src", "Pattern"), { recursive: true }),
@@ -43,7 +42,6 @@ describe("architecture boundaries", () => {
         mkdir(join(root, "src", "Node"), { recursive: true }),
       ])
       await Promise.all([
-        writeFile(join(root, "bin", "safemods.ts"), 'import "../src/Cli/index.ts"\n'),
         writeFile(join(root, "src", "Query", "index.ts"), "export {}\n"),
         writeFile(join(root, "src", "Workspace", "index.ts"), "export {}\n"),
         writeFile(join(root, "src", "Workspace", "Bad.ts"), 'import "../Node/ProjectPath.ts"\n'),
@@ -56,10 +54,7 @@ describe("architecture boundaries", () => {
           join(root, "src", "Pattern", "Bad.ts"),
           'import "../Query/internal/Private.ts"\n',
         ),
-        writeFile(
-          join(root, "src", "Recipe", "Bad.ts"),
-          'import("../Cli/index.ts")\nimport "../Application/index.ts"\n',
-        ),
+        writeFile(join(root, "src", "Recipe", "Bad.ts"), 'import "../Application/index.ts"\n'),
         writeFile(
           join(root, "src", "Verification", "Bad.ts"),
           'import "../Application/index.ts"\n',
@@ -73,7 +68,6 @@ describe("architecture boundaries", () => {
       assert.ok(failures.some((failure) => failure.includes("Edit imports higher layer Workspace")))
       assert.ok(failures.some((failure) => failure.includes("package self-import safemods/Plan")))
       assert.ok(failures.some((failure) => failure.includes("imports private")))
-      assert.ok(failures.some((failure) => failure.includes("Recipe must not depend on Cli")))
       assert.ok(
         failures.some((failure) => failure.includes("Recipe must not depend on Application")),
       )
