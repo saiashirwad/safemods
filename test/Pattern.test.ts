@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import type { CallExpression } from "typescript/unstable/ast"
-import * as Pattern from "../src/Pattern/index.ts"
+import * as Pattern from "../src/Pattern.ts"
 import { Criterion } from "../src/Query/index.ts"
 import * as Query from "../src/Query/index.ts"
 import { Workspace } from "../src/Workspace/index.ts"

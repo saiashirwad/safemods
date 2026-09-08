@@ -6,7 +6,7 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../src/Draft/index.ts"
 import * as Query from "../src/Query/index.ts"
-import * as Recipe from "../src/Recipe/index.ts"
+import * as Recipe from "../src/Recipe.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
 

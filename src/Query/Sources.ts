@@ -1,12 +1,12 @@
 /** Query sources over workspace snapshots and structural patterns. */
 import { Effect, Stream } from "effect"
 import {
-  SyntaxKind,
   type CallExpression,
   type Identifier,
   type ImportDeclaration,
   type Node,
   type SourceFile,
+  SyntaxKind,
 } from "typescript/unstable/ast"
 import { isCallExpression, isIdentifier, isImportDeclaration } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol } from "typescript/unstable/async"
@@ -17,7 +17,7 @@ import {
   type ProjectSnapshot,
   type ProjectSnapshotError,
 } from "../Workspace/index.ts"
-import { syntaxKindName, type Pattern, type SyntaxKindFilter } from "../Pattern/index.ts"
+import { type Pattern, type SyntaxKindFilter, syntaxKindName } from "../Pattern.ts"
 import type { ProjectScope, Query, Selection, TargetFileScope } from "./Query.ts"
 
 const isProjectFileArray = (value: ProjectScope): value is ReadonlyArray<ProjectFile> =>

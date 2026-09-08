@@ -336,9 +336,9 @@ export default defineConfig({
       },
     },
     {
-      files: ["src/Pattern/**/*.ts"],
+      files: ["src/Pattern.ts"],
       rules: {
-        "no-restricted-imports": ["error", { patterns: ["../Query/*", "../Query/**"] }],
+        "no-restricted-imports": ["error", { patterns: ["./Query/*", "./Query/**"] }],
       },
     },
     {

@@ -1,25 +1,24 @@
 /** Complete verification orchestration and VerifiedPlan issuance. */
 import { Effect, type FileSystem, type Path, Schema } from "effect"
 import {
-  Workspace,
   type ProjectNotInSnapshot,
   type SnapshotExpired,
+  Workspace,
   type WorkspaceCompilerError,
   type WorkspaceSnapshot,
 } from "../Workspace/index.ts"
 import {
   canonicalJson,
   type PlanDecodeError,
-  validatePlan,
   type TransformationPlan,
+  validatePlan,
 } from "../Plan/index.ts"
 import {
   allowedErrorsFromRules,
   computeDiagnosticDiff,
   type PolicyEvaluationContext,
 } from "../Policy.ts"
-import { TOOLCHAIN, type Recipe } from "../Recipe/index.ts"
-import { validateRecipeInput } from "../Recipe/Input.ts"
+import { type Recipe, TOOLCHAIN, validateRecipeInput } from "../Recipe.ts"
 import type { VirtualFsSnapshot } from "../VirtualFs.ts"
 import { collectDiagnostics } from "./Diagnostics.ts"
 import {
@@ -31,7 +30,7 @@ import {
   ToolchainMismatch,
   VerificationFailure,
 } from "./Errors.ts"
-import { previewValidatedPlan, type PlanPreview } from "./Preview.ts"
+import { type PlanPreview, previewValidatedPlan } from "./Preview.ts"
 import { evaluateBuiltInPolicies, evaluateCustomRules } from "./PolicyEvaluation.ts"
 import { absoluteTarget, requireMatchingProjectIdentity } from "./SourceRevalidation.ts"
 import { issueVerifiedPlan, type VerifiedPlan } from "./VerifiedPlan.ts"

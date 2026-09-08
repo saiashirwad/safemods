@@ -1,8 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import * as Draft from "../src/Draft/index.ts"
-import { RecipeInputError } from "../src/Recipe/index.ts"
-import * as Recipe from "../src/Recipe/index.ts"
+import { RecipeInputError } from "../src/Recipe.ts"
+import * as Recipe from "../src/Recipe.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 
 describe("recipe definition and input validation", () => {

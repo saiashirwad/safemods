@@ -17,8 +17,8 @@
       "default": "./dist/src/Draft/index.js"
     },
     "./Pattern": {
-      "types": "./dist/src/Pattern/index.d.ts",
-      "default": "./dist/src/Pattern/index.js"
+      "types": "./dist/src/Pattern.d.ts",
+      "default": "./dist/src/Pattern.js"
     },
     "./Policy": {
       "types": "./dist/src/Policy.d.ts",
@@ -29,8 +29,8 @@
       "default": "./dist/src/Query/index.js"
     },
     "./Recipe": {
-      "types": "./dist/src/Recipe/index.d.ts",
-      "default": "./dist/src/Recipe/index.js"
+      "types": "./dist/src/Recipe.d.ts",
+      "default": "./dist/src/Recipe.js"
     },
     "./Verification": {
       "types": "./dist/src/Verification/index.d.ts",

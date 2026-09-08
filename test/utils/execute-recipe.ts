@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { applyVerifiedPlan } from "../../src/Application.ts"
-import { run, type Recipe } from "../../src/Recipe/index.ts"
+import { type Recipe, run } from "../../src/Recipe.ts"
 import { verify } from "../../src/Verification/index.ts"
 
 /** Test helper: run, verify, and apply a recipe in one step. */

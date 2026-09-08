@@ -3,12 +3,12 @@ import { matchesGlob } from "node:path"
 import { Effect, Function, Predicate, Stream } from "effect"
 import type { CallExpression, Node } from "typescript/unstable/ast"
 import { isProjectFile, type ProjectFile } from "../Workspace/index.ts"
-import { testRegExp } from "../Pattern/Pattern.ts"
+import { testRegExp } from "../Pattern.ts"
 import {
-  CriterionBase,
-  QueryContractError,
   type Criterion,
+  CriterionBase,
   type Query,
+  QueryContractError,
   type Selection,
 } from "./Query.ts"
 
