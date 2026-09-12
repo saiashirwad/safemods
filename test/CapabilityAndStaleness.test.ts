@@ -44,7 +44,7 @@ describe("Node application capability and staleness checks", () => {
         yield* Effect.promise(() => Fs.symlink(outside, link, "dir"))
         const recipe = Recipe.define("symlink-escape", {
           version: "1.0.0",
-          policies: [{ diagnostics: "allow-new-errors" }],
+          policies: { diagnostics: "allow-new-errors" },
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
@@ -75,7 +75,7 @@ describe("Node application capability and staleness checks", () => {
         const contents = "export const created = true;\n"
         const recipe = Recipe.define("forged-apply", {
           version: "1.0.0",
-          policies: [{ diagnostics: "allow-new-errors" }],
+          policies: { diagnostics: "allow-new-errors" },
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
@@ -133,7 +133,7 @@ describe("Node application capability and staleness checks", () => {
       Effect.gen(function* () {
         const recipe = Recipe.define("stale-apply", {
           version: "1.0.0",
-          policies: [{ diagnostics: "allow-new-errors" }],
+          policies: { diagnostics: "allow-new-errors" },
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)

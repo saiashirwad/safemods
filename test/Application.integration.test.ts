@@ -23,7 +23,7 @@ describe("declarative transformations API (@effect/vitest)", () => {
 
             const fileLifecycleRecipe = Recipe.define("file-lifecycle", {
               version: "1.0.0",
-              policies: [{ diagnostics: "allow-new-errors" }],
+              policies: { diagnostics: "allow-new-errors" },
               run: () =>
                 Effect.gen(function* () {
                   const project = yield* fixtureProject(app)

@@ -4,7 +4,6 @@ import { describe, effect, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../src/Draft/index.ts"
 import type { DiagnosticRecord } from "../src/Policy.ts"
-import * as Policy from "../src/Policy.ts"
 import * as Query from "../src/Query/index.ts"
 import { computeDiagnosticDiff } from "../src/Verification/PolicyEvaluation.ts"
 import * as Recipe from "../src/Recipe.ts"
@@ -74,7 +73,6 @@ describe("verification diagnostics and policies", () => {
           )
           const recipe = Recipe.define("swap-one-error-for-another", {
             version: "1.0.0",
-            policies: [],
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
@@ -97,7 +95,7 @@ describe("verification diagnostics and policies", () => {
     60_000,
   )
 
-  it("treats a diagnostic category or span change as a real transition", () => {
+  it("treats a diagnostic category change as a real transition", () => {
     const warning: DiagnosticRecord = {
       code: 9999,
       message: "same diagnostic",
@@ -106,14 +104,17 @@ describe("verification diagnostics and policies", () => {
       start: 1,
       length: 2,
     }
-    const changedCategory = computeDiagnosticDiff([warning], [{ ...warning, category: "error" }])
+    const error: DiagnosticRecord = { ...warning, category: "error" }
+    const changedCategory = computeDiagnosticDiff([warning], [error])
     expect(changedCategory.resolved).toEqual([warning])
-    expect(changedCategory.introduced[0]?.category).toBe("error")
+    expect(changedCategory.introduced).toEqual([error])
+    expect(changedCategory.unchanged).toEqual([])
 
-    const changedSpan = computeDiagnosticDiff([warning], [{ ...warning, length: 3 }])
-    expect(changedSpan.unchanged).toHaveLength(0)
-    expect(changedSpan.resolved).toHaveLength(1)
-    expect(changedSpan.introduced).toHaveLength(1)
+    const moved: DiagnosticRecord = { ...warning, start: 4, length: 3 }
+    const sameIdentity = computeDiagnosticDiff([warning], [moved])
+    expect(sameIdentity.unchanged).toEqual([moved])
+    expect(sameIdentity.resolved).toEqual([])
+    expect(sameIdentity.introduced).toEqual([])
   })
 
   effect(
@@ -123,30 +124,32 @@ describe("verification diagnostics and policies", () => {
         Effect.gen(function* () {
           const validRecipe = Recipe.define("policy-valid", {
             version: "1.0.0",
-            policies: [Policy.matches({ min: 1 }), Policy.idempotent()],
+            policies: { matchCount: { min: 1 }, idempotence: "required" },
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.audit(
+                return yield* Draft.replaceEach(
                   yield* Query.imports(project).pipe(
                     Query.within("src/consumer.ts"),
                     Query.collect,
                   ),
+                  () => Draft.empty,
                 )
               }),
           })
 
           const failingRecipe = Recipe.define("policy-failing", {
             version: "1.0.0",
-            policies: [Policy.matches({ min: 999 })],
+            policies: { matchCount: { min: 999 } },
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.audit(
+                return yield* Draft.replaceEach(
                   yield* Query.imports(project).pipe(
                     Query.within("src/consumer.ts"),
                     Query.collect,
                   ),
+                  () => Draft.empty,
                 )
               }),
           })
@@ -234,7 +237,7 @@ describe("verification diagnostics and policies", () => {
         Effect.gen(function* () {
           const recipe = Recipe.define("non-idempotent-file-create", {
             version: "1.0.0",
-            policies: [{ diagnostics: "allow-new-errors" }, Policy.idempotent()],
+            policies: { diagnostics: "allow-new-errors", idempotence: "required" },
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
@@ -266,7 +269,6 @@ describe("verification diagnostics and policies", () => {
           const broken = "export const broken = {\n"
           const recipe = Recipe.define("introduce-syntax-error", {
             version: "1.0.0",
-            policies: [],
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)

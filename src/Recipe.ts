@@ -17,8 +17,11 @@ import {
   type WorkspaceCompilerError,
   WorkspaceSnapshot,
 } from "./Workspace/index.ts"
-import { type DraftEvidenceConflict, finalizeDraftEvidence } from "./Evidence.ts"
-import { all as allPolicies, type Policy } from "./Policy.ts"
+import {
+  type DraftEvidenceConflict,
+  type MissingDraftEvidence,
+  finalizeDraftEvidence,
+} from "./Evidence.ts"
 import {
   parseProjectRelativePath,
   projectRelative,
@@ -43,7 +46,7 @@ export interface RecipeDefinition<Input, E, R> {
   readonly schema?: Schema.Codec<Input, unknown>
   /** Digest supplied by release tooling. The development default uses name and version. */
   readonly implementationHash?: string
-  readonly policies?: ReadonlyArray<Policy>
+  readonly policies?: Partial<PlanPolicies>
   readonly run: (input: Input) => Effect.Effect<Draft, E, R | WorkspaceSnapshot | Workspace>
 }
 
@@ -79,16 +82,25 @@ export const validateRecipeInput = <Input, E, R>(
 export const define = <Input = undefined, E = never, R = never>(
   name: string,
   definition: RecipeDefinition<Input, E, R>,
-): Recipe<Input, E, R> =>
-  Object.freeze({
+): Recipe<Input, E, R> => {
+  const matchCount = definition.policies?.matchCount ?? {}
+  const diagnostics = definition.policies?.diagnostics ?? "no-new-errors"
+  const idempotence = definition.policies?.idempotence ?? "not-promised"
+  const maxAffectedFiles = definition.policies?.maxAffectedFiles
+  const policies: PlanPolicies =
+    maxAffectedFiles === undefined
+      ? { matchCount, diagnostics, idempotence }
+      : { matchCount, diagnostics, idempotence, maxAffectedFiles }
+  return Object.freeze({
     name,
     version: definition.version,
     schema: definition.schema,
     implementationHash:
       definition.implementationHash ?? hash("sha256", `${name}@${definition.version}`, "hex"),
-    policies: allPolicies(definition.policies ?? []),
+    policies,
     run: definition.run,
   })
+}
 
 const observationRelativePath = (
   fs: FileSystem.FileSystem,
@@ -188,7 +200,8 @@ export const run = <Input, E, R>(
   | WorkspaceCompilerError
   | ProjectNotInSnapshot
   | SnapshotExpired
-  | DraftEvidenceConflict,
+  | DraftEvidenceConflict
+  | MissingDraftEvidence,
   Workspace | FileSystem.FileSystem | Path.Path | Exclude<R, WorkspaceSnapshot>
 > =>
   Effect.gen(function* () {

@@ -7,8 +7,6 @@ export const diagnosticIdentity = (diagnostic: DiagnosticRecord): string =>
     diagnostic.category,
     diagnostic.code,
     diagnostic.fileName ?? null,
-    diagnostic.start ?? null,
-    diagnostic.length ?? null,
     diagnostic.message,
   ])
 

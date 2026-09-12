@@ -68,7 +68,6 @@ describe("Draft helper contracts", () => {
                 expectCompleteEvidence(draft)
               }
               expectCompleteEvidence(yield* Draft.concat(...drafts))
-              expectCompleteEvidence(yield* Draft.concat({ ...drafts[0]!, evidence: [] }))
 
               const emptyEach = yield* Draft.replaceEach(calls.slice(0, 1), () => Draft.empty)
               expect(emptyEach.edits).toEqual([])
@@ -117,21 +116,6 @@ describe("Draft helper contracts", () => {
                 ],
               }).pipe(Effect.flip)
               expect(conflictingConcat._tag).toBe("DraftEvidenceConflict")
-
-              const sameRange = calls[0]!
-              const firstAudit = yield* Draft.audit([sameRange])
-              const secondSelection = {
-                ...sameRange,
-                evidence: [{ criterion: "other", facts: { extra: true } }],
-              }
-              const conflictingAudit = yield* Draft.audit([sameRange, secondSelection]).pipe(
-                Effect.flip,
-              )
-              expect(conflictingAudit._tag).toBe("DraftEvidenceConflict")
-              const sameAudit = yield* Draft.audit([sameRange, sameRange])
-              expect(sameAudit.matches).toBe(1)
-              expect(sameAudit.evidence).toHaveLength(1)
-              expect(firstAudit.evidence[0]?.id).toBe(sameAudit.evidence[0]?.id)
 
               const conflictingEach = yield* Draft.replaceEach(calls.slice(0, 1), (selection) => ({
                 edits: [],

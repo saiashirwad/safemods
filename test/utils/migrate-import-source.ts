@@ -6,7 +6,6 @@
 import { Effect } from "effect"
 import { isStringLiteral } from "typescript/unstable/ast/is"
 import * as Draft from "../../src/Draft/index.ts"
-import * as Policy from "../../src/Policy.ts"
 import * as Query from "../../src/Query/index.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import { type ConfiguredProject, WorkspaceSnapshot } from "../../src/Workspace/index.ts"
@@ -19,7 +18,7 @@ export interface MigrateImportSourceInput {
 
 export const migrateImportSource = Recipe.define("migrate-import-source", {
   version: "1.0.0",
-  policies: [Policy.matches({ min: 1 }), Policy.idempotent()],
+  policies: { matchCount: { min: 1 }, idempotence: "required" },
   run: (input: MigrateImportSourceInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot

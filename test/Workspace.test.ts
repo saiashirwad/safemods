@@ -133,6 +133,31 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
   )
 
   effect(
+    "exposes a file created in a new virtual directory through the isolated snapshot",
+    () =>
+      withFixture((root, app) =>
+        Effect.gen(function* () {
+          const createdPath = Path.join(root, "src/virtual-dir/created.ts")
+          const content = "export const created = 1;\n"
+          const workspace = yield* Workspace
+          yield* workspace.withIsolatedSnapshot(
+            {
+              files: new Map([[createdPath, content]]),
+              created: new Set([createdPath]),
+              deleted: new Set(),
+            },
+            Effect.gen(function* () {
+              const project = yield* fixtureProject(app)
+              expect(yield* project.sourceText("src/virtual-dir/created.ts")).toBe(content)
+              expect(yield* project.sourceFileNames).toContain(createdPath)
+            }),
+          )
+        }),
+      ),
+    60_000,
+  )
+
+  effect(
     "resolves query-fixture aliases and re-exports with symbolNamed",
     () =>
       withFixture((_, app) =>

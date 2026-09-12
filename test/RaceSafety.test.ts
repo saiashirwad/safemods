@@ -25,7 +25,7 @@ describe("Node application race and filesystem safety", () => {
       Effect.gen(function* () {
         const recipe = Recipe.define("create-race", {
           version: "1.0.0",
-          policies: [],
+          policies: {},
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
@@ -61,7 +61,7 @@ describe("Node application race and filesystem safety", () => {
         )
         const recipe = Recipe.define("empty-file-lifecycle", {
           version: "1.0.0",
-          policies: [{ diagnostics: "allow-new-errors" }],
+          policies: { diagnostics: "allow-new-errors" },
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)

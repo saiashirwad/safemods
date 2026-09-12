@@ -1,5 +1,5 @@
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Option } from "effect"
+import { Effect } from "effect"
 import { SyntaxKind, type NumericLiteral } from "typescript/unstable/ast"
 import { isNumericLiteral } from "typescript/unstable/ast/is"
 import type { ProjectSnapshot } from "../src/Workspace/index.ts"
@@ -43,14 +43,9 @@ describe("Query semantic criteria", () => {
         },
         (project) =>
           Effect.gen(function* () {
-            const symbolOption = yield* project.findSymbolNamed("oldThing", {
-              within: "src/sem.ts",
-            })
-            if (Option.isNone(symbolOption)) return expect.unreachable("symbol not found")
+            const symbol = yield* project.symbolNamed("oldThing", { within: "src/sem.ts" })
 
-            const references = yield* Query.referencesTo(project, symbolOption.value).pipe(
-              Query.collect,
-            )
+            const references = yield* Query.referencesTo(project, symbol).pipe(Query.collect)
             expect(
               references.map((selection) => `${selection.fileName}:${selection.value.text}`),
             ).toEqual([

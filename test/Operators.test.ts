@@ -1,6 +1,6 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import type { Identifier } from "typescript/unstable/ast"
+import type { CallExpression, Identifier } from "typescript/unstable/ast"
 import type { ProjectFile } from "../src/Workspace/index.ts"
 import { withProject } from "./utils/project-fixture.ts"
 import * as Query from "../src/Query/index.ts"
@@ -32,9 +32,15 @@ describe("Query stream operators", () => {
           const inTiny = <A, E, R>(self: Query.Query<A, E, R>): Query.Query<A, E, R> =>
             Query.within(self, "src/tiny.ts")
           return Effect.gen(function* () {
-            const isAlpha = Query.Criterion.predicate<Identifier>("name-is-alpha", (selection) =>
-              selection.value.text === "alpha" ? { text: "alpha" } : undefined,
-            )
+            const isAlpha: Query.Criterion<Identifier> = {
+              id: "name-is-alpha",
+              select: (selections) =>
+                Effect.sync(() =>
+                  selections.map((selection) =>
+                    selection.value.text === "alpha" ? { text: "alpha" } : undefined,
+                  ),
+                ),
+            }
             const surviving = yield* Query.identifiers(project).pipe(
               inTiny,
               Query.where(isAlpha),
@@ -56,7 +62,7 @@ describe("Query stream operators", () => {
       withProject({ "src/arity.ts": ARITY_SOURCE }, (project) =>
         Effect.gen(function* () {
           const batchSizes: Array<number> = []
-          const batched = Query.Criterion.make({
+          const batched: Query.Criterion<CallExpression> = {
             id: "record-batch",
             batchSize: 2,
             select: (selections) =>
@@ -64,7 +70,7 @@ describe("Query stream operators", () => {
                 batchSizes.push(selections.length)
                 return selections.map(() => ({ seen: true }))
               }),
-          })
+          }
           const surviving = yield* Query.calls(project).pipe(
             inArity,
             Query.where(batched),
@@ -86,10 +92,10 @@ describe("Query stream operators", () => {
     () =>
       withProject({}, (project) =>
         Effect.gen(function* () {
-          const misaligned = Query.Criterion.make({
+          const misaligned: Query.Criterion<Identifier> = {
             id: "misaligned",
             select: () => Effect.succeed([]),
-          })
+          }
           const error = yield* Effect.flip(
             Query.identifiers(project).pipe(Query.where(misaligned), Query.collect),
           )

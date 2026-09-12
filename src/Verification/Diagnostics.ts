@@ -2,9 +2,18 @@
 import { Effect } from "effect"
 import { DiagnosticCategory, type Diagnostic } from "typescript/unstable/async"
 import type { DiagnosticRecord } from "../Policy.ts"
-import { diagnosticIdentity } from "./PolicyEvaluation.ts"
 import { WorkspaceSnapshot } from "../Workspace/index.ts"
 import { nativeRequest } from "../Workspace/NativeRequest.ts"
+
+const diagnosticPosition = (diagnostic: DiagnosticRecord): string =>
+  JSON.stringify([
+    diagnostic.category,
+    diagnostic.code,
+    diagnostic.fileName ?? null,
+    diagnostic.start ?? null,
+    diagnostic.length ?? null,
+    diagnostic.message,
+  ])
 
 const normalizeDiagnostic = (diagnostic: Diagnostic): DiagnosticRecord => ({
   code: diagnostic.code,
@@ -56,7 +65,7 @@ export const collectDiagnostics = Effect.gen(function* () {
     for (const list of lists) {
       for (const diagnostic of list) {
         const record = normalizeDiagnostic(diagnostic)
-        const key = diagnosticIdentity(record)
+        const key = diagnosticPosition(record)
         if (seen.has(key)) continue
         seen.add(key)
         allDiagnostics.push(record)

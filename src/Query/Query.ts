@@ -1,4 +1,4 @@
-import { Data, Effect, type Stream } from "effect"
+import { Data, type Effect, type Stream } from "effect"
 import type { EvidenceFact, QueryEvidence } from "../Evidence.ts"
 import type { ProjectRelativePath } from "../ProjectPath.ts"
 import type { ProjectFile, ProjectSnapshot } from "../Workspace/index.ts"
@@ -28,83 +28,4 @@ export interface Criterion<A, E = never, R = never> {
   readonly select: (
     selections: ReadonlyArray<Selection<A>>,
   ) => Effect.Effect<ReadonlyArray<Readonly<Record<string, EvidenceFact>> | undefined>, E, R>
-}
-
-const criterionMake = <A, E = never, R = never>(
-  criterion: Criterion<A, E, R>,
-): Criterion<A, E, R> => criterion
-
-type PredicateOutcome = boolean | Readonly<Record<string, EvidenceFact>> | undefined
-
-const criterionPredicate = <A>(
-  id: string,
-  predicateFn: (selection: Selection<A>) => PredicateOutcome,
-): Criterion<A> => ({
-  id,
-  select: (selections) =>
-    Effect.sync(() =>
-      selections.map((selection) => {
-        const res = predicateFn(selection)
-        if (res === true) return { matched: true }
-        if (res === false || res === undefined) return undefined
-        return res
-      }),
-    ),
-})
-
-const criterionAll = <A, E, R>(
-  ...criteria: ReadonlyArray<Criterion<A, E, R>>
-): Criterion<A, E, R> => ({
-  id: `all(${criteria.map((c) => c.id).join(", ")})`,
-  select: (selections) =>
-    Effect.gen(function* () {
-      let accumulated: Array<Record<string, EvidenceFact> | undefined> = selections.map(() => ({}))
-      for (const criterion of criteria) {
-        const batchResults = yield* criterion.select(selections)
-        accumulated = accumulated.map((curr, idx) => {
-          if (curr === undefined) return undefined
-          const next = batchResults[idx]
-          if (next === undefined) return undefined
-          return { ...curr, ...next }
-        })
-      }
-      return accumulated
-    }),
-})
-
-const criterionAny = <A, E, R>(
-  ...criteria: ReadonlyArray<Criterion<A, E, R>>
-): Criterion<A, E, R> => ({
-  id: `any(${criteria.map((c) => c.id).join(", ")})`,
-  select: (selections) =>
-    Effect.gen(function* () {
-      const results: Array<Record<string, EvidenceFact> | undefined> = Array.from({
-        length: selections.length,
-      })
-      for (const criterion of criteria) {
-        const batchResults = yield* criterion.select(selections)
-        for (let i = 0; i < selections.length; i++) {
-          if (results[i] === undefined && batchResults[i] !== undefined) {
-            results[i] = { criterion: criterion.id, ...batchResults[i] }
-          }
-        }
-      }
-      return results
-    }),
-})
-
-const criterionNot = <A, E, R>(criterion: Criterion<A, E, R>): Criterion<A, E, R> => ({
-  id: `not(${criterion.id})`,
-  select: (selections) =>
-    Effect.map(criterion.select(selections), (batchResults) =>
-      batchResults.map((res) => (res === undefined ? { negated: criterion.id } : undefined)),
-    ),
-})
-
-export const Criterion = {
-  make: criterionMake,
-  predicate: criterionPredicate,
-  all: criterionAll,
-  any: criterionAny,
-  not: criterionNot,
 }

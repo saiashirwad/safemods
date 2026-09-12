@@ -1,5 +1,5 @@
 /** Project-scoped compiler operations for one active snapshot region. */
-import { Data, Effect, Option, Predicate } from "effect"
+import { Data, Effect, Predicate } from "effect"
 import type { Identifier, SourceFile } from "typescript/unstable/ast"
 import {
   isExportDeclaration,
@@ -111,10 +111,6 @@ export interface ProjectSnapshot {
     name: string,
     options: { readonly within: string },
   ) => Effect.Effect<NativeSymbol, SymbolNotFound | ProjectSnapshotError>
-  readonly findSymbolNamed: (
-    name: string,
-    options: { readonly within: string },
-  ) => Effect.Effect<Option.Option<NativeSymbol>, ProjectSnapshotError>
   readonly typesAt: (
     fileName: string,
     positions: ReadonlyArray<number>,
@@ -441,14 +437,6 @@ export const projectSnapshotFor = ({
     return yield* canonicalSymbol(symbol)
   })
 
-  const findSymbolNamed = Effect.fn("ProjectSnapshot.findSymbolNamed")(
-    (name: string, options: { readonly within: string }) =>
-      symbolNamed(name, options).pipe(
-        Effect.map(Option.some),
-        Effect.catchTag("SymbolNotFound", () => Effect.succeed(Option.none())),
-      ),
-  )
-
   const typesAt = Effect.fn("ProjectSnapshot.typesAt")(function* (
     fileName: string,
     positions: ReadonlyArray<number>,
@@ -556,7 +544,6 @@ export const projectSnapshotFor = ({
     referencesToSymbolInFile,
     canonicalSymbol,
     symbolNamed,
-    findSymbolNamed,
     typesAt,
     typeToString,
     isTypeAssignableTo,

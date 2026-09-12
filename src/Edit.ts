@@ -45,12 +45,15 @@ export class EditConflict extends Data.TaggedError("EditConflict")<{
   readonly right: TextEdit
 }> {}
 
+const compareStrings = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0
+
 export const compareEdits = (left: TextEdit, right: TextEdit): number =>
-  left.projectId.localeCompare(right.projectId) ||
-  left.fileName.localeCompare(right.fileName) ||
+  compareStrings(left.projectId, right.projectId) ||
+  compareStrings(left.fileName, right.fileName) ||
   left.start - right.start ||
   left.end - right.end ||
-  left.newText.localeCompare(right.newText)
+  compareStrings(left.newText, right.newText)
 
 export const editsConflict = (left: TextEdit, right: TextEdit): boolean => {
   if (left.projectId !== right.projectId || left.fileName !== right.fileName) return false

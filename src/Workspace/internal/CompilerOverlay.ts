@@ -70,6 +70,24 @@ export const compilerOverlayFor = (
         if (resolvedFiles.has(resolved)) return true
         return apiOptions.fs?.fileExists?.(fileName)
       },
+      directoryExists: (directoryName) => {
+        const resolved = runtime.resolve(directoryName)
+        if (resolvedDeleted.has(resolved)) return false
+        if (resolvedFiles.has(resolved)) return false
+        for (const plannedFileName of resolvedFiles.keys()) {
+          if (isPathContained(runtime, directoryName, plannedFileName)) return true
+        }
+        return apiOptions.fs?.directoryExists?.(directoryName)
+      },
+      realpath: (path) => {
+        const resolved = runtime.resolve(path)
+        if (resolvedDeleted.has(resolved)) return undefined
+        if (resolvedFiles.has(resolved)) return resolved
+        for (const plannedFileName of resolvedFiles.keys()) {
+          if (isPathContained(runtime, path, plannedFileName)) return resolved
+        }
+        return apiOptions.fs?.realpath?.(path)
+      },
     },
   }
 

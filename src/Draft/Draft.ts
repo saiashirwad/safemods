@@ -11,8 +11,8 @@
 import { Effect, Predicate } from "effect"
 import {
   type DraftEvidenceConflict,
+  type MissingDraftEvidence,
   finalizeDraftEvidence,
-  mergeEvidence,
   type EvidenceRecord,
 } from "../Evidence.ts"
 import type { PlannedFileOperation } from "../Plan.ts"
@@ -44,8 +44,8 @@ const mergeDrafts = (...drafts: ReadonlyArray<Draft>) => ({
  */
 export const concat = (
   ...drafts: ReadonlyArray<Draft>
-): Effect.Effect<Draft, DraftEvidenceConflict> =>
-  finalizeDraftEvidence(mergeDrafts(...drafts), { facts: { source: "concat" } })
+): Effect.Effect<Draft, DraftEvidenceConflict | MissingDraftEvidence> =>
+  finalizeDraftEvidence(mergeDrafts(...drafts))
 
 type DraftEdit = Omit<TextEdit, "evidenceIds">
 
@@ -92,7 +92,7 @@ const textEditForRange = (
     newText,
   })
 
-export const draftForRange = (
+const draftForRange = (
   project: ProjectSnapshot,
   sourceFile: SourceFile,
   start: number,
@@ -191,27 +191,24 @@ const adoptReturnedDraft = <A extends Node>(
   selection: Selection<A>,
   evidenceId: string,
   proposed: Draft,
-): Effect.Effect<Draft, DraftEvidenceConflict> =>
-  finalizeDraftEvidence(
-    {
-      edits: proposed.edits.map((edit) => ({
-        ...edit,
-        evidenceIds: [...new Set([...edit.evidenceIds, evidenceId])],
-      })),
-      fileOperations: (proposed.fileOperations ?? []).map((operation) => ({
-        ...operation,
-        evidenceIds: [...new Set([...operation.evidenceIds, evidenceId])],
-      })),
-      evidence: [...proposed.evidence, selectionEvidence(selection, evidenceId)],
-      matches: 1,
-    },
-    { facts: { source: "replaceEach" } },
-  )
+): Effect.Effect<Draft, DraftEvidenceConflict | MissingDraftEvidence> =>
+  finalizeDraftEvidence({
+    edits: proposed.edits.map((edit) => ({
+      ...edit,
+      evidenceIds: [...new Set([...edit.evidenceIds, evidenceId])],
+    })),
+    fileOperations: (proposed.fileOperations ?? []).map((operation) => ({
+      ...operation,
+      evidenceIds: [...new Set([...operation.evidenceIds, evidenceId])],
+    })),
+    evidence: [...proposed.evidence, selectionEvidence(selection, evidenceId)],
+    matches: 1,
+  })
 
 const draftFromProposal = <A extends Node>(
   selection: Selection<A>,
   proposed: Replacement | Draft,
-): Effect.Effect<Draft, SnapshotExpired | DraftEvidenceConflict> => {
+): Effect.Effect<Draft, SnapshotExpired | DraftEvidenceConflict | MissingDraftEvidence> => {
   const evidenceId = selectionEvidenceId(selection)
   if (isDraft(proposed)) {
     if (isCompletelyEmpty(proposed)) {
@@ -250,7 +247,7 @@ export const replaceEach = <A extends Node, E = never, R = never>(
   replacement: (
     selection: Selection<A>,
   ) => Replacement | Draft | Effect.Effect<Replacement | Draft, E, R>,
-): Effect.Effect<Draft, E | SnapshotExpired | DraftEvidenceConflict, R> =>
+): Effect.Effect<Draft, E | SnapshotExpired | DraftEvidenceConflict | MissingDraftEvidence, R> =>
   Effect.forEach(selections, (selection) => {
     const raw = replacement(selection)
     const effect: Effect.Effect<Replacement | Draft, E, R> = Effect.isEffect(raw)
@@ -279,18 +276,3 @@ const selectionEvidence = <A extends Node>(
     })),
   },
 })
-/**
- * Record query selections as search/audit evidence without proposing any file edits.
- * Enables read-only codebase audits, inventorying, and migration sizing.
- */
-export const audit = <A extends Node>(
-  selections: ReadonlyArray<Selection<A>>,
-): Effect.Effect<Draft, DraftEvidenceConflict> =>
-  Effect.map(
-    mergeEvidence(selections.map((selection) => selectionEvidence(selection))),
-    (evidence) => ({
-      edits: [],
-      evidence,
-      matches: evidence.length,
-    }),
-  )
