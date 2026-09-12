@@ -117,14 +117,7 @@ const examples = [
   }),
 ]
 
-export const exampleIds = [
-  "rename-package-import",
-  "positional-to-options",
-  "rename-through-barrel",
-  "move-module",
-  "default-to-named",
-  "relative-js-extensions",
-] as const
+export const exampleIds = examples.map((example) => example.id)
 
 const isInside = (root: string, candidate: string, path: Path.Path): boolean => {
   const relative = path.relative(root, candidate)

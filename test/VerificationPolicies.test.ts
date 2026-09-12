@@ -128,13 +128,11 @@ describe("verification diagnostics and policies", () => {
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.replaceEach(
-                  yield* Query.imports(project).pipe(
-                    Query.within("src/consumer.ts"),
-                    Query.collect,
-                  ),
-                  () => Draft.empty,
+                const matches = yield* Query.imports(project).pipe(
+                  Query.within("src/consumer.ts"),
+                  Query.collect,
                 )
+                return { ...Draft.empty, matches: matches.length }
               }),
           })
 
@@ -144,13 +142,11 @@ describe("verification diagnostics and policies", () => {
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.replaceEach(
-                  yield* Query.imports(project).pipe(
-                    Query.within("src/consumer.ts"),
-                    Query.collect,
-                  ),
-                  () => Draft.empty,
+                const matches = yield* Query.imports(project).pipe(
+                  Query.within("src/consumer.ts"),
+                  Query.collect,
                 )
+                return { ...Draft.empty, matches: matches.length }
               }),
           })
 

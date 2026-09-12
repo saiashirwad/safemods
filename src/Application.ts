@@ -155,20 +155,20 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     }
   }
 
+  const outputs = []
+  for (const file of preview.files) {
+    if (!file.after.exists) continue
+    outputs.push({
+      projectId: file.projectId,
+      fileName: file.fileName,
+      hash: file.after.hash,
+    })
+  }
+
   const receipt: ApplicationReceipt = {
     planId: plan.planId,
     snapshotHash: plan.snapshotHash,
-    outputs: preview.files.flatMap((file) =>
-      file.after.exists
-        ? [
-            {
-              projectId: file.projectId,
-              fileName: file.fileName,
-              hash: file.after.hash,
-            },
-          ]
-        : [],
-    ),
+    outputs,
   }
   return receipt
 })
