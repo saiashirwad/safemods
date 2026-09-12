@@ -3,7 +3,7 @@ import * as Path from "node:path"
 import { describe, effect, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../src/Draft/index.ts"
-import type { DiagnosticRecord } from "../src/Policy.ts"
+import type { DiagnosticRecord } from "../src/Verification/Diagnostics.ts"
 import * as Query from "../src/Query/index.ts"
 import { computeDiagnosticDiff } from "../src/Verification/PolicyEvaluation.ts"
 import * as Recipe from "../src/Recipe.ts"
@@ -169,21 +169,19 @@ describe("verification diagnostics and policies", () => {
   )
 
   effect(
-    "rejects recipe identity, implementation, input, and toolchain mismatches",
+    "rejects recipe identity, input, and toolchain mismatches",
     () =>
       withFixture(() =>
         Effect.gen(function* () {
           const input = { value: 1 }
           const author = Recipe.define("identity-author", {
             version: "1.0.0",
-            implementationHash: "author-hash",
             run: (_input: { readonly value: number }) => Effect.succeed(Draft.empty),
           })
           const plan = yield* Recipe.run(author, input)
 
           const differentRecipe = Recipe.define("different-recipe", {
             version: "1.0.0",
-            implementationHash: "author-hash",
             run: (_input: { readonly value: number }) => Effect.succeed(Draft.empty),
           })
           const recipeResult = yield* Verification.verify(plan, differentRecipe, input).pipe(
@@ -192,20 +190,6 @@ describe("verification diagnostics and policies", () => {
           expect(recipeResult._tag).toBe("Failure")
           if (recipeResult._tag === "Failure")
             expect(recipeResult.failure._tag).toBe("RecipeMismatch")
-
-          const differentImplementation = Recipe.define("identity-author", {
-            version: "1.0.0",
-            implementationHash: "different-hash",
-            run: (_input: { readonly value: number }) => Effect.succeed(Draft.empty),
-          })
-          const implementationResult = yield* Verification.verify(
-            plan,
-            differentImplementation,
-            input,
-          ).pipe(Effect.result)
-          expect(implementationResult._tag).toBe("Failure")
-          if (implementationResult._tag === "Failure")
-            expect(implementationResult.failure._tag).toBe("RecipeMismatch")
 
           const inputResult = yield* Verification.verify(plan, author, { value: 2 }).pipe(
             Effect.result,

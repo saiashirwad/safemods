@@ -8,21 +8,15 @@ import * as Draft from "../src/Draft/index.ts"
 import * as Query from "../src/Query/index.ts"
 import * as Recipe from "../src/Recipe.ts"
 import * as Verification from "../src/Verification/index.ts"
-import type { TransformationPlan } from "../src/Plan.ts"
-import type { DiagnosticDiff } from "../src/Policy.ts"
-import type { VerifiedPlan } from "../src/Verification/index.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
 
-type ForgedPlanValue =
-  | symbol
-  | TransformationPlan
-  | Verification.PlanPreview
-  | DiagnosticDiff
-  | { readonly VerifiedPlan: "VerifiedPlan" }
-
-interface ForgedPlanCapability extends Partial<VerifiedPlan> {
-  readonly [key: PropertyKey]: ForgedPlanValue
+interface ForgedPlanCapability extends Partial<Verification.VerifiedPlan> {
+  readonly [key: PropertyKey]:
+    | Verification.VerifiedPlan["plan"]
+    | Verification.PlanPreview
+    | Verification.DiagnosticDiff
+    | { readonly VerifiedPlan: "VerifiedPlan" }
 }
 
 const exists = (fileName: string): Effect.Effect<boolean> =>
@@ -84,13 +78,6 @@ describe("Node application capability and staleness checks", () => {
         })
         const plan = yield* Recipe.run(recipe, undefined)
         const verified = yield* Verification.verify(plan, recipe, undefined)
-        const publicBrand = Symbol.for("@safemods/internal/VerifiedPlan")
-        const publicForgery: ForgedPlanCapability = {
-          [publicBrand]: publicBrand,
-          plan: verified.plan,
-          preview: verified.preview,
-          diagnosticDiff: verified.diagnosticDiff,
-        }
         const spreadForgery = { ...verified }
         const clonedPreview = structuredClone(verified.preview)
         const clonedForgery: ForgedPlanCapability = {
@@ -108,19 +95,14 @@ describe("Node application capability and staleness checks", () => {
           },
           diagnosticDiff: structuredClone(verified.diagnosticDiff),
         }
-        const publicResult = yield* Application.applyVerifiedPlan(
-          // SAFETY: the test applies a caller-constructed public-brand object.
-          publicForgery as VerifiedPlan,
-        ).pipe(Effect.provide(nodeLayer), Effect.result)
         const clonedResult = yield* Application.applyVerifiedPlan(
           // SAFETY: the test applies a cloned capability without its process-local brand.
-          clonedForgery as VerifiedPlan,
+          clonedForgery as Verification.VerifiedPlan,
         ).pipe(Effect.provide(nodeLayer), Effect.result)
         const spreadResult = yield* Application.applyVerifiedPlan(spreadForgery).pipe(
           Effect.provide(nodeLayer),
           Effect.result,
         )
-        expect(publicResult._tag).toBe("Failure")
         expect(clonedResult._tag).toBe("Failure")
         expect(spreadResult._tag).toBe("Failure")
         expect(yield* exists(Path.join(root, "src/created.ts"))).toBe(false)

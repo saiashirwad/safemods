@@ -4,7 +4,6 @@ export const richInput: PlanInput = {
   recipe: {
     name: "test",
     version: "1",
-    implementationHash: "impl",
     options: { enabled: true, nested: [null, 1, "x"] },
   },
   toolchain: { systemVersion: "1", typescriptVersion: "7", effectVersion: "4" },

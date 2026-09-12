@@ -9,7 +9,7 @@ import {
 } from "../Workspace/index.ts"
 import { canonicalJson } from "../Evidence.ts"
 import { type PlanDecodeError, type TransformationPlan, validatePlan } from "../Plan.ts"
-import { type Recipe, TOOLCHAIN, validateRecipeInput } from "../Recipe.ts"
+import { type Recipe, type RecipeInputError, TOOLCHAIN, validateRecipeInput } from "../Recipe.ts"
 import type { VirtualFsSnapshot } from "../VirtualFs.ts"
 import { collectDiagnostics } from "./Diagnostics.ts"
 import {
@@ -34,23 +34,20 @@ const validateRecipeForPlan = <Input, E, R>(
   input: Input,
 ): Effect.Effect<
   Input,
-  RecipeMismatch | RecipeInputMismatch | PolicyMismatch | ToolchainMismatch
+  RecipeMismatch | RecipeInputError | RecipeInputMismatch | PolicyMismatch | ToolchainMismatch
 > =>
   Effect.gen(function* () {
     const expectedIdentity = {
       name: plan.recipe.name,
       version: plan.recipe.version,
-      implementationHash: plan.recipe.implementationHash,
     }
     const actualIdentity = {
       name: recipe.name,
       version: recipe.version,
-      implementationHash: recipe.implementationHash,
     }
     if (
       expectedIdentity.name !== actualIdentity.name ||
-      expectedIdentity.version !== actualIdentity.version ||
-      expectedIdentity.implementationHash !== actualIdentity.implementationHash
+      expectedIdentity.version !== actualIdentity.version
     ) {
       return yield* new RecipeMismatch({
         planId: plan.planId,
@@ -59,16 +56,7 @@ const validateRecipeForPlan = <Input, E, R>(
       })
     }
 
-    const validated = yield* validateRecipeInput(recipe, input).pipe(
-      Effect.mapError(
-        () =>
-          new RecipeInputMismatch({
-            planId: plan.planId,
-            expected: plan.recipe.options,
-            actual: null,
-          }),
-      ),
-    )
+    const validated = yield* validateRecipeInput(recipe, input)
     if (canonicalJson(validated.encoded) !== canonicalJson(plan.recipe.options)) {
       return yield* new RecipeInputMismatch({
         planId: plan.planId,
@@ -109,6 +97,7 @@ export const verify = <Input, E, R>(
   | VerificationFailure
   | StalePlanError
   | RecipeMismatch
+  | RecipeInputError
   | RecipeInputMismatch
   | PolicyMismatch
   | ToolchainMismatch

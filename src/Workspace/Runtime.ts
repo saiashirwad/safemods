@@ -1,4 +1,3 @@
-/** Synchronous host operations required by TypeScript compiler callbacks. */
 import { Context, type Path } from "effect"
 
 interface WorkspaceDirectoryEntries {
@@ -7,9 +6,6 @@ interface WorkspaceDirectoryEntries {
 }
 
 export interface WorkspaceRuntimeService extends Path.Path {
-  readonly readFileText: (path: string) => string | undefined
-  readonly fileExists: (path: string) => boolean | undefined
-  readonly directoryExists: (path: string) => boolean | undefined
   readonly directoryEntries: (path: string) => WorkspaceDirectoryEntries | undefined
   readonly realPath: (path: string) => string | undefined
 }

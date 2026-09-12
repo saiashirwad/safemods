@@ -4,11 +4,11 @@ import { dirname, relative, resolve, sep } from "node:path"
 const TYPESCRIPT_SOURCE = /\.(?:[cm]?ts|tsx)$/
 const TYPESCRIPT_TEST = /\.test\.(?:[cm]?ts|tsx)$/
 
-/** `src/Plan/Codec.ts` and `src/Policy.ts` are both owned by their first segment, minus extension. */
+/** `src/Plan/Codec.ts` is owned by its first segment, minus extension. */
 const ownerName = (segment) => segment.replace(TYPESCRIPT_SOURCE, "")
 
 export const architectureLayers = [
-  ["Edit", "Evidence", "Plan", "Policy", "ProjectPath", "VirtualFs"],
+  ["Edit", "Evidence", "Plan", "ProjectPath", "VirtualFs"],
   ["Query", "Workspace"],
   ["Draft"],
   ["Application", "Recipe", "Verification"],
@@ -24,29 +24,11 @@ const exactDependencies = new Map([
   ["Workspace", new Set(["Edit", "ProjectPath", "VirtualFs"])],
   [
     "Recipe",
-    new Set([
-      "Draft",
-      "Edit",
-      "Evidence",
-      "Plan",
-      "Policy",
-      "ProjectPath",
-      "VirtualFs",
-      "Workspace",
-    ]),
+    new Set(["Draft", "Edit", "Evidence", "Plan", "ProjectPath", "VirtualFs", "Workspace"]),
   ],
   [
     "Verification",
-    new Set([
-      "Edit",
-      "Evidence",
-      "Plan",
-      "Policy",
-      "ProjectPath",
-      "Recipe",
-      "VirtualFs",
-      "Workspace",
-    ]),
+    new Set(["Edit", "Evidence", "Plan", "ProjectPath", "Recipe", "VirtualFs", "Workspace"]),
   ],
   ["Application", new Set(["Edit", "Plan", "ProjectPath", "Verification", "Workspace"])],
 ])

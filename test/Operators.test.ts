@@ -106,7 +106,7 @@ describe("Query stream operators", () => {
   )
 
   effect(
-    "filter narrows by selection predicate without touching evidence",
+    "filter narrows by selection predicate",
     () =>
       withProject({ "src/arity.ts": ARITY_SOURCE }, (project) =>
         Effect.gen(function* () {

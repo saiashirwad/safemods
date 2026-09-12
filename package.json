@@ -20,10 +20,6 @@
       "types": "./dist/src/Plan.d.ts",
       "default": "./dist/src/Plan.js"
     },
-    "./Policy": {
-      "types": "./dist/src/Policy.d.ts",
-      "default": "./dist/src/Policy.js"
-    },
     "./Query": {
       "types": "./dist/src/Query/index.d.ts",
       "default": "./dist/src/Query/index.js"

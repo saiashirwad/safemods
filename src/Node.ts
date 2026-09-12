@@ -17,11 +17,6 @@ const workspaceRuntimeLayer = Layer.effect(
   Effect.map(Path.Path, (path) =>
     WorkspaceRuntime.of({
       ...path,
-      readFileText: UndefinedOr.liftThrowable((path: string) => Fs.readFileSync(path, "utf8")),
-      fileExists: UndefinedOr.liftThrowable(
-        (path: string) => Fs.existsSync(path) && Fs.statSync(path).isFile(),
-      ),
-      directoryExists: UndefinedOr.liftThrowable((path: string) => Fs.statSync(path).isDirectory()),
       directoryEntries: UndefinedOr.liftThrowable((path: string) => {
         const entries = Fs.readdirSync(path, { withFileTypes: true })
         return {

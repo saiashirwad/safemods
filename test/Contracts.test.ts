@@ -25,7 +25,7 @@ const expectCompleteEvidence = (draft: Draft.Draft): void => {
 
 describe("Draft helper contracts", () => {
   effect(
-    "aligns replace, insert, and remove matches and gives operation edits complete, unique evidence",
+    "gives replace, insert, and remove edits complete, unique evidence",
     () =>
       withFixture((root, app) =>
         Effect.gen(function* () {

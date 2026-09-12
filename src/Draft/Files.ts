@@ -5,12 +5,7 @@ import {
   parseProjectRelativePath,
   type ProjectRelativePath,
 } from "../ProjectPath.ts"
-import type {
-  FileNotFound,
-  ProjectSnapshot,
-  ProjectSnapshotError,
-  SnapshotExpired,
-} from "../Workspace/index.ts"
+import type { FileNotFound, ProjectSnapshot, ProjectSnapshotError } from "../Workspace/index.ts"
 import type { Draft } from "./Draft.ts"
 
 export const files = {
@@ -19,9 +14,10 @@ export const files = {
     project: ProjectSnapshot,
     relativePath: string,
     content: string,
-  ): Effect.Effect<Draft, SnapshotExpired | InvalidProjectRelativePath> =>
+  ): Effect.Effect<Draft, ProjectSnapshotError | InvalidProjectRelativePath> =>
     Effect.gen(function* () {
       const path = yield* checkedPath(relativePath)
+      yield* project.sourceFile(path)
       return {
         edits: [],
         fileOperations: [

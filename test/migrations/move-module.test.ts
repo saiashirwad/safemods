@@ -38,13 +38,13 @@ describe("move-module", () => {
             })
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
 
-            const gone = yield* Effect.tryPromise(() =>
+            const sourceExists = yield* Effect.tryPromise(() =>
               Fs.access(Path.join(root, "src/users/account.ts")).then(
                 () => true,
                 () => false,
               ),
             )
-            expect(gone).toBe(false)
+            expect(sourceExists).toBe(false)
 
             const moved = yield* Effect.tryPromise(() =>
               Fs.readFile(Path.join(root, "src/identity/account.ts"), "utf8"),

@@ -48,7 +48,7 @@ interface VirtualFile {
 /**
  * Apply file operations and text edits to one coherent virtual filesystem.
  * Operations are applied first, in declaration order, followed by grouped
- * text edits. This is the only state machine used by overlays and previews.
+ * text edits.
  */
 export const materialize = <E>(
   options: VirtualFsMaterializeOptions<E>,

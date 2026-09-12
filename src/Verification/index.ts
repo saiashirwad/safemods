@@ -10,3 +10,4 @@ export {
 export { preview, type PlanPreview } from "./Preview.ts"
 export { verify } from "./Verify.ts"
 export type { VerifiedPlan } from "./VerifiedPlan.ts"
+export type { DiagnosticDiff, DiagnosticRecord } from "./Diagnostics.ts"

@@ -31,7 +31,6 @@ import { parseProjectRelativePath } from "./ProjectPath.ts"
 export interface Recipe<Input = undefined, E = never, R = never> {
   readonly name: string
   readonly version: string
-  readonly implementationHash: string
   readonly policies: PlanPolicies
   readonly schema?: Schema.Codec<Input, unknown> | undefined
   readonly run: (input: Input) => Effect.Effect<Draft, E, R | WorkspaceSnapshot | Workspace>
@@ -40,8 +39,6 @@ export interface Recipe<Input = undefined, E = never, R = never> {
 export interface RecipeDefinition<Input, E, R> {
   readonly version: string
   readonly schema?: Schema.Codec<Input, unknown>
-  /** Digest supplied by release tooling. The development default uses name and version. */
-  readonly implementationHash?: string
   readonly policies?: Partial<PlanPolicies>
   readonly run: (input: Input) => Effect.Effect<Draft, E, R | WorkspaceSnapshot | Workspace>
 }
@@ -91,8 +88,6 @@ export const define = <Input = undefined, E = never, R = never>(
     name,
     version: definition.version,
     schema: definition.schema,
-    implementationHash:
-      definition.implementationHash ?? hash("sha256", `${name}@${definition.version}`, "hex"),
     policies,
     run: definition.run,
   })
@@ -175,7 +170,6 @@ export const run = <Input, E, R>(
           recipe: {
             name: recipe.name,
             version: recipe.version,
-            implementationHash: recipe.implementationHash,
             options: validatedInput.encoded,
           },
           toolchain: TOOLCHAIN,

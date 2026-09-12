@@ -158,11 +158,17 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
   const receipt: ApplicationReceipt = {
     planId: plan.planId,
     snapshotHash: plan.snapshotHash,
-    outputs: preview.files.map((file) => ({
-      projectId: file.projectId,
-      fileName: file.fileName,
-      hash: file.after.hash ?? "",
-    })),
+    outputs: preview.files.flatMap((file) =>
+      file.after.exists
+        ? [
+            {
+              projectId: file.projectId,
+              fileName: file.fileName,
+              hash: file.after.hash,
+            },
+          ]
+        : [],
+    ),
   }
   return receipt
 })

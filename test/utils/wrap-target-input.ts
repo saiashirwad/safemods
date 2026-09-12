@@ -1,11 +1,6 @@
 /**
- * Example Transformation Recipe written against the candidate public API:
- * wrap the argument of every call to the canonical `target` symbol in an
+ * Wrap the argument of every call to the canonical `target` symbol in an
  * object — through import aliases and re-exports, preserving trivia.
- *
- * Compare `src/prototype/wrap-target-recipe.ts`: no file reads, no hashes,
- * no evidence ID strings, no toolchain literals, no fingerprint loops. The
- * body reads as intent.
  */
 import { Effect } from "effect"
 import { isObjectLiteralExpression } from "typescript/unstable/ast/is"

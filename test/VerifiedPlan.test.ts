@@ -93,7 +93,7 @@ describe("issued verified plans and project identity", () => {
   )
 
   effect(
-    "stales verify and apply when an extends parent or other recorded manifest input changes",
+    "stales verify when an extends parent or other recorded manifest input changes",
     () =>
       withFixture((root, app) =>
         Effect.gen(function* () {

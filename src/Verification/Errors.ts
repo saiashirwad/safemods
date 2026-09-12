@@ -1,7 +1,7 @@
 /** Verification failures at plan, recipe, policy, and workspace boundaries. */
 import { Data, type Schema } from "effect"
 import type { TransformationPlan } from "../Plan.ts"
-import type { DiagnosticRecord } from "../Policy.ts"
+import type { DiagnosticRecord } from "./Diagnostics.ts"
 import type { ConfiguredProject } from "../Workspace/index.ts"
 
 export class StalePlanError extends Data.TaggedError("StalePlanError")<{
@@ -31,12 +31,10 @@ export class RecipeMismatch extends Data.TaggedError("RecipeMismatch")<{
   readonly expected: {
     readonly name: string
     readonly version: string
-    readonly implementationHash: string
   }
   readonly actual: {
     readonly name: string
     readonly version: string
-    readonly implementationHash: string
   }
 }> {}
 

@@ -1,9 +1,23 @@
 /** Compiler diagnostic collection and normalization. */
 import { Effect } from "effect"
 import { DiagnosticCategory, type Diagnostic } from "typescript/unstable/async"
-import type { DiagnosticRecord } from "../Policy.ts"
 import { WorkspaceSnapshot } from "../Workspace/index.ts"
 import { nativeRequest } from "../Workspace/NativeRequest.ts"
+
+export interface DiagnosticRecord {
+  readonly code: number | string
+  readonly message: string
+  readonly category: "error" | "warning" | "message" | "suggestion"
+  readonly fileName?: string | undefined
+  readonly start?: number | undefined
+  readonly length?: number | undefined
+}
+
+export interface DiagnosticDiff {
+  readonly introduced: ReadonlyArray<DiagnosticRecord>
+  readonly resolved: ReadonlyArray<DiagnosticRecord>
+  readonly unchanged: ReadonlyArray<DiagnosticRecord>
+}
 
 const normalizeDiagnostic = (diagnostic: Diagnostic): DiagnosticRecord => ({
   code: diagnostic.code,

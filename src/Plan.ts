@@ -76,7 +76,6 @@ const planContentFields = {
   recipe: Schema.Struct({
     name: Schema.String,
     version: Schema.String,
-    implementationHash: Schema.String,
     options: Schema.Json,
   }),
   toolchain: Schema.Struct({
