@@ -3,3 +3,4 @@ coverage/
 dist/
 *.tgz
 .DS_Store
+.grok

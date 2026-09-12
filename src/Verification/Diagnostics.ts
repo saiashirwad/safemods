@@ -1,10 +1,23 @@
 /** Compiler diagnostic collection and normalization. */
 import { Effect } from "effect"
 import { DiagnosticCategory, type Diagnostic } from "typescript/unstable/async"
-import type { DiagnosticRecord } from "../Policy.ts"
-import { diagnosticIdentity } from "./PolicyEvaluation.ts"
 import { WorkspaceSnapshot } from "../Workspace/index.ts"
 import { nativeRequest } from "../Workspace/NativeRequest.ts"
+
+export interface DiagnosticRecord {
+  readonly code: number | string
+  readonly message: string
+  readonly category: "error" | "warning" | "message" | "suggestion"
+  readonly fileName?: string | undefined
+  readonly start?: number | undefined
+  readonly length?: number | undefined
+}
+
+export interface DiagnosticDiff {
+  readonly introduced: ReadonlyArray<DiagnosticRecord>
+  readonly resolved: ReadonlyArray<DiagnosticRecord>
+  readonly unchanged: ReadonlyArray<DiagnosticRecord>
+}
 
 const normalizeDiagnostic = (diagnostic: Diagnostic): DiagnosticRecord => ({
   code: diagnostic.code,
@@ -56,7 +69,14 @@ export const collectDiagnostics = Effect.gen(function* () {
     for (const list of lists) {
       for (const diagnostic of list) {
         const record = normalizeDiagnostic(diagnostic)
-        const key = diagnosticIdentity(record)
+        const key = JSON.stringify([
+          record.category,
+          record.code,
+          record.fileName ?? null,
+          record.start ?? null,
+          record.length ?? null,
+          record.message,
+        ])
         if (seen.has(key)) continue
         seen.add(key)
         allDiagnostics.push(record)

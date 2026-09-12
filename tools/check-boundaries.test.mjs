@@ -48,6 +48,7 @@ describe("architecture boundaries", () => {
           join(root, "src", "Edit", "Bad.ts"),
           'import "../Workspace/index.ts"\nimport "safemods/Plan"\n',
         ),
+        writeFile(join(root, "src", "Edit", "Dynamic.ts"), 'import("../Workspace/index.ts")\n'),
         writeFile(join(root, "src", "Draft", "Bad.ts"), 'import "../Query/internal/Private.ts"\n'),
         writeFile(join(root, "src", "Recipe", "Bad.ts"), 'import "../Application/index.ts"\n'),
         writeFile(
@@ -60,6 +61,11 @@ describe("architecture boundaries", () => {
 
       const failures = await checkArchitectureBoundaries(root)
       assert.ok(failures.some((failure) => failure.includes("Edit imports higher layer Workspace")))
+      assert.ok(
+        failures.some((failure) =>
+          failure.includes("Edit/Dynamic.ts: Edit imports higher layer Workspace"),
+        ),
+      )
       assert.ok(failures.some((failure) => failure.includes("package self-import safemods/Plan")))
       assert.ok(failures.some((failure) => failure.includes("imports private")))
       assert.ok(

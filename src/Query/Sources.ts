@@ -10,7 +10,7 @@ import {
 } from "typescript/unstable/ast"
 import { isCallExpression, isIdentifier, isImportDeclaration } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol } from "typescript/unstable/async"
-import { requireProjectRelativePath } from "../ProjectPath.ts"
+import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
 import {
   isProjectFile,
   type ProjectFile,
@@ -25,9 +25,14 @@ const syntaxKindName = (kind: number): string =>
   // SAFETY: reverse-map coverage of every numeric member makes this total.
   SyntaxKind[kind]!
 
+const syntaxKindEvidence = (kind: number) => ({
+  criterion: "syntax-kind",
+  facts: { kind: syntaxKindName(kind) },
+})
+
 interface TargetFileScope {
   readonly project: ProjectSnapshot
-  readonly fileName: string
+  readonly fileName: ProjectRelativePath.Type
 }
 
 const isProjectFileArray = (value: ProjectScope): value is ReadonlyArray<ProjectFile> =>
@@ -37,40 +42,30 @@ const resolveScope = (
   scope: ProjectScope,
 ): Stream.Stream<TargetFileScope, ProjectSnapshotError> => {
   if (isProjectFileArray(scope)) {
-    if (scope.length === 0) {
-      return Stream.empty
-    }
     const seen = new Set<string>()
     const uniqueFiles: Array<TargetFileScope> = []
     for (const f of scope) {
       const key = `${f.project.project.id}:${f.path}`
-      const fileName = f.project.resolveFileName(f.path)
-      if (!seen.has(key) && f.project.containsFileName(fileName)) {
+      if (!seen.has(key)) {
         seen.add(key)
         uniqueFiles.push({
           project: f.project,
-          fileName,
+          fileName: f.path,
         })
       }
     }
     return Stream.fromIterable(uniqueFiles)
   }
   if (isProjectFile(scope)) {
-    const fileName = scope.project.resolveFileName(scope.path)
-    return scope.project.containsFileName(fileName)
-      ? Stream.make({
-          project: scope.project,
-          fileName,
-        })
-      : Stream.empty
+    return Stream.make({
+      project: scope.project,
+      fileName: scope.path,
+    })
   }
   return Stream.fromIterableEffect(
     scope.files.pipe(
       Effect.map((projectFiles) =>
-        projectFiles.flatMap((file) => {
-          const fileName = file.project.resolveFileName(file.path)
-          return file.project.containsFileName(fileName) ? [{ project: scope, fileName }] : []
-        }),
+        projectFiles.map((file) => ({ project: scope, fileName: file.path })),
       ),
     ),
   )
@@ -96,7 +91,7 @@ const collectNodes = <A extends Node>(
   guard: (node: Node) => node is A,
   syntaxKind?: SyntaxKindFilter,
 ): Array<Selection<A>> => {
-  const fileName = requireProjectRelativePath(project.relativeFileName(sourceFile.fileName))
+  const fileName = project.pathOf(sourceFile)
   const selections: Array<Selection<A>> = []
   forEachMatchingNode(sourceFile, syntaxKind, (node) => {
     if (!guard(node)) return
@@ -106,12 +101,7 @@ const collectNodes = <A extends Node>(
       fileName,
       start: node.getStart(sourceFile),
       end: node.getEnd(),
-      evidence: [
-        {
-          criterion: "syntax-kind",
-          facts: { kind: syntaxKindName(node.kind) },
-        },
-      ],
+      evidence: [syntaxKindEvidence(node.kind)],
     })
   })
   return selections
@@ -125,12 +115,14 @@ export const nodes = <A extends Node>(
 ): Query<A, ProjectSnapshotError> =>
   resolveScope(target).pipe(
     Stream.flatMap(({ project, fileName }) =>
-      Stream.fromEffect(project.sourceFile(fileName)).pipe(
-        Stream.flatMap((sourceFile) =>
-          sourceFile === undefined
-            ? Stream.empty
-            : Stream.fromIterable(collectNodes(project, sourceFile, guard, syntaxKind)),
-        ),
+      Stream.fromIterableEffect(
+        project
+          .sourceFile(fileName)
+          .pipe(
+            Effect.map((sourceFile) =>
+              sourceFile === undefined ? [] : collectNodes(project, sourceFile, guard, syntaxKind),
+            ),
+          ),
       ),
     ),
   )
@@ -151,32 +143,26 @@ export const referencesTo = (
 ): Query<Identifier, ProjectSnapshotError> =>
   resolveScope(target).pipe(
     Stream.flatMap(({ project, fileName }) =>
-      Stream.fromEffect(
+      Stream.fromIterableEffect(
         Effect.gen(function* () {
           const sourceFile = yield* project.sourceFile(fileName)
           if (sourceFile === undefined) return []
           const references = yield* project.referencesToSymbolInFile(fileName, symbol)
-          const relativeFileName = requireProjectRelativePath(
-            project.relativeFileName(sourceFile.fileName),
-          )
           const declarationFile = symbol.valueDeclaration?.path ?? symbol.declarations[0]?.path
           const declarationPath =
             declarationFile === undefined
               ? "unknown"
-              : project.containsFileName(String(declarationFile))
-                ? project.relativeFileName(String(declarationFile))
+              : String(declarationFile) === sourceFile.fileName
+                ? fileName
                 : "external"
           return references.map((node): Selection<Identifier> => ({
             value: node,
             project,
-            fileName: relativeFileName,
+            fileName,
             start: node.getStart(sourceFile),
             end: node.getEnd(),
             evidence: [
-              {
-                criterion: "syntax-kind",
-                facts: { kind: syntaxKindName(node.kind) },
-              },
+              syntaxKindEvidence(node.kind),
               {
                 criterion: "resolves-to-symbol",
                 facts: { symbol: symbol.name, declarationFile: declarationPath },
@@ -184,6 +170,6 @@ export const referencesTo = (
             ],
           }))
         }),
-      ).pipe(Stream.flatMap((references) => Stream.fromIterable(references))),
+      ),
     ),
   )

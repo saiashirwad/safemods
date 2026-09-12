@@ -1,26 +1,18 @@
 /** Snapshot-region lifetime and service provisioning. */
 import { Context, Effect } from "effect"
-import type {
-  FileChangeSummary,
-  FileChanges,
-  UpdateSnapshotParams,
-} from "typescript/unstable/proto"
+import type { FileChangeSummary, UpdateSnapshotParams } from "typescript/unstable/proto"
 import type { NativeCompiler } from "./internal/NativeCompiler.ts"
 import type { WorkspaceCompilerError } from "./NativeRequest.ts"
-import {
-  type ConfiguredProject,
-  ProjectNotInSnapshot,
-  type SnapshotTransition,
-  type WorkspaceFileChanges,
-} from "./ConfiguredProject.ts"
+import * as ConfiguredProject from "./ConfiguredProject.ts"
+import type { SnapshotTransition } from "./SnapshotTransition.ts"
 import { projectSnapshotFor, SnapshotExpired, type ProjectSnapshot } from "./ProjectSnapshot.ts"
 import type { WorkspaceRuntimeService } from "./Runtime.ts"
 
 export interface WorkspaceSnapshotService {
-  readonly projects: ReadonlyArray<ConfiguredProject>
+  readonly projects: ReadonlyArray<ConfiguredProject.Type>
   readonly project: (
-    project: ConfiguredProject,
-  ) => Effect.Effect<ProjectSnapshot, ProjectNotInSnapshot | SnapshotExpired>
+    project: ConfiguredProject.Type,
+  ) => Effect.Effect<ProjectSnapshot, ConfiguredProject.ProjectNotInSnapshot | SnapshotExpired>
 }
 
 export class WorkspaceSnapshot extends Context.Service<
@@ -31,18 +23,9 @@ export class WorkspaceSnapshot extends Context.Service<
   "@safemods/WorkspaceSnapshot",
 ) {}
 
-const toNativeChanges = (changes: WorkspaceFileChanges | undefined): FileChanges | undefined => {
-  if (changes === undefined) return undefined
-  const result: FileChangeSummary = {}
-  if (changes.changed !== undefined) result.changed = [...changes.changed]
-  if (changes.created !== undefined) result.created = [...changes.created]
-  if (changes.deleted !== undefined) result.deleted = [...changes.deleted]
-  return result
-}
-
 interface OpenSnapshotRegionOptions {
   readonly regionCompiler: NativeCompiler
-  readonly projects: ReadonlyArray<ConfiguredProject>
+  readonly projects: ReadonlyArray<ConfiguredProject.Type>
   readonly resolvedById: ReadonlyMap<string, string>
   readonly openProjects: ReadonlyArray<string> | undefined
   readonly transition: SnapshotTransition
@@ -62,8 +45,12 @@ export const openSnapshotRegion = <A, E, R>(
         params.openProjects = [...options.openProjects]
       }
       if (options.transition.changes !== undefined) {
-        const fileChanges = toNativeChanges(options.transition.changes)
-        if (fileChanges !== undefined) params.fileChanges = fileChanges
+        const changes = options.transition.changes
+        const fileChanges: FileChangeSummary = {}
+        if (changes.changed !== undefined) fileChanges.changed = [...changes.changed]
+        if (changes.created !== undefined) fileChanges.created = [...changes.created]
+        if (changes.deleted !== undefined) fileChanges.deleted = [...changes.deleted]
+        params.fileChanges = fileChanges
       }
       const nativeSnapshot = yield* options.regionCompiler
         .openSnapshot(params)
@@ -73,22 +60,20 @@ export const openSnapshotRegion = <A, E, R>(
           ),
         )
 
-      const active = { current: true }
-      const ensureActive = Effect.suspend((): Effect.Effect<void, SnapshotExpired> =>
-        active.current
-          ? Effect.void
-          : Effect.fail(new SnapshotExpired({ generation: nativeSnapshot.id })),
+      let active = true
+      const ensureActive = Effect.suspend(() =>
+        active ? Effect.void : new SnapshotExpired({ generation: nativeSnapshot.id }),
       )
 
       const project = Effect.fn("WorkspaceSnapshot.project")(function* (
-        configured: ConfiguredProject,
+        configured: ConfiguredProject.Type,
       ) {
         yield* ensureActive
         const configFileName = options.resolvedById.get(configured.id)
         const nativeProject =
           configFileName === undefined ? undefined : nativeSnapshot.getProject(configFileName)
         if (configFileName === undefined || nativeProject === undefined) {
-          return yield* new ProjectNotInSnapshot({
+          return yield* new ConfiguredProject.ProjectNotInSnapshot({
             projectId: configured.id,
             generation: nativeSnapshot.id,
           })
@@ -112,7 +97,7 @@ export const openSnapshotRegion = <A, E, R>(
         Effect.provideService(WorkspaceSnapshot, snapshotService),
         Effect.ensuring(
           Effect.sync(() => {
-            active.current = false
+            active = false
           }),
         ),
       )

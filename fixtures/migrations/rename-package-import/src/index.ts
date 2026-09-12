@@ -1,0 +1,5 @@
+export { getAcmeClient, withClient, countOpenInvoices } from "./http/gateway.js"
+export { issueSession, revokeForUser } from "./auth/session.js"
+export { describeInvoice, listOpenInvoices, voidInvoice } from "./billing/invoices.js"
+export { displayNameFor, findBillingAdmins, requireUser } from "./users/directory.js"
+export { createClient, type AcmeClient, type ClientConfig } from "@acme/legacy-client"

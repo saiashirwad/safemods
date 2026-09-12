@@ -1,7 +1,10 @@
 /** Apply a verified plan to the real filesystem. */
-import { hash, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import { Data, Effect, FileSystem, Path } from "effect"
 import type { TransformationPlan } from "./Plan.ts"
+import type * as ProjectId from "./ProjectId.ts"
+import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
+import * as Sha256 from "./Sha256.ts"
 import { isPathContained, resolvePlanFilePath, unsafePlanFilePathMessage } from "./ProjectPath.ts"
 import { StalePlanError } from "./Verification/Errors.ts"
 import { requireMatchingProjectIdentity } from "./Verification/SourceRevalidation.ts"
@@ -14,12 +17,12 @@ export class ApplicationFailure extends Data.TaggedError("ApplicationFailure")<{
 }> {}
 
 export interface ApplicationReceipt {
-  readonly planId: string
-  readonly snapshotHash: string
+  readonly planId: Sha256.Type
+  readonly snapshotHash: Sha256.Type
   readonly outputs: ReadonlyArray<{
-    readonly projectId: string
-    readonly fileName: string
-    readonly hash: string
+    readonly projectId: ProjectId.Type
+    readonly fileName: ProjectRelativePath.Type
+    readonly hash: Sha256.Type
   }>
 }
 
@@ -31,8 +34,8 @@ const failWith =
 const safeTarget = (
   plan: TransformationPlan,
   workspaceRoot: string,
-  projectId: string,
-  fileName: string,
+  projectId: ProjectId.Type,
+  fileName: ProjectRelativePath.Type,
 ): Effect.Effect<string, ApplicationFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function* () {
     const fail = failWith(plan.planId)
@@ -57,10 +60,12 @@ const safeTarget = (
       })
     }
     let existingParent = path.dirname(target)
-    while (!(yield* fs.exists(existingParent).pipe(fail))) {
-      if (existingParent === projectRoot) break
+    while (!(yield* fs.exists(existingParent).pipe(fail)) && existingParent !== projectRoot) {
       const parent = path.dirname(existingParent)
-      if (parent === existingParent || !isPathContained(path, projectRoot, parent)) {
+      if (
+        parent === existingParent ||
+        !isPathContained(path, projectRoot, parent, { includeRoot: true })
+      ) {
         return yield* new ApplicationFailure({
           planId: plan.planId,
           cause: `Path escapes project through parent: ${fileName}`,
@@ -121,9 +126,9 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
         fileName: file.fileName,
       })
     }
-    if (exists && file.before.hash !== undefined) {
+    if (file.before.exists) {
       const text = yield* fs.readFileString(target).pipe(fail)
-      if (hash("sha256", text, "hex") !== file.before.hash) {
+      if (Sha256.digest(text) !== file.before.hash) {
         return yield* new StalePlanError({
           planId: plan.planId,
           projectId: file.projectId,
@@ -133,7 +138,6 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     }
   }
 
-  // Atomic file writes
   for (const file of preview.files) {
     const target = yield* safeTarget(plan, workspaceRoot, file.projectId, file.fileName)
     if (!file.after.exists) {
@@ -144,22 +148,30 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
 
       const tempFile = `${target}.safemods-tmp-${randomUUID()}.tmp`
       const text = file.after.text
-      yield* fs.writeFileString(tempFile, text, { flag: "wx" }).pipe(fail)
-
       yield* fs
-        .rename(tempFile, target)
-        .pipe(fail, Effect.ensuring(fs.remove(tempFile, { force: true }).pipe(Effect.ignore)))
+        .writeFileString(tempFile, text, { flag: "wx" })
+        .pipe(
+          Effect.andThen(fs.rename(tempFile, target)),
+          fail,
+          Effect.ensuring(fs.remove(tempFile, { force: true }).pipe(Effect.ignore)),
+        )
     }
+  }
+
+  const outputs = []
+  for (const file of preview.files) {
+    if (!file.after.exists) continue
+    outputs.push({
+      projectId: file.projectId,
+      fileName: file.fileName,
+      hash: file.after.hash,
+    })
   }
 
   const receipt: ApplicationReceipt = {
     planId: plan.planId,
     snapshotHash: plan.snapshotHash,
-    outputs: preview.files.map((file) => ({
-      projectId: file.projectId,
-      fileName: file.fileName,
-      hash: file.after.hash ?? "",
-    })),
+    outputs,
   }
   return receipt
 })

@@ -1,7 +1,9 @@
-import { hash } from "node:crypto"
 import { Data, Effect } from "effect"
 import { applyFileEdits, type EditConflict, type InvalidEdit, type TextEdit } from "./Edit.ts"
 import type { PlannedFileOperation } from "./Plan.ts"
+import type * as ProjectId from "./ProjectId.ts"
+import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
+import * as Sha256 from "./Sha256.ts"
 
 /** The complete virtual filesystem state presented to an isolated compiler. */
 export interface VirtualFsSnapshot {
@@ -14,33 +16,38 @@ export interface VirtualFsSnapshot {
 }
 
 export interface VirtualFsInitialFile {
-  readonly projectId: string
-  readonly fileName: string
+  readonly projectId: ProjectId.Type
+  readonly fileName: ProjectRelativePath.Type
   readonly content: string
 }
 
 export class VirtualFsError extends Data.TaggedError("VirtualFsError")<{
   readonly reason: "missing-source" | "source-mismatch"
-  readonly projectId: string
-  readonly fileName: string
-  readonly expectedHash?: string
-  readonly actualHash?: string
+  readonly projectId: ProjectId.Type
+  readonly fileName: ProjectRelativePath.Type
+  readonly expectedHash?: Sha256.Type
+  readonly actualHash?: Sha256.Type
 }> {}
 
 interface VirtualFsMaterializeOptions<E> {
   readonly initialFiles?: ReadonlyArray<VirtualFsInitialFile>
-  readonly load: (projectId: string, fileName: string) => Effect.Effect<string, E>
-  readonly resolvePath: (projectId: string, fileName: string) => string
+  readonly load: (
+    projectId: ProjectId.Type,
+    fileName: ProjectRelativePath.Type,
+  ) => Effect.Effect<string, E>
+  readonly resolvePath: (projectId: ProjectId.Type, fileName: ProjectRelativePath.Type) => string
   readonly edits: ReadonlyArray<TextEdit>
   readonly fileOperations?: ReadonlyArray<PlannedFileOperation> | undefined
 }
 
-export const virtualFileKey = (projectId: string, fileName: string): string =>
-  `${projectId}\0${fileName}`
+export const virtualFileKey = (
+  projectId: ProjectId.Type,
+  fileName: ProjectRelativePath.Type,
+): string => `${projectId}\0${fileName}`
 
 interface VirtualFile {
-  readonly projectId: string
-  readonly fileName: string
+  readonly projectId: ProjectId.Type
+  readonly fileName: ProjectRelativePath.Type
   content: string
   exists: boolean
 }
@@ -48,7 +55,7 @@ interface VirtualFile {
 /**
  * Apply file operations and text edits to one coherent virtual filesystem.
  * Operations are applied first, in declaration order, followed by grouped
- * text edits. This is the only state machine used by overlays and previews.
+ * text edits.
  */
 export const materialize = <E>(
   options: VirtualFsMaterializeOptions<E>,
@@ -68,7 +75,7 @@ export const materialize = <E>(
     const deleted = new Set<string>()
     const touched = new Set<string>()
 
-    const load = (projectId: string, fileName: string) =>
+    const load = (projectId: ProjectId.Type, fileName: ProjectRelativePath.Type) =>
       Effect.gen(function* () {
         const key = virtualFileKey(projectId, fileName)
         const existing = state.get(key)
@@ -81,15 +88,6 @@ export const materialize = <E>(
         }
         state.set(key, value)
         return value
-      })
-
-    const requireExisting = (projectId: string, fileName: string) =>
-      Effect.gen(function* () {
-        const file = yield* load(projectId, fileName)
-        if (!file.exists) {
-          return yield* new VirtualFsError({ reason: "missing-source", projectId, fileName })
-        }
-        return file
       })
 
     for (const operation of options.fileOperations ?? []) {
@@ -109,8 +107,15 @@ export const materialize = <E>(
         continue
       }
 
-      const current = yield* requireExisting(operation.projectId, operation.path)
-      const actualHash = hash("sha256", current.content, "hex")
+      const current = yield* load(operation.projectId, operation.path)
+      if (!current.exists) {
+        return yield* new VirtualFsError({
+          reason: "missing-source",
+          projectId: operation.projectId,
+          fileName: operation.path,
+        })
+      }
+      const actualHash = Sha256.digest(current.content)
       if (actualHash !== operation.initialHash) {
         return yield* new VirtualFsError({
           reason: "source-mismatch",

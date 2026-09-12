@@ -4,11 +4,20 @@ import { dirname, relative, resolve, sep } from "node:path"
 const TYPESCRIPT_SOURCE = /\.(?:[cm]?ts|tsx)$/
 const TYPESCRIPT_TEST = /\.test\.(?:[cm]?ts|tsx)$/
 
-/** `src/Plan/Codec.ts` and `src/Policy.ts` are both owned by their first segment, minus extension. */
+/** `src/Plan/Codec.ts` is owned by its first segment, minus extension. */
 const ownerName = (segment) => segment.replace(TYPESCRIPT_SOURCE, "")
 
 export const architectureLayers = [
-  ["Edit", "Evidence", "Plan", "Policy", "ProjectPath", "VirtualFs"],
+  [
+    "Edit",
+    "Evidence",
+    "Plan",
+    "ProjectId",
+    "ProjectPath",
+    "ProjectRelativePath",
+    "Sha256",
+    "VirtualFs",
+  ],
   ["Query", "Workspace"],
   ["Draft"],
   ["Application", "Recipe", "Verification"],
@@ -20,8 +29,8 @@ const layerByOwner = new Map(
 )
 
 const exactDependencies = new Map([
-  ["Query", new Set(["Evidence", "ProjectPath", "Workspace"])],
-  ["Workspace", new Set(["Edit", "ProjectPath", "VirtualFs"])],
+  ["Query", new Set(["Evidence", "ProjectRelativePath", "Workspace"])],
+  ["Workspace", new Set(["Edit", "ProjectId", "ProjectPath", "ProjectRelativePath", "VirtualFs"])],
   [
     "Recipe",
     new Set([
@@ -29,8 +38,9 @@ const exactDependencies = new Map([
       "Edit",
       "Evidence",
       "Plan",
-      "Policy",
       "ProjectPath",
+      "ProjectRelativePath",
+      "Sha256",
       "VirtualFs",
       "Workspace",
     ]),
@@ -41,14 +51,28 @@ const exactDependencies = new Map([
       "Edit",
       "Evidence",
       "Plan",
-      "Policy",
+      "ProjectId",
       "ProjectPath",
+      "ProjectRelativePath",
       "Recipe",
+      "Sha256",
       "VirtualFs",
       "Workspace",
     ]),
   ],
-  ["Application", new Set(["Edit", "Plan", "ProjectPath", "Verification", "Workspace"])],
+  [
+    "Application",
+    new Set([
+      "Edit",
+      "Plan",
+      "ProjectId",
+      "ProjectPath",
+      "ProjectRelativePath",
+      "Sha256",
+      "Verification",
+      "Workspace",
+    ]),
+  ],
 ])
 
 const files = async (directory) =>

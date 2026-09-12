@@ -1,5 +1,4 @@
 /** Recipes: definition, input validation, workspace fingerprinting, and planning. */
-import { hash } from "node:crypto"
 import { Data, Effect, FileSystem, Path, Schema } from "effect"
 import type { Draft } from "./Draft/index.ts"
 import {
@@ -17,13 +16,13 @@ import {
   type WorkspaceCompilerError,
   WorkspaceSnapshot,
 } from "./Workspace/index.ts"
-import { type DraftEvidenceConflict, finalizeDraftEvidence } from "./Evidence.ts"
-import { all as allPolicies, type Policy } from "./Policy.ts"
 import {
-  parseProjectRelativePath,
-  projectRelative,
-  type ProjectRelativePath,
-} from "./ProjectPath.ts"
+  type DraftEvidenceConflict,
+  type MissingDraftEvidence,
+  finalizeDraftEvidence,
+} from "./Evidence.ts"
+import * as ProjectRelativePath from "./ProjectRelativePath.ts"
+import * as Sha256 from "./Sha256.ts"
 
 /**
  * A reusable transformation. The recipe body runs in a Workspace Snapshot
@@ -32,7 +31,6 @@ import {
 export interface Recipe<Input = undefined, E = never, R = never> {
   readonly name: string
   readonly version: string
-  readonly implementationHash: string
   readonly policies: PlanPolicies
   readonly schema?: Schema.Codec<Input, unknown> | undefined
   readonly run: (input: Input) => Effect.Effect<Draft, E, R | WorkspaceSnapshot | Workspace>
@@ -41,9 +39,7 @@ export interface Recipe<Input = undefined, E = never, R = never> {
 export interface RecipeDefinition<Input, E, R> {
   readonly version: string
   readonly schema?: Schema.Codec<Input, unknown>
-  /** Digest supplied by release tooling. The development default uses name and version. */
-  readonly implementationHash?: string
-  readonly policies?: ReadonlyArray<Policy>
+  readonly policies?: Partial<PlanPolicies>
   readonly run: (input: Input) => Effect.Effect<Draft, E, R | WorkspaceSnapshot | Workspace>
 }
 
@@ -79,44 +75,21 @@ export const validateRecipeInput = <Input, E, R>(
 export const define = <Input = undefined, E = never, R = never>(
   name: string,
   definition: RecipeDefinition<Input, E, R>,
-): Recipe<Input, E, R> =>
-  Object.freeze({
+): Recipe<Input, E, R> => {
+  const overrides: Partial<PlanPolicies> = definition.policies ?? {}
+  const policies: PlanPolicies = {
+    ...overrides,
+    matchCount: overrides.matchCount ?? {},
+    diagnostics: overrides.diagnostics ?? "no-new-errors",
+    idempotence: overrides.idempotence ?? "not-promised",
+  }
+  return Object.freeze({
     name,
     version: definition.version,
     schema: definition.schema,
-    implementationHash:
-      definition.implementationHash ?? hash("sha256", `${name}@${definition.version}`, "hex"),
-    policies: allPolicies(definition.policies ?? []),
+    policies,
     run: definition.run,
   })
-
-const observationRelativePath = (
-  fs: FileSystem.FileSystem,
-  path: Path.Path,
-  projectRoot: string,
-  absolute: string,
-): Effect.Effect<ProjectRelativePath | undefined> =>
-  Effect.gen(function* () {
-    const direct = parseProjectRelativePath(projectRelative(path, projectRoot, absolute))
-    if (direct !== undefined) return direct
-
-    const realRoot = yield* fs.realPath(projectRoot).pipe(Effect.orElseSucceed(() => undefined))
-    if (realRoot === undefined) return undefined
-    const realAbsolute = yield* fs.realPath(absolute).pipe(Effect.orElseSucceed(() => absolute))
-    return parseProjectRelativePath(projectRelative(path, realRoot, realAbsolute))
-  })
-
-const fingerprintKey = (source: SourceFingerprint): string =>
-  `${source.projectId}\0${source.kind}\0${source.fileName}`
-
-const addFingerprint = (
-  sources: Map<string, SourceFingerprint>,
-  source: SourceFingerprint,
-): void => {
-  const relative = parseProjectRelativePath(source.fileName)
-  if (relative === undefined) return
-  const next = { ...source, fileName: relative }
-  sources.set(fingerprintKey(next), next)
 }
 
 /** Record compiler inputs that verification can revalidate. */
@@ -134,35 +107,34 @@ const fingerprintWorkspace = (
     const sources = new Map<string, SourceFingerprint>()
     for (const configured of snapshot.projects) {
       const project = yield* snapshot.project(configured)
-      const owned = (yield* project.sourceFileNames).filter(
-        (fileName) =>
-          parseProjectRelativePath(projectRelative(path, project.root, fileName)) !== undefined,
+      const configFileName = ProjectRelativePath.schema.make(
+        configured.config.slice(configured.config.lastIndexOf("/") + 1),
       )
-      const files = [...new Set(owned)]
-      const configFileName = path.resolve(workspaceRoot, configured.config)
-      const contentFiles = [configFileName, ...files]
+      const configContent = yield* fs
+        .readFileString(path.resolve(workspaceRoot, configured.config), "utf8")
+        .pipe(Effect.orElseSucceed(() => undefined))
+      const configFingerprint: SourceFingerprint =
+        configContent === undefined
+          ? { projectId: configured.id, fileName: configFileName, kind: "missing" }
+          : {
+              projectId: configured.id,
+              fileName: configFileName,
+              hash: Sha256.digest(configContent),
+              kind: "file",
+            }
+      sources.set(
+        `${configured.id}\0${configFingerprint.kind}\0${configFileName}`,
+        configFingerprint,
+      )
 
-      for (const absolute of contentFiles) {
-        const relative = yield* observationRelativePath(fs, path, project.root, absolute)
-        if (relative === undefined) continue
-        const content = yield* fs
-          .readFileString(absolute, "utf8")
-          .pipe(Effect.orElseSucceed(() => undefined))
-        if (content === undefined) {
-          addFingerprint(sources, {
-            projectId: configured.id,
-            fileName: relative,
-            hash: "",
-            kind: "missing",
-          })
-        } else {
-          addFingerprint(sources, {
-            projectId: configured.id,
-            fileName: relative,
-            hash: hash("sha256", content, "hex"),
-            kind: "file",
-          })
-        }
+      for (const file of yield* project.files) {
+        const content = yield* file.sourceText
+        sources.set(`${configured.id}\0file\0${file.path}`, {
+          projectId: configured.id,
+          fileName: file.path,
+          hash: Sha256.digest(content),
+          kind: "file",
+        })
       }
     }
     return [...sources.values()]
@@ -188,7 +160,8 @@ export const run = <Input, E, R>(
   | WorkspaceCompilerError
   | ProjectNotInSnapshot
   | SnapshotExpired
-  | DraftEvidenceConflict,
+  | DraftEvidenceConflict
+  | MissingDraftEvidence,
   Workspace | FileSystem.FileSystem | Path.Path | Exclude<R, WorkspaceSnapshot>
 > =>
   Effect.gen(function* () {
@@ -206,7 +179,6 @@ export const run = <Input, E, R>(
           recipe: {
             name: recipe.name,
             version: recipe.version,
-            implementationHash: recipe.implementationHash,
             options: validatedInput.encoded,
           },
           toolchain: TOOLCHAIN,

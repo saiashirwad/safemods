@@ -9,6 +9,7 @@ import * as Recipe from "../src/Recipe.ts"
 import { Workspace } from "../src/Workspace/index.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
+import { projectPath } from "./utils/domain.ts"
 
 describe("declarative transformations API (@effect/vitest)", () => {
   describe("file lifecycle operations in plans", () => {
@@ -23,21 +24,21 @@ describe("declarative transformations API (@effect/vitest)", () => {
 
             const fileLifecycleRecipe = Recipe.define("file-lifecycle", {
               version: "1.0.0",
-              policies: [{ diagnostics: "allow-new-errors" }],
+              policies: { diagnostics: "allow-new-errors" },
               run: () =>
                 Effect.gen(function* () {
                   const project = yield* fixtureProject(app)
 
                   const d1 = yield* Draft.files.create(
                     project,
-                    "src/utils.ts",
+                    projectPath("src/utils.ts"),
                     "export const magicNumber = 42;\n",
                   )
 
                   const d2 = yield* Draft.files.move(
                     project,
-                    "src/library.ts",
-                    "src/shared/core.ts",
+                    projectPath("src/library.ts"),
+                    projectPath("src/shared/core.ts"),
                   )
 
                   return yield* Draft.concat(d1, d2)

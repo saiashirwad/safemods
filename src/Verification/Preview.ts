@@ -1,6 +1,5 @@
 /** Read-only materialization of a plan's exact proposed bytes. */
-import { hash } from "node:crypto"
-import { Effect, type FileSystem, type Path } from "effect"
+import { Effect, type FileSystem, Order, type Path } from "effect"
 import {
   type PlanDecodeError,
   type TransformationPlan,
@@ -20,25 +19,28 @@ import {
   VirtualFsError,
 } from "../VirtualFs.ts"
 import { Workspace } from "../Workspace/index.ts"
+import type * as ProjectId from "../ProjectId.ts"
+import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
+import * as Sha256 from "../Sha256.ts"
 
 type FileState =
-  | { readonly exists: false; readonly text?: undefined; readonly hash?: undefined }
-  | { readonly exists: true; readonly text: string; readonly hash: string }
+  | { readonly exists: false }
+  | { readonly exists: true; readonly text: string; readonly hash: Sha256.Type }
 
 interface FilePreview {
-  readonly projectId: string
-  readonly fileName: string
+  readonly projectId: ProjectId.Type
+  readonly fileName: ProjectRelativePath.Type
   /** Explicit operation and virtual existence state; empty text is valid content. */
   readonly action: "create" | "modify" | "delete" | "move"
   readonly before: FileState
   readonly after: FileState
   /** The counterpart path for a move operation, when applicable. */
-  readonly movePath?: string | undefined
+  readonly movePath?: ProjectRelativePath.Type | undefined
 }
 
 export interface PlanPreview {
-  readonly planId: string
-  readonly snapshotHash: string
+  readonly planId: Sha256.Type
+  readonly snapshotHash: Sha256.Type
   readonly files: ReadonlyArray<FilePreview>
 }
 
@@ -66,8 +68,11 @@ export const previewValidatedPlan = (
     }
 
     const absoluteTargets = new Map<string, string>()
-    const targetPaths = new Map<string, readonly [projectId: string, fileName: string]>()
-    const addTarget = (projectId: string, fileName: string): void => {
+    const targetPaths = new Map<
+      string,
+      readonly [projectId: ProjectId.Type, fileName: ProjectRelativePath.Type]
+    >()
+    const addTarget = (projectId: ProjectId.Type, fileName: ProjectRelativePath.Type): void => {
       targetPaths.set(virtualFileKey(projectId, fileName), [projectId, fileName])
     }
     for (const source of plan.sources) addTarget(source.projectId, source.fileName)
@@ -79,7 +84,7 @@ export const previewValidatedPlan = (
     for (const [key, [projectId, fileName]] of targetPaths) {
       absoluteTargets.set(key, yield* absoluteTarget(plan, workspaceRoot, projectId, fileName))
     }
-    const resolvePath = (projectId: string, fileName: string): string =>
+    const resolvePath = (projectId: ProjectId.Type, fileName: ProjectRelativePath.Type): string =>
       // SAFETY: every materializer input path is collected above.
       absoluteTargets.get(virtualFileKey(projectId, fileName))!
 
@@ -122,7 +127,7 @@ export const previewValidatedPlan = (
     )
 
     const touched = new Set<string>()
-    const moveCounterpart = new Map<string, string>()
+    const moveCounterpart = new Map<string, ProjectRelativePath.Type>()
     const operationKinds = new Map<string, "create" | "delete" | "move">()
     for (const operation of plan.fileOperations) {
       const sourceKey = virtualFileKey(operation.projectId, operation.path)
@@ -147,9 +152,7 @@ export const previewValidatedPlan = (
 
     const filesByKey = new Map<string, FilePreview>()
     const stateOf = (text: string | undefined): FileState =>
-      text === undefined
-        ? { exists: false }
-        : { exists: true, text, hash: hash("sha256", text, "hex") }
+      text === undefined ? { exists: false } : { exists: true, text, hash: Sha256.digest(text) }
     for (const key of touched) {
       const [projectId, fileName] = targetPaths.get(key)!
       const absolute = resolvePath(projectId, fileName)
@@ -169,11 +172,8 @@ export const previewValidatedPlan = (
       })
     }
 
-    const files = [...filesByKey.values()]
-    files.sort(
-      (left, right) =>
-        left.projectId.localeCompare(right.projectId) ||
-        left.fileName.localeCompare(right.fileName),
+    const files = [...filesByKey.values()].sort(
+      Order.Struct({ projectId: Order.String, fileName: Order.String }),
     )
     return { planId: plan.planId, snapshotHash: plan.snapshotHash, files }
   })

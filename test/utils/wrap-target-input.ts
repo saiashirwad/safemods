@@ -1,31 +1,26 @@
 /**
- * Example Transformation Recipe written against the candidate public API:
- * wrap the argument of every call to the canonical `target` symbol in an
+ * Wrap the argument of every call to the canonical `target` symbol in an
  * object — through import aliases and re-exports, preserving trivia.
- *
- * Compare `src/prototype/wrap-target-recipe.ts`: no file reads, no hashes,
- * no evidence ID strings, no toolchain literals, no fingerprint loops. The
- * body reads as intent.
  */
 import { Effect } from "effect"
 import { isObjectLiteralExpression } from "typescript/unstable/ast/is"
 import * as Draft from "../../src/Draft/index.ts"
-import * as Policy from "../../src/Policy.ts"
+import type * as ProjectRelativePath from "../../src/ProjectRelativePath.ts"
 import * as Query from "../../src/Query/index.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import { type ConfiguredProject, WorkspaceSnapshot } from "../../src/Workspace/index.ts"
 
 export interface WrapTargetInput {
-  readonly project: ConfiguredProject
+  readonly project: ConfiguredProject.Type
   /** Project-relative file declaring the target symbol. */
-  readonly declarationFile: string
+  readonly declarationFile: ProjectRelativePath.Type
   /** Property name used to wrap each argument. */
   readonly property: string
 }
 
 export const wrapTargetInput = Recipe.define("wrap-target-input", {
   version: "1.0.0",
-  policies: [Policy.matches({ min: 1 }), Policy.idempotent()],
+  policies: { matchCount: { min: 1 }, idempotence: "required" },
   run: (input: WrapTargetInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot

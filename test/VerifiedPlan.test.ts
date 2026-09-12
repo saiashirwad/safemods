@@ -8,6 +8,11 @@ import * as Verification from "../src/Verification/index.ts"
 import { finalizePlan, type TransformationPlan } from "../src/Plan.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
+import { projectPath } from "./utils/domain.ts"
+import type * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
+
+// SAFETY: this test sends non-canonical paths through validation.
+const uncheckedPath = (value: string) => value as ProjectRelativePath.Type
 
 const didMutate = (write: () => void): boolean => {
   try {
@@ -31,11 +36,15 @@ describe("issued verified plans and project identity", () => {
         Effect.gen(function* () {
           const recipe = Recipe.define("unvalidated-paths", {
             version: "1.0.0",
-            policies: [{ diagnostics: "allow-new-errors" }],
+            policies: { diagnostics: "allow-new-errors" },
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.files.create(project, "src/created.ts", "export {}\n")
+                return yield* Draft.files.create(
+                  project,
+                  projectPath("src/created.ts"),
+                  "export {}\n",
+                )
               }),
           })
           const plan = yield* Recipe.run(recipe, undefined)
@@ -43,9 +52,12 @@ describe("issued verified plans and project identity", () => {
             ...plan,
             sources: plan.sources.map((source) => ({
               ...source,
-              fileName: `./${source.fileName}`,
+              fileName: uncheckedPath(`./${source.fileName}`),
             })),
-            edits: plan.edits.map((edit) => ({ ...edit, fileName: `./${edit.fileName}` })),
+            edits: plan.edits.map((edit) => ({
+              ...edit,
+              fileName: uncheckedPath(`./${edit.fileName}`),
+            })),
           }
           const verified = yield* Verification.verify(unvalidated, recipe, undefined).pipe(
             Effect.result,
@@ -65,11 +77,15 @@ describe("issued verified plans and project identity", () => {
         Effect.gen(function* () {
           const recipe = Recipe.define("identity-mismatch", {
             version: "1.0.0",
-            policies: [{ diagnostics: "allow-new-errors" }],
+            policies: { diagnostics: "allow-new-errors" },
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.files.create(project, "src/created.ts", "export {}\n")
+                return yield* Draft.files.create(
+                  project,
+                  projectPath("src/created.ts"),
+                  "export {}\n",
+                )
               }),
           })
           const plan = yield* Recipe.run(recipe, undefined)
@@ -78,7 +94,7 @@ describe("issued verified plans and project identity", () => {
             ...input,
             projects: input.projects.map((project) => ({
               ...project,
-              configFileName: "other.json",
+              configFileName: projectPath("other.json"),
             })),
           })
           const verified = yield* Verification.verify(mismatched, recipe, undefined).pipe(
@@ -93,7 +109,7 @@ describe("issued verified plans and project identity", () => {
   )
 
   effect(
-    "stales verify and apply when an extends parent or other recorded manifest input changes",
+    "stales verify when an extends parent or other recorded manifest input changes",
     () =>
       withFixture((root, app) =>
         Effect.gen(function* () {
@@ -126,11 +142,15 @@ describe("issued verified plans and project identity", () => {
 
           const recipe = Recipe.define("manifest-stale", {
             version: "1.0.0",
-            policies: [{ diagnostics: "allow-new-errors" }],
+            policies: { diagnostics: "allow-new-errors" },
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.files.create(project, "src/created.ts", "export {}\n")
+                return yield* Draft.files.create(
+                  project,
+                  projectPath("src/created.ts"),
+                  "export {}\n",
+                )
               }),
           })
           const plan = yield* Recipe.run(recipe, undefined)
@@ -160,11 +180,15 @@ describe("issued verified plans and project identity", () => {
         Effect.gen(function* () {
           const recipe = Recipe.define("issued-freeze", {
             version: "1.0.0",
-            policies: [{ diagnostics: "allow-new-errors" }],
+            policies: { diagnostics: "allow-new-errors" },
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.files.create(project, "src/created.ts", "export {}\n")
+                return yield* Draft.files.create(
+                  project,
+                  projectPath("src/created.ts"),
+                  "export {}\n",
+                )
               }),
           })
           const plan = yield* Recipe.run(recipe, undefined)
