@@ -43,7 +43,7 @@ interface PolicyFailure {
 
 interface BuiltInPolicyInput {
   readonly policies: PlanPolicies
-  readonly actualMatches?: number | undefined
+  readonly actualMatches: number
   readonly affectedFiles: number
   readonly diagnosticDiff: DiagnosticDiff
   readonly secondPlanChangeCount?: number | undefined
@@ -51,12 +51,9 @@ interface BuiltInPolicyInput {
 
 export const evaluateBuiltInPolicies = (input: BuiltInPolicyInput): PolicyFailure | undefined => {
   const { min, max } = input.policies.matchCount
-  const hasMatchBounds = min !== undefined || max !== undefined
-  const missingMatchMeasurement = hasMatchBounds && input.actualMatches === undefined
+  const actualMatches = input.actualMatches
   const matchesPassed =
-    !missingMatchMeasurement &&
-    (min === undefined || input.actualMatches! >= min) &&
-    (max === undefined || input.actualMatches! <= max)
+    (min === undefined || actualMatches >= min) && (max === undefined || actualMatches <= max)
 
   const affectedFilesPassed =
     input.policies.maxAffectedFiles === undefined ||
@@ -71,10 +68,7 @@ export const evaluateBuiltInPolicies = (input: BuiltInPolicyInput): PolicyFailur
   const idempotencePassed =
     input.policies.idempotence !== "required" || input.secondPlanChangeCount === 0
 
-  if (missingMatchMeasurement) {
-    return { policy: "matches", detail: "Plan carries no primary-run match measurement" }
-  }
-  if (!matchesPassed) return { policy: "matches", detail: `Observed ${input.actualMatches}` }
+  if (!matchesPassed) return { policy: "matches", detail: `Observed ${actualMatches}` }
   if (!affectedFilesPassed) {
     return { policy: "affected-files", detail: `Observed ${input.affectedFiles}` }
   }

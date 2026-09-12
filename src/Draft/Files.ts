@@ -13,6 +13,7 @@ export const files = {
   ): Effect.Effect<Draft, ProjectSnapshotError> =>
     Effect.gen(function* () {
       yield* project.sourceFile(path)
+      const createEvidence = `file:create:${project.project.id}:${path}`
       return {
         edits: [],
         fileOperations: [
@@ -21,12 +22,12 @@ export const files = {
             projectId: project.project.id,
             path,
             content,
-            evidenceIds: [`file:create:${project.project.id}:${path}`],
+            evidenceIds: [createEvidence],
           },
         ],
         evidence: [
           {
-            id: `file:create:${project.project.id}:${path}`,
+            id: createEvidence,
             kind: "file-operation",
             facts: { kind: "create", projectId: project.project.id, path },
           },
@@ -42,6 +43,7 @@ export const files = {
   ): Effect.Effect<Draft, ProjectSnapshotError | FileNotFound> =>
     Effect.gen(function* () {
       const source = yield* project.sourceText(path)
+      const deleteEvidence = `file:delete:${project.project.id}:${path}`
       return {
         edits: [],
         fileOperations: [
@@ -50,12 +52,12 @@ export const files = {
             projectId: project.project.id,
             path,
             initialHash: Sha256.digest(source),
-            evidenceIds: [`file:delete:${project.project.id}:${path}`],
+            evidenceIds: [deleteEvidence],
           },
         ],
         evidence: [
           {
-            id: `file:delete:${project.project.id}:${path}`,
+            id: deleteEvidence,
             kind: "file-operation",
             facts: { kind: "delete", projectId: project.project.id, path },
           },

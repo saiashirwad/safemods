@@ -76,14 +76,13 @@ export const define = <Input = undefined, E = never, R = never>(
   name: string,
   definition: RecipeDefinition<Input, E, R>,
 ): Recipe<Input, E, R> => {
-  const matchCount = definition.policies?.matchCount ?? {}
-  const diagnostics = definition.policies?.diagnostics ?? "no-new-errors"
-  const idempotence = definition.policies?.idempotence ?? "not-promised"
-  const maxAffectedFiles = definition.policies?.maxAffectedFiles
-  const policies: PlanPolicies =
-    maxAffectedFiles === undefined
-      ? { matchCount, diagnostics, idempotence }
-      : { matchCount, diagnostics, idempotence, maxAffectedFiles }
+  const overrides: Partial<PlanPolicies> = definition.policies ?? {}
+  const policies: PlanPolicies = {
+    ...overrides,
+    matchCount: overrides.matchCount ?? {},
+    diagnostics: overrides.diagnostics ?? "no-new-errors",
+    idempotence: overrides.idempotence ?? "not-promised",
+  }
   return Object.freeze({
     name,
     version: definition.version,

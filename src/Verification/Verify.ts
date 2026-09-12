@@ -1,5 +1,5 @@
 /** Complete verification orchestration and VerifiedPlan issuance. */
-import { Effect, type FileSystem, type Path, Schema } from "effect"
+import { Effect, type FileSystem, type Path } from "effect"
 import {
   type ProjectNotInSnapshot,
   type SnapshotExpired,
@@ -25,8 +25,6 @@ import { previewValidatedPlan } from "./Preview.ts"
 import { computeDiagnosticDiff, evaluateBuiltInPolicies } from "./PolicyEvaluation.ts"
 import { absoluteTarget, requireMatchingProjectIdentity } from "./SourceRevalidation.ts"
 import { issueVerifiedPlan, type VerifiedPlan } from "./VerifiedPlan.ts"
-
-const decodeJson = Schema.decodeUnknownSync(Schema.Json)
 
 const validateRecipeForPlan = <Input, E, R>(
   plan: TransformationPlan,
@@ -65,7 +63,7 @@ const validateRecipeForPlan = <Input, E, R>(
       })
     }
 
-    if (canonicalJson(decodeJson(recipe.policies)) !== canonicalJson(decodeJson(plan.policies))) {
+    if (canonicalJson(recipe.policies) !== canonicalJson(plan.policies)) {
       return yield* new PolicyMismatch({
         planId: plan.planId,
         expected: plan.policies,
@@ -73,7 +71,7 @@ const validateRecipeForPlan = <Input, E, R>(
       })
     }
 
-    if (canonicalJson(decodeJson(TOOLCHAIN)) !== canonicalJson(decodeJson(plan.toolchain))) {
+    if (canonicalJson(TOOLCHAIN) !== canonicalJson(plan.toolchain)) {
       return yield* new ToolchainMismatch({
         planId: plan.planId,
         expected: plan.toolchain,

@@ -1,5 +1,5 @@
 /** Hash-guarded text edits: construction, validation, and application. */
-import { Data, Effect, Schema } from "effect"
+import { Data, Effect, Order, Schema } from "effect"
 import * as ProjectId from "./ProjectId.ts"
 import * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import * as Sha256 from "./Sha256.ts"
@@ -47,15 +47,12 @@ export class EditConflict extends Data.TaggedError("EditConflict")<{
   readonly right: TextEdit
 }> {}
 
-const compareStrings = (left: string, right: string): number =>
-  left < right ? -1 : left > right ? 1 : 0
-
 export const compareEdits = (left: TextEdit, right: TextEdit): number =>
-  compareStrings(left.projectId, right.projectId) ||
-  compareStrings(left.fileName, right.fileName) ||
+  Order.String(left.projectId, right.projectId) ||
+  Order.String(left.fileName, right.fileName) ||
   left.start - right.start ||
   left.end - right.end ||
-  compareStrings(left.newText, right.newText)
+  Order.String(left.newText, right.newText)
 
 export const editsConflict = (left: TextEdit, right: TextEdit): boolean => {
   if (left.projectId !== right.projectId || left.fileName !== right.fileName) return false

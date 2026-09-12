@@ -3,10 +3,14 @@
  * rewrite default import sites plus `export { default as authenticate }` barrels.
  */
 import { Effect } from "effect"
+import { and, refineDefinedKey, refineKey } from "is-kit"
 import { SyntaxKind } from "typescript/unstable/ast"
 import {
   isExportDeclaration,
   isFunctionDeclaration,
+  isIdentifier,
+  isImportClause,
+  isImportDeclaration,
   isNamedExports,
   isNamedImports,
   isStringLiteral,
@@ -40,6 +44,13 @@ const rewriteDefaultReexport = (source: string, exportName: string): string => {
   return aliased === source ? source.replace("{ default }", `{ ${exportName} }`) : aliased
 }
 
+const isDefaultImport = and(
+  isImportDeclaration,
+  refineDefinedKey("importClause", and(isImportClause, refineDefinedKey("name", isIdentifier))),
+)
+
+const hasDefaultImport = refineKey("value", isDefaultImport)
+
 export const defaultToNamed = Recipe.define("default-to-named", {
   version: "1.0.0",
   policies: { matchCount: { min: 1 }, idempotence: "required" },
@@ -67,10 +78,10 @@ export const defaultToNamed = Recipe.define("default-to-named", {
       )
 
       const defaultImports = yield* Query.imports(project).pipe(
-        Query.filter(({ value }) => value.importClause?.name !== undefined),
+        Query.filter(hasDefaultImport),
         Query.where(
           Query.resolvesTo(exported, {
-            location: (declaration) => declaration.importClause!.name!,
+            location: (declaration) => declaration.importClause.name,
           }),
         ),
         Query.collect,
@@ -106,8 +117,8 @@ export const defaultToNamed = Recipe.define("default-to-named", {
           value.getText().replace(/^export\s+default\s+/, "export "),
         ),
         yield* Draft.replaceEach(defaultImports, ({ value }) => {
-          const clause = value.importClause!
-          const binding = namedBinding(clause.name!.text, input.exportName)
+          const clause = value.importClause
+          const binding = namedBinding(clause.name.text, input.exportName)
           const namedBindings = clause.namedBindings
           if (namedBindings !== undefined && isNamedImports(namedBindings)) {
             const inner = namedBindings

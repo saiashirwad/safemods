@@ -30,13 +30,9 @@ export const isPathContained = (
 ): boolean => {
   const resolvedRoot = path.resolve(root)
   const resolvedCandidate = path.resolve(candidate)
-  const comparisonRoot =
-    options.caseInsensitive === true ? resolvedRoot.toLocaleLowerCase("en-US") : resolvedRoot
-  const comparisonCandidate =
-    options.caseInsensitive === true
-      ? resolvedCandidate.toLocaleLowerCase("en-US")
-      : resolvedCandidate
-  const relative = path.relative(comparisonRoot, comparisonCandidate)
+  const normalize = (value: string) =>
+    options.caseInsensitive === true ? value.toLocaleLowerCase("en-US") : value
+  const relative = path.relative(normalize(resolvedRoot), normalize(resolvedCandidate))
   return (
     (relative !== "" || options.includeRoot === true) &&
     relative !== ".." &&

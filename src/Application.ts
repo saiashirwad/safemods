@@ -126,7 +126,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
         fileName: file.fileName,
       })
     }
-    if (exists && file.before.hash !== undefined) {
+    if (file.before.exists) {
       const text = yield* fs.readFileString(target).pipe(fail)
       if (Sha256.digest(text) !== file.before.hash) {
         return yield* new StalePlanError({

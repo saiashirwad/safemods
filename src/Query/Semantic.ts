@@ -18,6 +18,7 @@ export const resolvesTo = <A extends Node>(
   id: "resolves-to-symbol",
   select: (selections) =>
     Effect.gen(function* () {
+      const location = options?.location ?? ((candidate: A): Node => candidate)
       const byProjectFile = Map.groupBy(
         selections.map((selection, index) => ({ selection, index })),
         ({ selection }) => `${selection.project.project.id}:${selection.fileName}`,
@@ -29,7 +30,6 @@ export const resolvesTo = <A extends Node>(
         [...byProjectFile.values()].map((group) =>
           Effect.gen(function* () {
             const project = group[0]!.selection.project
-            const location = options?.location ?? ((candidate: A): Node => candidate)
             const positions = group.map(({ selection }) => {
               const node = location(selection.value)
               return node.getStart(node.getSourceFile())

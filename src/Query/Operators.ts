@@ -57,13 +57,24 @@ export const where = Function.dual<
   ),
 )
 
-/** Selection-level predicate filter; evidence of surviving selections is preserved. */
+/** Selection-level filter that preserves predicate refinements and evidence. */
 export const filter = Function.dual<
-  <A>(
-    predicate: (selection: Selection<A>) => boolean,
-  ) => <E, R>(self: Query<A, E, R>) => Query<A, E, R>,
-  <A, E, R>(self: Query<A, E, R>, predicate: (selection: Selection<A>) => boolean) => Query<A, E, R>
->(2, (self, predicate) => Stream.filter(self, predicate))
+  {
+    <A, B extends A>(
+      refinement: (selection: Selection<A>) => selection is Selection<B>,
+    ): <E, R>(self: Query<A, E, R>) => Query<B, E, R>
+    <A>(
+      predicate: (selection: Selection<A>) => boolean,
+    ): <E, R>(self: Query<A, E, R>) => Query<A, E, R>
+  },
+  {
+    <A, E, R, B extends A>(
+      self: Query<A, E, R>,
+      refinement: (selection: Selection<A>) => selection is Selection<B>,
+    ): Query<B, E, R>
+    <A, E, R>(self: Query<A, E, R>, predicate: (selection: Selection<A>) => boolean): Query<A, E, R>
+  }
+>(2, Stream.filter)
 
 /**
  * Run a query to completion in canonical plan order: project ID,

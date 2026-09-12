@@ -125,6 +125,14 @@ interface ProjectSnapshotOptions {
   readonly runtime: WorkspaceRuntimeService
 }
 
+/** Symbol meanings searched by `resolveName`: values, types, namespaces, and aliases. */
+const resolveNameMeaning =
+  SymbolFlags.Value |
+  SymbolFlags.Type |
+  SymbolFlags.Namespace |
+  SymbolFlags.Alias |
+  SymbolFlags.ExportValue
+
 /** Build the checked project view for one native compiler project. */
 export const projectSnapshotFor = ({
   configured,
@@ -135,7 +143,12 @@ export const projectSnapshotFor = ({
 }: ProjectSnapshotOptions): ProjectSnapshot => {
   const compilerFileNames = CompilerFileName.forProject(runtime, projectRoot)
 
-  const isOwnedSourceFile = (sf: SourceFile, observedName = sf.fileName) =>
+  const canonicalSymbolOf = (symbol: NativeSymbol): Promise<NativeSymbol> =>
+    (symbol.flags & SymbolFlags.Alias) === 0
+      ? symbol.getExportSymbol()
+      : nativeProject.checker.getAliasedSymbol(symbol)
+
+  const isOwnedSourceFile = (sf: SourceFile, observedName: string) =>
     Effect.gen(function* () {
       if (!compilerFileNames.contains(observedName)) return false
       const isDefault = yield* nativeRequest("isSourceFileDefaultLibrary", () =>
@@ -218,17 +231,12 @@ export const projectSnapshotFor = ({
       const source = await nativeProject.program.getSourceFile(absolute)
       if (source === undefined) return []
 
-      const meaning =
-        SymbolFlags.Value |
-        SymbolFlags.Type |
-        SymbolFlags.Namespace |
-        SymbolFlags.Alias |
-        SymbolFlags.ExportValue
-      const targetSymbol =
-        (symbol.flags & SymbolFlags.Alias) === 0
-          ? await symbol.getExportSymbol()
-          : await nativeProject.checker.getAliasedSymbol(symbol)
-      const localSymbol = await nativeProject.checker.resolveName(symbol.name, meaning, source)
+      const targetSymbol = await canonicalSymbolOf(symbol)
+      const localSymbol = await nativeProject.checker.resolveName(
+        symbol.name,
+        resolveNameMeaning,
+        source,
+      )
       const candidates: Array<{ readonly symbol: NativeSymbol; readonly node?: Identifier }> =
         localSymbol === undefined ? [] : [{ symbol: localSymbol }]
       const candidateNodes: Array<Identifier> = []
@@ -271,10 +279,7 @@ export const projectSnapshotFor = ({
       const canonicalCandidates = await Promise.all(
         candidates.map(async (candidate) => ({
           candidate,
-          canonical:
-            (candidate.symbol.flags & SymbolFlags.Alias) === 0
-              ? await candidate.symbol.getExportSymbol()
-              : await nativeProject.checker.getAliasedSymbol(candidate.symbol),
+          canonical: await canonicalSymbolOf(candidate.symbol),
         })),
       )
       const referenceSymbols = new Map<number, NativeSymbol>()
@@ -314,11 +319,7 @@ export const projectSnapshotFor = ({
     symbol: NativeSymbol,
   ) {
     yield* ensureActive
-    return yield* nativeRequest("getCanonicalSymbol", () =>
-      (symbol.flags & SymbolFlags.Alias) === 0
-        ? symbol.getExportSymbol()
-        : nativeProject.checker.getAliasedSymbol(symbol),
-    )
+    return yield* nativeRequest("getCanonicalSymbol", () => canonicalSymbolOf(symbol))
   })
 
   const symbolNamed = Effect.fn("ProjectSnapshot.symbolNamed")(function* (
@@ -337,15 +338,7 @@ export const projectSnapshotFor = ({
       return yield* new SymbolNotFound({ name, fileName: options.within })
     }
     const symbol = yield* nativeRequest("resolveName", async () => {
-      const resolved = await nativeProject.checker.resolveName(
-        name,
-        SymbolFlags.Value |
-          SymbolFlags.Type |
-          SymbolFlags.Namespace |
-          SymbolFlags.Alias |
-          SymbolFlags.ExportValue,
-        source,
-      )
+      const resolved = await nativeProject.checker.resolveName(name, resolveNameMeaning, source)
       if (resolved !== undefined) return resolved
       const [moduleSymbol] = await nativeProject.checker.getSymbolAtLocation([source])
       return moduleSymbol === undefined

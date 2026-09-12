@@ -1,6 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect } from "effect"
-import type { CallExpression, Identifier } from "typescript/unstable/ast"
+import { Effect, Predicate } from "effect"
+import { and, refineKey } from "is-kit"
+import type { CallExpression, Expression, Identifier } from "typescript/unstable/ast"
+import { isCallExpression } from "typescript/unstable/ast/is"
 import type { ProjectFile } from "../src/Workspace/index.ts"
 import { withProject } from "./utils/project-fixture.ts"
 import * as Query from "../src/Query/index.ts"
@@ -21,6 +23,13 @@ const ARITY_SOURCE = [
 
 const inArity = <A, E, R>(self: Query.Query<A, E, R>): Query.Query<A, E, R> =>
   Query.within(self, "src/arity.ts")
+
+const isBinaryCall = and(
+  isCallExpression,
+  refineKey("arguments", Predicate.isTupleOf(2)<Expression>),
+)
+
+const hasTwoArguments = refineKey("value", isBinaryCall)
 
 describe("Query stream operators", () => {
   effect(
@@ -112,11 +121,13 @@ describe("Query stream operators", () => {
         Effect.gen(function* () {
           const binary = yield* Query.calls(project).pipe(
             inArity,
-            Query.filter((selection) => selection.value.arguments.length === 2),
+            Query.filter(hasTwoArguments),
             Query.collect,
           )
           expect(binary).toHaveLength(1)
           expect(binary[0]!.value.getText()).toBe("two(1, 2)")
+          const [left, right] = binary[0]!.value.arguments
+          expect([left.getText(), right.getText()]).toEqual(["1", "2"])
         }),
       ),
     60_000,

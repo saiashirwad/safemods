@@ -140,29 +140,12 @@ export type Replacement = string | { readonly node: Node; readonly text: string 
 const isDraft = (value: unknown): value is Draft =>
   Predicate.isObject(value) && "edits" in value && "evidence" in value && "matches" in value
 
-/** A returned Draft with no edits, operations, evidence, or matches is `empty`. */
-const isCompletelyEmpty = (draft: Draft): boolean =>
-  draft.edits.length === 0 &&
-  (draft.fileOperations?.length ?? 0) === 0 &&
-  draft.evidence.length === 0 &&
-  draft.matches === 0
-
 /**
- * A returned `Draft.empty` still counts as one selected occurrence: match
- * policies and scan audits count the selection, not whether an edit was
- * produced.
+ * Fold a returned Draft into the selection, tagging its records with the
+ * selection's evidence. A returned `Draft.empty` still counts as one selected
+ * occurrence: match policies and scan audits count the selection, not whether
+ * an edit was produced.
  */
-const emptySelectionDraft = <A extends Node>(
-  selection: Selection<A>,
-  evidenceId: string,
-): Draft => ({
-  edits: [],
-  fileOperations: [],
-  evidence: [selectionEvidence(selection, evidenceId)],
-  matches: 1,
-})
-
-/** Fold a returned Draft into the selection, tagging its records with the selection's evidence. */
 const adoptReturnedDraft = <A extends Node>(
   selection: Selection<A>,
   evidenceId: string,
@@ -187,9 +170,6 @@ const draftFromProposal = <A extends Node>(
 ): Effect.Effect<Draft, SnapshotExpired | DraftEvidenceConflict | MissingDraftEvidence> => {
   const evidenceId = selectionEvidenceId(selection)
   if (isDraft(proposed)) {
-    if (isCompletelyEmpty(proposed)) {
-      return Effect.succeed(emptySelectionDraft(selection, evidenceId))
-    }
     return adoptReturnedDraft(selection, evidenceId, proposed)
   }
   const node = Predicate.isString(proposed) ? selection.value : proposed.node
@@ -237,7 +217,7 @@ const selectionEvidenceId = <A extends Node>(selection: Selection<A>): string =>
 
 const selectionEvidence = <A extends Node>(
   selection: Selection<A>,
-  evidenceId = selectionEvidenceId(selection),
+  evidenceId: string,
 ): EvidenceRecord => ({
   id: evidenceId,
   kind: "selection",

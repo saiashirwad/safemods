@@ -3,8 +3,10 @@
  * canonical export in `src/sessions.ts`. Already-object calls and locals of
  * the same name are left alone. Argument trivia is preserved.
  */
-import { Effect } from "effect"
-import { isObjectLiteralExpression } from "typescript/unstable/ast/is"
+import { Effect, Predicate } from "effect"
+import { and, refineKey } from "is-kit"
+import type { Expression } from "typescript/unstable/ast"
+import { isCallExpression, isObjectLiteralExpression } from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
 import * as ProjectRelativePath from "safemods/ProjectRelativePath"
 import * as Query from "safemods/Query"
@@ -14,6 +16,13 @@ import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 export interface PositionalToOptionsInput {
   readonly project: ConfiguredProject.Type
 }
+
+const isBinaryCall = and(
+  isCallExpression,
+  refineKey("arguments", Predicate.isTupleOf(2)<Expression>),
+)
+
+const hasTwoArguments = refineKey("value", isBinaryCall)
 
 export const positionalToOptions = Recipe.define("positional-to-options", {
   version: "1.0.0",
@@ -29,21 +38,14 @@ export const positionalToOptions = Recipe.define("positional-to-options", {
 
       const matches = yield* Query.calls(project).pipe(
         Query.where(Query.resolvesTo(createSession, { location: (call) => call.expression })),
-        Query.filter(({ value: call }) => {
-          const [userId] = call.arguments
-          return (
-            call.arguments.length === 2 &&
-            userId !== undefined &&
-            !isObjectLiteralExpression(userId)
-          )
-        }),
+        Query.filter(hasTwoArguments),
+        Query.filter(({ value: call }) => !isObjectLiteralExpression(call.arguments[0])),
         Query.collect,
       )
 
       return yield* Draft.replaceEach(matches, ({ value: call }) => {
         const sourceFile = call.getSourceFile()
-        const userId = call.arguments[0]!
-        const ttlSeconds = call.arguments[1]!
+        const [userId, ttlSeconds] = call.arguments
         const before = sourceFile.text.slice(call.getStart(sourceFile), userId.getStart(sourceFile))
         const after = sourceFile.text.slice(ttlSeconds.getEnd(), call.getEnd())
         return `${before}{ userId: ${userId.getText()}, ttlSeconds: ${ttlSeconds.getText()} }${after}`

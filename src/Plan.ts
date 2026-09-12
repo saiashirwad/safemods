@@ -56,7 +56,7 @@ export const PlannedFileOperation = Schema.Union([
     projectId: ProjectId.schema,
     path: ProjectRelativePath.schema,
     toPath: ProjectRelativePath.schema,
-    content: Schema.optional(Schema.String),
+    content: Schema.optionalKey(Schema.String),
     initialHash: Sha256.schema,
     evidenceIds: EvidenceIds,
   }),
@@ -65,15 +65,15 @@ export type PlannedFileOperation = typeof PlannedFileOperation.Type
 
 export const PlanPolicies = Schema.Struct({
   matchCount: Schema.Struct({
-    min: Schema.optional(NonNegativeInt),
-    max: Schema.optional(NonNegativeInt),
+    min: Schema.optionalKey(NonNegativeInt),
+    max: Schema.optionalKey(NonNegativeInt),
   }).check(
     Schema.makeFilter(
       (count) => count.min === undefined || count.max === undefined || count.min <= count.max,
       { expected: "matchCount.min <= matchCount.max" },
     ),
   ),
-  maxAffectedFiles: Schema.optional(NonNegativeInt),
+  maxAffectedFiles: Schema.optionalKey(NonNegativeInt),
   diagnostics: Schema.Literals(["no-new-errors", "allow-new-errors"]),
   idempotence: Schema.Literals(["required", "not-promised"]),
 })
@@ -132,9 +132,7 @@ const strict = { onExcessProperty: "error" } as const
 
 const canonical = (
   value: DecodedPlanInput | TransformationPlan | Pick<DecodedPlanInput, "projects" | "sources">,
-): string =>
-  // SAFETY: plan schemas contain only JSON values.
-  canonicalJson(value as Schema.Json)
+): string => canonicalJson(value)
 
 export const serializePlan = (plan: TransformationPlan): string => canonical(plan)
 
@@ -183,7 +181,7 @@ const checkSemantics = (input: DecodedPlanInput): PlanBuildError | undefined => 
     projectIds.add(project.id)
   }
 
-  const contentSources = new Map<string, SourceFingerprint>()
+  const sourceHashes = new Map<string, Sha256.Type>()
   const seenSources = new Set<string>()
   for (const source of input.sources) {
     if (!projectIds.has(source.projectId))
@@ -193,7 +191,7 @@ const checkSemantics = (input: DecodedPlanInput): PlanBuildError | undefined => 
       return new PlanBuildError({ detail: `Duplicate source ${source.fileName}` })
     seenSources.add(identity)
     if (source.kind === "file") {
-      contentSources.set(virtualFileKey(source.projectId, source.fileName), source)
+      sourceHashes.set(virtualFileKey(source.projectId, source.fileName), source.hash)
     }
   }
 
@@ -211,7 +209,7 @@ const checkSemantics = (input: DecodedPlanInput): PlanBuildError | undefined => 
     }
   }
   for (const edit of input.edits) {
-    if (!contentSources.has(virtualFileKey(edit.projectId, edit.fileName))) {
+    if (!sourceHashes.has(virtualFileKey(edit.projectId, edit.fileName))) {
       return new PlanBuildError({ detail: `Missing source ${edit.fileName}` })
     }
     const missing = edit.evidenceIds.find((id) => !evidenceIds.has(id))
@@ -226,15 +224,15 @@ const checkSemantics = (input: DecodedPlanInput): PlanBuildError | undefined => 
     const missing = operation.evidenceIds.find((id) => !evidenceIds.has(id))
     if (missing !== undefined) return new PlanBuildError({ detail: `Unknown evidence ${missing}` })
     const key = virtualFileKey(operation.projectId, operation.path)
-    const source = contentSources.get(key)
+    const sourceHash = sourceHashes.get(key)
     const keys = [key]
     if (operation.kind === "create") {
-      if (source !== undefined)
+      if (sourceHash !== undefined)
         return new PlanBuildError({ detail: `Create path already exists: ${operation.path}` })
     } else {
-      if (source === undefined)
+      if (sourceHash === undefined)
         return new PlanBuildError({ detail: `Missing source ${operation.path}` })
-      if (source.kind !== "file" || operation.initialHash !== source.hash) {
+      if (operation.initialHash !== sourceHash) {
         return new PlanBuildError({ detail: `Fingerprint mismatch ${operation.path}` })
       }
       if (operation.kind === "move") {
@@ -242,7 +240,7 @@ const checkSemantics = (input: DecodedPlanInput): PlanBuildError | undefined => 
           return new PlanBuildError({ detail: "Move source and target must differ" })
         }
         const target = virtualFileKey(operation.projectId, operation.toPath)
-        if (contentSources.has(target))
+        if (sourceHashes.has(target))
           return new PlanBuildError({ detail: `Move target exists: ${operation.toPath}` })
         keys.push(target)
       }

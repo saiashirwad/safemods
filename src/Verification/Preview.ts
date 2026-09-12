@@ -24,7 +24,7 @@ import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
 import * as Sha256 from "../Sha256.ts"
 
 type FileState =
-  | { readonly exists: false; readonly text?: undefined; readonly hash?: undefined }
+  | { readonly exists: false }
   | { readonly exists: true; readonly text: string; readonly hash: Sha256.Type }
 
 interface FilePreview {

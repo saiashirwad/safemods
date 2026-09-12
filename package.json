@@ -78,6 +78,7 @@
     "@effect/vitest": "4.0.0-rc.109",
     "@oxlint/plugins": "^1.78.0",
     "@types/node": "26.2.0",
+    "is-kit": "1.14.1",
     "knip": "^6.34.0",
     "oxfmt": "^0.63.0",
     "oxlint": "^1.78.0",

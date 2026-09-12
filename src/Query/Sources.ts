@@ -25,6 +25,11 @@ const syntaxKindName = (kind: number): string =>
   // SAFETY: reverse-map coverage of every numeric member makes this total.
   SyntaxKind[kind]!
 
+const syntaxKindEvidence = (kind: number) => ({
+  criterion: "syntax-kind",
+  facts: { kind: syntaxKindName(kind) },
+})
+
 interface TargetFileScope {
   readonly project: ProjectSnapshot
   readonly fileName: ProjectRelativePath.Type
@@ -37,9 +42,6 @@ const resolveScope = (
   scope: ProjectScope,
 ): Stream.Stream<TargetFileScope, ProjectSnapshotError> => {
   if (isProjectFileArray(scope)) {
-    if (scope.length === 0) {
-      return Stream.empty
-    }
     const seen = new Set<string>()
     const uniqueFiles: Array<TargetFileScope> = []
     for (const f of scope) {
@@ -99,12 +101,7 @@ const collectNodes = <A extends Node>(
       fileName,
       start: node.getStart(sourceFile),
       end: node.getEnd(),
-      evidence: [
-        {
-          criterion: "syntax-kind",
-          facts: { kind: syntaxKindName(node.kind) },
-        },
-      ],
+      evidence: [syntaxKindEvidence(node.kind)],
     })
   })
   return selections
@@ -165,10 +162,7 @@ export const referencesTo = (
             start: node.getStart(sourceFile),
             end: node.getEnd(),
             evidence: [
-              {
-                criterion: "syntax-kind",
-                facts: { kind: syntaxKindName(node.kind) },
-              },
+              syntaxKindEvidence(node.kind),
               {
                 criterion: "resolves-to-symbol",
                 facts: { symbol: symbol.name, declarationFile: declarationPath },

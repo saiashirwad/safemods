@@ -1,7 +1,12 @@
 import { dirname, normalize, relative } from "node:path/posix"
 import { Effect } from "effect"
+import { and, or, refineDefinedKey } from "is-kit"
 import { SyntaxKind } from "typescript/unstable/ast"
-import { isExportDeclaration, isStringLiteral } from "typescript/unstable/ast/is"
+import {
+  isExportDeclaration,
+  isImportDeclaration,
+  isStringLiteral,
+} from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
 import type * as ProjectRelativePath from "safemods/ProjectRelativePath"
 import * as Query from "safemods/Query"
@@ -27,6 +32,11 @@ const toSpecifier = (fromFile: string, targetFile: string): string => {
   return rel.startsWith(".") ? rel : `./${rel}`
 }
 
+const isModuleReference = and(
+  or(isImportDeclaration, isExportDeclaration),
+  refineDefinedKey("moduleSpecifier", isStringLiteral),
+)
+
 export const moveModule = Recipe.define("move-module", {
   version: "1.0.0",
   policies: { matchCount: { min: 1 }, idempotence: "required" },
@@ -39,45 +49,22 @@ export const moveModule = Recipe.define("move-module", {
       const moveDraft =
         source === undefined ? Draft.empty : yield* Draft.files.move(project, input.from, input.to)
 
-      const importHits = yield* Query.imports(project).pipe(
-        Query.filter(
-          ({ value, fileName }) =>
-            isStringLiteral(value.moduleSpecifier) &&
-            resolvesToFile(fileName, value.moduleSpecifier.text, input.from),
+      const references = yield* Query.nodes(project, isModuleReference, [
+        SyntaxKind.ImportDeclaration,
+        SyntaxKind.ExportDeclaration,
+      ]).pipe(
+        Query.filter(({ value, fileName }) =>
+          resolvesToFile(fileName, value.moduleSpecifier.text, input.from),
         ),
         Query.collect,
       )
 
-      const exportHits = yield* Query.nodes(
-        project,
-        isExportDeclaration,
-        SyntaxKind.ExportDeclaration,
-      ).pipe(
-        Query.filter(({ value, fileName }) => {
-          const specifier = value.moduleSpecifier
-          return (
-            specifier !== undefined &&
-            isStringLiteral(specifier) &&
-            resolvesToFile(fileName, specifier.text, input.from)
-          )
-        }),
-        Query.collect,
-      )
-
-      const importDraft = yield* Draft.replaceEach(importHits, ({ value, fileName }) => {
+      const referenceDraft = yield* Draft.replaceEach(references, ({ value, fileName }) => {
         const specifier = value.moduleSpecifier
-        if (!isStringLiteral(specifier)) return Draft.empty
         const quote = specifier.getText().startsWith("'") ? "'" : '"'
         return { node: specifier, text: `${quote}${toSpecifier(fileName, input.to)}${quote}` }
       })
 
-      const exportDraft = yield* Draft.replaceEach(exportHits, ({ value, fileName }) => {
-        const specifier = value.moduleSpecifier
-        if (specifier === undefined || !isStringLiteral(specifier)) return Draft.empty
-        const quote = specifier.getText().startsWith("'") ? "'" : '"'
-        return { node: specifier, text: `${quote}${toSpecifier(fileName, input.to)}${quote}` }
-      })
-
-      return yield* Draft.concat(moveDraft, importDraft, exportDraft)
+      return yield* Draft.concat(moveDraft, referenceDraft)
     }),
 })
