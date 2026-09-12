@@ -16,14 +16,16 @@ export const compilerOverlayFor = (
   apiOptions: APIOptions,
   overlay: VirtualFsSnapshot,
 ): CompilerOverlay => {
-  const deleted = overlay.deleted
-  const created = overlay.created
   const resolvedFiles = new Map<string, string>()
   for (const [fileName, content] of overlay.files) {
     resolvedFiles.set(runtime.resolve(fileName), content)
   }
+  const resolvedCreated = new Set<string>()
+  for (const fileName of overlay.created) {
+    resolvedCreated.add(runtime.resolve(fileName))
+  }
   const resolvedDeleted = new Set<string>()
-  for (const fileName of deleted) {
+  for (const fileName of overlay.deleted) {
     resolvedDeleted.add(runtime.resolve(fileName))
   }
 
@@ -32,16 +34,9 @@ export const compilerOverlayFor = (
     fs: {
       ...apiOptions.fs,
       getAccessibleEntries: (directoryName) => {
-        const delegated = apiOptions.fs?.getAccessibleEntries?.(directoryName)
+        const list = apiOptions.fs?.getAccessibleEntries
         const existing =
-          delegated ??
-          (() => {
-            try {
-              return runtime.directoryEntries(directoryName)
-            } catch {
-              return undefined
-            }
-          })()
+          list !== undefined ? list(directoryName) : runtime.directoryEntries(directoryName)
         const isDeleted = (entry: string) =>
           resolvedDeleted.has(runtime.resolve(directoryName, entry))
         const files = new Set((existing?.files ?? []).filter((entry) => !isDeleted(entry)))
@@ -91,13 +86,13 @@ export const compilerOverlayFor = (
     },
   }
 
-  const changed = [...overlay.files.keys()].filter(
-    (path) => !created.has(path) && !deleted.has(path),
+  const changed = [...resolvedFiles.keys()].filter(
+    (path) => !resolvedCreated.has(path) && !resolvedDeleted.has(path),
   )
   const fileChanges: Types.Mutable<WorkspaceFileChanges> = {}
   if (changed.length > 0) fileChanges.changed = changed
-  if (created.size > 0) fileChanges.created = [...created]
-  if (deleted.size > 0) fileChanges.deleted = [...deleted]
+  if (resolvedCreated.size > 0) fileChanges.created = [...resolvedCreated]
+  if (resolvedDeleted.size > 0) fileChanges.deleted = [...resolvedDeleted]
 
   return {
     options,

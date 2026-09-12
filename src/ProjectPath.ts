@@ -51,9 +51,6 @@ export const parseProjectRelativePath = (value: string): ProjectRelativePath | u
   return normalized as ProjectRelativePath | undefined
 }
 
-const isProjectRelativePath = (value: string): value is ProjectRelativePath =>
-  parseProjectRelativePath(value) === value
-
 export const requireProjectRelativePath = (value: string): ProjectRelativePath => {
   const parsed = parseProjectRelativePath(value)
   if (parsed === undefined) throw new InvalidProjectRelativePath({ path: value })
@@ -69,9 +66,11 @@ export const isPathContained = (
   const resolvedRoot = path.resolve(root)
   const resolvedCandidate = path.resolve(candidate)
   const comparisonRoot =
-    options.caseInsensitive === true ? resolvedRoot.toLowerCase() : resolvedRoot
+    options.caseInsensitive === true ? resolvedRoot.toLocaleLowerCase("en-US") : resolvedRoot
   const comparisonCandidate =
-    options.caseInsensitive === true ? resolvedCandidate.toLowerCase() : resolvedCandidate
+    options.caseInsensitive === true
+      ? resolvedCandidate.toLocaleLowerCase("en-US")
+      : resolvedCandidate
   const relative = path.relative(comparisonRoot, comparisonCandidate)
   return (
     (relative !== "" || options.includeRoot === true) &&
@@ -91,8 +90,8 @@ export const resolvePlanFilePath = (
   const project = plan.projects.find((candidate) => candidate.id === projectId)
   if (
     project === undefined ||
-    !isProjectRelativePath(fileName) ||
-    !isProjectRelativePath(project.configFileName)
+    parseProjectRelativePath(fileName) !== fileName ||
+    parseProjectRelativePath(project.configFileName) !== project.configFileName
   ) {
     return undefined
   }

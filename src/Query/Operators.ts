@@ -1,6 +1,6 @@
 /** Generic query stream operators. */
 import { matchesGlob } from "node:path"
-import { Effect, Function, Predicate, Stream } from "effect"
+import { Effect, Function, Order, Predicate, Stream } from "effect"
 import { isProjectFile, type ProjectFile } from "../Workspace/ProjectSnapshot.ts"
 import { type Criterion, type Query, QueryContractError, type Selection } from "./Query.ts"
 
@@ -74,10 +74,10 @@ export const collect = <A, E, R>(
 ): Effect.Effect<ReadonlyArray<Selection<A>>, E, R> =>
   Stream.runCollect(self).pipe(
     Effect.map((selections) =>
-      [...selections].sort(
+      selections.sort(
         (left, right) =>
-          left.project.project.id.localeCompare(right.project.project.id) ||
-          left.fileName.localeCompare(right.fileName) ||
+          Order.String(left.project.project.id, right.project.project.id) ||
+          Order.String(left.fileName, right.fileName) ||
           left.start - right.start ||
           left.end - right.end,
       ),

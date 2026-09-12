@@ -1,6 +1,6 @@
 /** Project identity and source fingerprint revalidation. */
 import { hash } from "node:crypto"
-import { Effect, FileSystem, Path } from "effect"
+import { Effect, FileSystem, Order, Path } from "effect"
 import type { SourceFingerprint, TransformationPlan } from "../Plan.ts"
 import { resolvePlanFilePath, unsafePlanFilePathMessage } from "../ProjectPath.ts"
 import { ConfiguredProject } from "../Workspace/index.ts"
@@ -11,7 +11,7 @@ export const requireMatchingProjectIdentity = (
   plan: TransformationPlan,
   liveProjects: ReadonlyArray<ConfiguredProject>,
 ): Effect.Effect<void, ProjectIdentityMismatch> => {
-  const expected = [...liveProjects].sort((left, right) => left.id.localeCompare(right.id))
+  const expected = [...liveProjects].sort(Order.Struct({ id: Order.String }))
   const actual = plan.projects.map((project) =>
     ConfiguredProject.make({ id: project.id, config: project.configFileName }),
   )

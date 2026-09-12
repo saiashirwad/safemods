@@ -5,16 +5,6 @@ import type { DiagnosticRecord } from "../Policy.ts"
 import { WorkspaceSnapshot } from "../Workspace/index.ts"
 import { nativeRequest } from "../Workspace/NativeRequest.ts"
 
-const diagnosticPosition = (diagnostic: DiagnosticRecord): string =>
-  JSON.stringify([
-    diagnostic.category,
-    diagnostic.code,
-    diagnostic.fileName ?? null,
-    diagnostic.start ?? null,
-    diagnostic.length ?? null,
-    diagnostic.message,
-  ])
-
 const normalizeDiagnostic = (diagnostic: Diagnostic): DiagnosticRecord => ({
   code: diagnostic.code,
   message: diagnostic.text,
@@ -65,7 +55,14 @@ export const collectDiagnostics = Effect.gen(function* () {
     for (const list of lists) {
       for (const diagnostic of list) {
         const record = normalizeDiagnostic(diagnostic)
-        const key = diagnosticPosition(record)
+        const key = JSON.stringify([
+          record.category,
+          record.code,
+          record.fileName ?? null,
+          record.start ?? null,
+          record.length ?? null,
+          record.message,
+        ])
         if (seen.has(key)) continue
         seen.add(key)
         allDiagnostics.push(record)

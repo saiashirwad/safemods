@@ -6,34 +6,30 @@
  */
 import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import * as Fs from "node:fs"
-import { Effect, Layer, Option, Path } from "effect"
+import { Effect, Layer, Path, UndefinedOr } from "effect"
 import type { APIOptions } from "typescript/unstable/async"
 import type { WorkspaceDefinition } from "./Workspace/index.ts"
 import { layer as workspaceLayer } from "./Workspace/Service.ts"
 import { WorkspaceRuntime } from "./Workspace/Runtime.ts"
-
-/** Synchronous compiler-host callbacks report failure as `undefined`. */
-const orUndefined = <A, B>(f: (a: A) => B): ((a: A) => B | undefined) => {
-  const lifted = Option.liftThrowable(f)
-  return (a) => Option.getOrUndefined(lifted(a))
-}
 
 const workspaceRuntimeLayer = Layer.effect(
   WorkspaceRuntime,
   Effect.map(Path.Path, (path) =>
     WorkspaceRuntime.of({
       ...path,
-      readFileText: orUndefined((path: string) => Fs.readFileSync(path, "utf8")),
-      fileExists: orUndefined((path: string) => Fs.existsSync(path) && Fs.statSync(path).isFile()),
-      directoryExists: orUndefined((path: string) => Fs.statSync(path).isDirectory()),
-      directoryEntries: orUndefined((path: string) => {
+      readFileText: UndefinedOr.liftThrowable((path: string) => Fs.readFileSync(path, "utf8")),
+      fileExists: UndefinedOr.liftThrowable(
+        (path: string) => Fs.existsSync(path) && Fs.statSync(path).isFile(),
+      ),
+      directoryExists: UndefinedOr.liftThrowable((path: string) => Fs.statSync(path).isDirectory()),
+      directoryEntries: UndefinedOr.liftThrowable((path: string) => {
         const entries = Fs.readdirSync(path, { withFileTypes: true })
         return {
           files: entries.filter((entry) => entry.isFile()).map((entry) => entry.name),
           directories: entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name),
         }
       }),
-      realPath: orUndefined((path: string) => Fs.realpathSync(path)),
+      realPath: UndefinedOr.liftThrowable((path: string) => Fs.realpathSync(path)),
     }),
   ),
 ).pipe(Layer.provide(NodePath.layer))

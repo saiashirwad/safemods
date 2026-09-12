@@ -31,13 +31,6 @@ export interface Draft {
 
 export const empty: Draft = { edits: [], fileOperations: [], evidence: [], matches: 0 }
 
-const mergeDrafts = (...drafts: ReadonlyArray<Draft>) => ({
-  edits: drafts.flatMap((draft) => draft.edits),
-  fileOperations: drafts.flatMap((draft) => draft.fileOperations ?? []),
-  evidence: drafts.flatMap((draft) => draft.evidence),
-  matches: drafts.reduce((total, draft) => total + draft.matches, 0),
-})
-
 /**
  * Combine drafts built from disjoint selections. Identical evidence records
  * merge; records sharing an ID with different facts are rejected.
@@ -45,36 +38,12 @@ const mergeDrafts = (...drafts: ReadonlyArray<Draft>) => ({
 export const concat = (
   ...drafts: ReadonlyArray<Draft>
 ): Effect.Effect<Draft, DraftEvidenceConflict | MissingDraftEvidence> =>
-  finalizeDraftEvidence(mergeDrafts(...drafts))
-
-type DraftEdit = Omit<TextEdit, "evidenceIds">
-
-/** Build one syntax edit with deterministic, self-contained operation evidence. */
-const draftForEdit = (
-  edit: DraftEdit,
-  operation: string,
-  facts: EvidenceRecord["facts"] = {},
-): Draft => {
-  const evidenceId = `${operation}:${edit.projectId}:${edit.fileName}:${edit.start}-${edit.end}`
-  return {
-    edits: [{ ...edit, evidenceIds: [evidenceId] }],
-    evidence: [
-      {
-        id: evidenceId,
-        kind: "draft-operation",
-        facts: {
-          ...facts,
-          operation,
-          projectId: edit.projectId,
-          fileName: edit.fileName,
-          start: edit.start,
-          end: edit.end,
-        },
-      },
-    ],
-    matches: 1,
-  }
-}
+  finalizeDraftEvidence({
+    edits: drafts.flatMap((draft) => draft.edits),
+    fileOperations: drafts.flatMap((draft) => draft.fileOperations ?? []),
+    evidence: drafts.flatMap((draft) => draft.evidence),
+    matches: drafts.reduce((total, draft) => total + draft.matches, 0),
+  })
 
 const textEditForRange = (
   project: ProjectSnapshot,
@@ -92,17 +61,6 @@ const textEditForRange = (
     newText,
   })
 
-const draftForRange = (
-  project: ProjectSnapshot,
-  sourceFile: SourceFile,
-  start: number,
-  end: number,
-  newText: string,
-  operation: string,
-  facts: EvidenceRecord["facts"] = {},
-): Draft =>
-  draftForEdit(textEditForRange(project, sourceFile, start, end, newText), operation, facts)
-
 /** Draft replacing a node-derived range, evaluated inside the snapshot's native scope. */
 const draftForNodeRange = (
   project: ProjectSnapshot,
@@ -115,7 +73,25 @@ const draftForNodeRange = (
     Effect.sync(() => {
       const sourceFile = node.getSourceFile()
       const { start, end } = range(sourceFile)
-      return draftForRange(project, sourceFile, start, end, newText, operation)
+      const edit = textEditForRange(project, sourceFile, start, end, newText)
+      const evidenceId = `${operation}:${edit.projectId}:${edit.fileName}:${edit.start}-${edit.end}`
+      return {
+        edits: [{ ...edit, evidenceIds: [evidenceId] }],
+        evidence: [
+          {
+            id: evidenceId,
+            kind: "draft-operation",
+            facts: {
+              operation,
+              projectId: edit.projectId,
+              fileName: edit.fileName,
+              start: edit.start,
+              end: edit.end,
+            },
+          },
+        ],
+        matches: 1,
+      }
     }),
   )
 

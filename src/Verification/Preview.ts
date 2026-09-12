@@ -1,6 +1,6 @@
 /** Read-only materialization of a plan's exact proposed bytes. */
 import { hash } from "node:crypto"
-import { Effect, type FileSystem, type Path } from "effect"
+import { Effect, type FileSystem, Order, type Path } from "effect"
 import {
   type PlanDecodeError,
   type TransformationPlan,
@@ -169,11 +169,8 @@ export const previewValidatedPlan = (
       })
     }
 
-    const files = [...filesByKey.values()]
-    files.sort(
-      (left, right) =>
-        left.projectId.localeCompare(right.projectId) ||
-        left.fileName.localeCompare(right.fileName),
+    const files = [...filesByKey.values()].sort(
+      Order.Struct({ projectId: Order.String, fileName: Order.String }),
     )
     return { planId: plan.planId, snapshotHash: plan.snapshotHash, files }
   })

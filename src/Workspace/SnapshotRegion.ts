@@ -1,17 +1,12 @@
 /** Snapshot-region lifetime and service provisioning. */
 import { Context, Effect } from "effect"
-import type {
-  FileChangeSummary,
-  FileChanges,
-  UpdateSnapshotParams,
-} from "typescript/unstable/proto"
+import type { FileChangeSummary, UpdateSnapshotParams } from "typescript/unstable/proto"
 import type { NativeCompiler } from "./internal/NativeCompiler.ts"
 import type { WorkspaceCompilerError } from "./NativeRequest.ts"
 import {
   type ConfiguredProject,
   ProjectNotInSnapshot,
   type SnapshotTransition,
-  type WorkspaceFileChanges,
 } from "./ConfiguredProject.ts"
 import { projectSnapshotFor, SnapshotExpired, type ProjectSnapshot } from "./ProjectSnapshot.ts"
 import type { WorkspaceRuntimeService } from "./Runtime.ts"
@@ -30,15 +25,6 @@ export class WorkspaceSnapshot extends Context.Service<
   // oxlint-disable-next-line effecttsgo/deterministic-keys -- Stable public service identifier.
   "@safemods/WorkspaceSnapshot",
 ) {}
-
-const toNativeChanges = (changes: WorkspaceFileChanges | undefined): FileChanges | undefined => {
-  if (changes === undefined) return undefined
-  const result: FileChangeSummary = {}
-  if (changes.changed !== undefined) result.changed = [...changes.changed]
-  if (changes.created !== undefined) result.created = [...changes.created]
-  if (changes.deleted !== undefined) result.deleted = [...changes.deleted]
-  return result
-}
 
 interface OpenSnapshotRegionOptions {
   readonly regionCompiler: NativeCompiler
@@ -62,8 +48,12 @@ export const openSnapshotRegion = <A, E, R>(
         params.openProjects = [...options.openProjects]
       }
       if (options.transition.changes !== undefined) {
-        const fileChanges = toNativeChanges(options.transition.changes)
-        if (fileChanges !== undefined) params.fileChanges = fileChanges
+        const changes = options.transition.changes
+        const fileChanges: FileChangeSummary = {}
+        if (changes.changed !== undefined) fileChanges.changed = [...changes.changed]
+        if (changes.created !== undefined) fileChanges.created = [...changes.created]
+        if (changes.deleted !== undefined) fileChanges.deleted = [...changes.deleted]
+        params.fileChanges = fileChanges
       }
       const nativeSnapshot = yield* options.regionCompiler
         .openSnapshot(params)

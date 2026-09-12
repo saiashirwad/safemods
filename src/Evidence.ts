@@ -15,13 +15,10 @@ export const EvidenceRecord = Schema.Struct({
 })
 export type EvidenceRecord = typeof EvidenceRecord.Type
 
-const compareStrings = (left: string, right: string): number =>
-  left < right ? -1 : left > right ? 1 : 0
-
 export const canonicalJson = (value: Schema.Json): string =>
   JSON.stringify(value, (_, v: Schema.Json) =>
-    Predicate.isObject(v) && !Array.isArray(v)
-      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => compareStrings(a, b)))
+    Predicate.isObject(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
       : v,
   )
 
@@ -32,9 +29,6 @@ export class DraftEvidenceConflict extends Data.TaggedError("DraftEvidenceConfli
 export class MissingDraftEvidence extends Data.TaggedError("MissingDraftEvidence")<{
   readonly id: string
 }> {}
-
-const evidenceIdentity = (record: EvidenceRecord): string =>
-  `${record.kind}\0${canonicalJson(record.facts)}`
 
 export const mergeEvidence = (
   records: ReadonlyArray<EvidenceRecord>,
@@ -47,7 +41,10 @@ export const mergeEvidence = (
         evidence.set(record.id, record)
         continue
       }
-      if (evidenceIdentity(existing) !== evidenceIdentity(record)) {
+      if (
+        existing.kind !== record.kind ||
+        canonicalJson(existing.facts) !== canonicalJson(record.facts)
+      ) {
         return yield* new DraftEvidenceConflict({ id: record.id })
       }
     }

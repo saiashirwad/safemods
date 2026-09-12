@@ -22,11 +22,7 @@ import {
   type MissingDraftEvidence,
   finalizeDraftEvidence,
 } from "./Evidence.ts"
-import {
-  parseProjectRelativePath,
-  projectRelative,
-  type ProjectRelativePath,
-} from "./ProjectPath.ts"
+import { parseProjectRelativePath } from "./ProjectPath.ts"
 
 /**
  * A reusable transformation. The recipe body runs in a Workspace Snapshot
@@ -102,35 +98,6 @@ export const define = <Input = undefined, E = never, R = never>(
   })
 }
 
-const observationRelativePath = (
-  fs: FileSystem.FileSystem,
-  path: Path.Path,
-  projectRoot: string,
-  absolute: string,
-): Effect.Effect<ProjectRelativePath | undefined> =>
-  Effect.gen(function* () {
-    const direct = parseProjectRelativePath(projectRelative(path, projectRoot, absolute))
-    if (direct !== undefined) return direct
-
-    const realRoot = yield* fs.realPath(projectRoot).pipe(Effect.orElseSucceed(() => undefined))
-    if (realRoot === undefined) return undefined
-    const realAbsolute = yield* fs.realPath(absolute).pipe(Effect.orElseSucceed(() => absolute))
-    return parseProjectRelativePath(projectRelative(path, realRoot, realAbsolute))
-  })
-
-const fingerprintKey = (source: SourceFingerprint): string =>
-  `${source.projectId}\0${source.kind}\0${source.fileName}`
-
-const addFingerprint = (
-  sources: Map<string, SourceFingerprint>,
-  source: SourceFingerprint,
-): void => {
-  const relative = parseProjectRelativePath(source.fileName)
-  if (relative === undefined) return
-  const next = { ...source, fileName: relative }
-  sources.set(fingerprintKey(next), next)
-}
-
 /** Record compiler inputs that verification can revalidate. */
 const fingerprintWorkspace = (
   workspaceRoot: string,
@@ -146,35 +113,24 @@ const fingerprintWorkspace = (
     const sources = new Map<string, SourceFingerprint>()
     for (const configured of snapshot.projects) {
       const project = yield* snapshot.project(configured)
-      const owned = (yield* project.sourceFileNames).filter(
-        (fileName) =>
-          parseProjectRelativePath(projectRelative(path, project.root, fileName)) !== undefined,
-      )
-      const files = [...new Set(owned)]
-      const configFileName = path.resolve(workspaceRoot, configured.config)
-      const contentFiles = [configFileName, ...files]
-
-      for (const absolute of contentFiles) {
-        const relative = yield* observationRelativePath(fs, path, project.root, absolute)
+      const files = [
+        path.resolve(workspaceRoot, configured.config),
+        ...(yield* project.sourceFileNames),
+      ]
+      for (const absolute of files) {
+        const relative = parseProjectRelativePath(project.relativeFileName(absolute))
         if (relative === undefined) continue
         const content = yield* fs
           .readFileString(absolute, "utf8")
           .pipe(Effect.orElseSucceed(() => undefined))
-        if (content === undefined) {
-          addFingerprint(sources, {
-            projectId: configured.id,
-            fileName: relative,
-            hash: "",
-            kind: "missing",
-          })
-        } else {
-          addFingerprint(sources, {
-            projectId: configured.id,
-            fileName: relative,
-            hash: hash("sha256", content, "hex"),
-            kind: "file",
-          })
-        }
+        const kind = content === undefined ? "missing" : "file"
+        const digest = content === undefined ? "" : hash("sha256", content, "hex")
+        sources.set(`${configured.id}\0${kind}\0${relative}`, {
+          projectId: configured.id,
+          fileName: relative,
+          hash: digest,
+          kind,
+        })
       }
     }
     return [...sources.values()]

@@ -164,20 +164,11 @@ export const projectSnapshotFor = ({
       includeRoot: true,
     })
       ? runtime.relative(resolvedProjectRoot, resolved)
-      : runtime.relative(resolvedProjectRoot.toLowerCase(), resolved.toLowerCase())
+      : runtime.relative(
+          resolvedProjectRoot.toLocaleLowerCase("en-US"),
+          resolved.toLocaleLowerCase("en-US"),
+        )
     return relative === "" ? canonicalProjectRoot : runtime.resolve(canonicalProjectRoot, relative)
-  }
-  const lookupHostPath = (fileName: string): string => {
-    const resolved = runtime.resolve(fileName)
-    if (
-      isPathContained(runtime, resolvedProjectRoot, resolved, {
-        includeRoot: true,
-      })
-    ) {
-      return resolved
-    }
-    const relative = runtime.relative(resolvedProjectRoot.toLowerCase(), resolved.toLowerCase())
-    return relative === "" ? resolvedProjectRoot : runtime.resolve(resolvedProjectRoot, relative)
   }
   const isWithinProject = (fileName: string): boolean =>
     isPathContained(runtime, canonicalProjectRoot, comparisonHostPath(fileName), containmentOptions)
@@ -191,7 +182,11 @@ export const projectSnapshotFor = ({
     }
     const lexicalRelative = projectRelative(runtime, resolvedProjectRoot, resolved)
     if (parseProjectRelativePath(lexicalRelative) !== undefined) return lexicalRelative
-    return projectRelative(runtime, resolvedProjectRoot.toLowerCase(), resolved.toLowerCase())
+    return projectRelative(
+      runtime,
+      resolvedProjectRoot.toLocaleLowerCase("en-US"),
+      resolved.toLocaleLowerCase("en-US"),
+    )
   }
   const requireContainedPath = (fileName: string): string | undefined => {
     const relative = parseProjectRelativePath(fileName)
@@ -206,7 +201,18 @@ export const projectSnapshotFor = ({
       !isPathContained(runtime, projectRoot, lexical, containmentOptions)
     )
       return undefined
-    const lookup = lookupHostPath(lexical)
+    let lookup = lexical
+    if (
+      !isPathContained(runtime, resolvedProjectRoot, lexical, {
+        includeRoot: true,
+      })
+    ) {
+      const folded = runtime.relative(
+        resolvedProjectRoot.toLocaleLowerCase("en-US"),
+        lexical.toLocaleLowerCase("en-US"),
+      )
+      lookup = folded === "" ? resolvedProjectRoot : runtime.resolve(resolvedProjectRoot, folded)
+    }
     return isPathContained(
       runtime,
       canonicalProjectRoot,

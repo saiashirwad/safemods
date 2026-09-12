@@ -83,15 +83,6 @@ export const materialize = <E>(
         return value
       })
 
-    const requireExisting = (projectId: string, fileName: string) =>
-      Effect.gen(function* () {
-        const file = yield* load(projectId, fileName)
-        if (!file.exists) {
-          return yield* new VirtualFsError({ reason: "missing-source", projectId, fileName })
-        }
-        return file
-      })
-
     for (const operation of options.fileOperations ?? []) {
       const sourcePath = options.resolvePath(operation.projectId, operation.path)
       const sourceKey = virtualFileKey(operation.projectId, operation.path)
@@ -109,7 +100,14 @@ export const materialize = <E>(
         continue
       }
 
-      const current = yield* requireExisting(operation.projectId, operation.path)
+      const current = yield* load(operation.projectId, operation.path)
+      if (!current.exists) {
+        return yield* new VirtualFsError({
+          reason: "missing-source",
+          projectId: operation.projectId,
+          fileName: operation.path,
+        })
+      }
       const actualHash = hash("sha256", current.content, "hex")
       if (actualHash !== operation.initialHash) {
         return yield* new VirtualFsError({

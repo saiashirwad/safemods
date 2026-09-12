@@ -65,19 +65,21 @@ const make = (
 
     const projects = Object.freeze([...definition.projects])
     const resolvedById = new Map<string, string>()
+    const configs = new Set<string>()
     for (const project of projects) {
       const relativeConfig = parseProjectRelativePath(project.config)
-      const candidate =
-        relativeConfig === undefined ? undefined : runtime.resolve(root, relativeConfig)
-      const configFileName =
-        candidate !== undefined && isPathContained(runtime, root, candidate) ? candidate : undefined
-      if (configFileName === undefined) {
+      if (relativeConfig === undefined) {
         return yield* new InvalidProjectRelativePath({ path: project.config })
       }
-      if (resolvedById.has(project.id) || [...resolvedById.values()].includes(configFileName)) {
+      const configFileName = runtime.resolve(root, relativeConfig)
+      if (!isPathContained(runtime, root, configFileName)) {
+        return yield* new InvalidProjectRelativePath({ path: project.config })
+      }
+      if (resolvedById.has(project.id) || configs.has(configFileName)) {
         return yield* new DuplicateConfiguredProject({ id: project.id, configFileName })
       }
       resolvedById.set(project.id, configFileName)
+      configs.add(configFileName)
     }
 
     let opened = false

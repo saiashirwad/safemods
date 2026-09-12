@@ -125,12 +125,14 @@ export const nodes = <A extends Node>(
 ): Query<A, ProjectSnapshotError> =>
   resolveScope(target).pipe(
     Stream.flatMap(({ project, fileName }) =>
-      Stream.fromEffect(project.sourceFile(fileName)).pipe(
-        Stream.flatMap((sourceFile) =>
-          sourceFile === undefined
-            ? Stream.empty
-            : Stream.fromIterable(collectNodes(project, sourceFile, guard, syntaxKind)),
-        ),
+      Stream.fromIterableEffect(
+        project
+          .sourceFile(fileName)
+          .pipe(
+            Effect.map((sourceFile) =>
+              sourceFile === undefined ? [] : collectNodes(project, sourceFile, guard, syntaxKind),
+            ),
+          ),
       ),
     ),
   )
@@ -151,7 +153,7 @@ export const referencesTo = (
 ): Query<Identifier, ProjectSnapshotError> =>
   resolveScope(target).pipe(
     Stream.flatMap(({ project, fileName }) =>
-      Stream.fromEffect(
+      Stream.fromIterableEffect(
         Effect.gen(function* () {
           const sourceFile = yield* project.sourceFile(fileName)
           if (sourceFile === undefined) return []
@@ -184,6 +186,6 @@ export const referencesTo = (
             ],
           }))
         }),
-      ).pipe(Stream.flatMap((references) => Stream.fromIterable(references))),
+      ),
     ),
   )

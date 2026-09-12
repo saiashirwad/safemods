@@ -57,10 +57,12 @@ const safeTarget = (
       })
     }
     let existingParent = path.dirname(target)
-    while (!(yield* fs.exists(existingParent).pipe(fail))) {
-      if (existingParent === projectRoot) break
+    while (!(yield* fs.exists(existingParent).pipe(fail)) && existingParent !== projectRoot) {
       const parent = path.dirname(existingParent)
-      if (parent === existingParent || !isPathContained(path, projectRoot, parent)) {
+      if (
+        parent === existingParent ||
+        !isPathContained(path, projectRoot, parent, { includeRoot: true })
+      ) {
         return yield* new ApplicationFailure({
           planId: plan.planId,
           cause: `Path escapes project through parent: ${fileName}`,
@@ -133,7 +135,6 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     }
   }
 
-  // Atomic file writes
   for (const file of preview.files) {
     const target = yield* safeTarget(plan, workspaceRoot, file.projectId, file.fileName)
     if (!file.after.exists) {
@@ -144,11 +145,13 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
 
       const tempFile = `${target}.safemods-tmp-${randomUUID()}.tmp`
       const text = file.after.text
-      yield* fs.writeFileString(tempFile, text, { flag: "wx" }).pipe(fail)
-
       yield* fs
-        .rename(tempFile, target)
-        .pipe(fail, Effect.ensuring(fs.remove(tempFile, { force: true }).pipe(Effect.ignore)))
+        .writeFileString(tempFile, text, { flag: "wx" })
+        .pipe(
+          Effect.andThen(fs.rename(tempFile, target)),
+          fail,
+          Effect.ensuring(fs.remove(tempFile, { force: true }).pipe(Effect.ignore)),
+        )
     }
   }
 
