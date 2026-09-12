@@ -3,7 +3,7 @@ import type { Types } from "effect"
 import type { APIOptions } from "typescript/unstable/async"
 import { isPathContained } from "../../ProjectPath.ts"
 import type { VirtualFsSnapshot } from "../../VirtualFs.ts"
-import type { SnapshotTransition, WorkspaceFileChanges } from "../ConfiguredProject.ts"
+import type { SnapshotTransition, WorkspaceFileChanges } from "../SnapshotTransition.ts"
 import type { WorkspaceRuntimeService } from "../Runtime.ts"
 
 interface CompilerOverlay {

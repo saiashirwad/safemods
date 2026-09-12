@@ -4,6 +4,7 @@ import { Effect } from "effect"
 import type { PlannedFileOperation } from "../src/Plan.ts"
 import { withProject } from "./utils/project-fixture.ts"
 import * as Draft from "../src/Draft/index.ts"
+import { projectPath } from "./utils/domain.ts"
 
 /** Narrow a file operation to its variant, failing the test on any other kind. */
 const expectKind = <K extends PlannedFileOperation["kind"]>(
@@ -22,7 +23,11 @@ describe("Draft.files", () => {
     () =>
       withProject({}, (project) =>
         Effect.gen(function* () {
-          const draft = yield* Draft.files.create(project, "src/new.ts", "export const n = 1\n")
+          const draft = yield* Draft.files.create(
+            project,
+            projectPath("src/new.ts"),
+            "export const n = 1\n",
+          )
           expect(draft.edits).toEqual([])
           expect(draft.matches).toBe(1)
           expect(draft.fileOperations).toHaveLength(1)
@@ -45,8 +50,8 @@ describe("Draft.files", () => {
     () =>
       withProject({}, (project) =>
         Effect.gen(function* () {
-          const source = yield* project.sourceText("src/library.ts")
-          const draft = yield* Draft.files.delete(project, "src/library.ts")
+          const source = yield* project.sourceText(projectPath("src/library.ts"))
+          const draft = yield* Draft.files.delete(project, projectPath("src/library.ts"))
           const operation = expectKind(draft.fileOperations![0]!, "delete")
           expect(operation.path).toBe("src/library.ts")
           expect(operation.initialHash).toBe(hash("sha256", source, "hex"))
@@ -66,8 +71,12 @@ describe("Draft.files", () => {
         },
         (project) =>
           Effect.gen(function* () {
-            const source = yield* project.sourceText("src/host.ts")
-            const draft = yield* Draft.files.move(project, "src/host.ts", "src/nested/host.ts")
+            const source = yield* project.sourceText(projectPath("src/host.ts"))
+            const draft = yield* Draft.files.move(
+              project,
+              projectPath("src/host.ts"),
+              projectPath("src/nested/host.ts"),
+            )
 
             expect(draft.edits).toEqual([])
             const operation = expectKind(draft.fileOperations![0]!, "move")

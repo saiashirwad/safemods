@@ -3,14 +3,15 @@ import { Effect } from "effect"
 import { SyntaxKind } from "typescript/unstable/ast"
 import { isExportDeclaration, isStringLiteral } from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
+import type * as ProjectRelativePath from "safemods/ProjectRelativePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 
 export interface MoveModuleInput {
-  readonly project: ConfiguredProject
-  readonly from: string
-  readonly to: string
+  readonly project: ConfiguredProject.Type
+  readonly from: ProjectRelativePath.Type
+  readonly to: ProjectRelativePath.Type
 }
 
 const asSourceFile = (resolved: string): string => resolved.replace(/\.js$/, ".ts")

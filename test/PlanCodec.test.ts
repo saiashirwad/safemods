@@ -1,6 +1,6 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import { finalizePlan, parsePlan, serializePlan } from "../src/Plan.ts"
+import { finalizePlan, parsePlan, serializePlan, type PlanInput } from "../src/Plan.ts"
 import { richInput } from "./utils/plan-schema.ts"
 
 describe("plan codec and canonicalization", () => {
@@ -16,7 +16,7 @@ describe("plan codec and canonicalization", () => {
 
   effect("produces the same plan regardless of input order and path style", () =>
     Effect.gen(function* () {
-      const shuffled = {
+      const shuffled: PlanInput = {
         ...richInput,
         sources: [...richInput.sources].reverse().map((source) => ({
           ...source,

@@ -8,6 +8,7 @@ import { layer as nodeLayer, workspaceLayerNode } from "../../src/Node.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import { withFixture } from "../utils/declarative-fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
+import { projectPath, workspaceDefinition } from "../utils/domain.ts"
 
 const fixturePath = fileURLToPath(
   new URL("../../fixtures/migrations/move-module/", import.meta.url),
@@ -22,8 +23,8 @@ describe("move-module", () => {
           Effect.gen(function* () {
             const input: MoveModuleInput = {
               project: app,
-              from: "src/users/account.ts",
-              to: "src/identity/account.ts",
+              from: projectPath("src/users/account.ts"),
+              to: projectPath("src/identity/account.ts"),
             }
 
             const { plan, verified } = yield* executeRecipe(moveModule, input)
@@ -100,7 +101,10 @@ describe("move-module", () => {
             )
             expect(baseline).toContain("severity: 1")
 
-            const freshWorkspaceLayer = workspaceLayerNode({ projects: [app] }, { cwd: root })
+            const freshWorkspaceLayer = workspaceLayerNode(
+              workspaceDefinition({ projects: [app] }),
+              { cwd: root },
+            )
             const second = yield* Recipe.run(moveModule, input).pipe(
               Effect.provide(Layer.merge(freshWorkspaceLayer, nodeLayer)),
             )

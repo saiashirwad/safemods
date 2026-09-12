@@ -3,24 +3,16 @@ import { Context, Effect, Layer, Semaphore, type Scope } from "effect"
 import type { APIOptions } from "typescript/unstable/async"
 import { openCompiler } from "./internal/NativeCompiler.ts"
 import type { WorkspaceCompilerError } from "./NativeRequest.ts"
-import {
-  InvalidProjectRelativePath,
-  isPathContained,
-  parseProjectRelativePath,
-} from "../ProjectPath.ts"
 import type { VirtualFsSnapshot } from "../VirtualFs.ts"
-import {
-  DuplicateConfiguredProject,
-  type ProjectNotInSnapshot,
-  type SnapshotTransition,
-  type WorkspaceDefinition,
-} from "./ConfiguredProject.ts"
+import type { ProjectNotInSnapshot } from "./ConfiguredProject.ts"
+import type { SnapshotTransition } from "./SnapshotTransition.ts"
+import type * as WorkspaceDefinition from "./WorkspaceDefinition.ts"
 import { type WorkspaceSnapshot, openSnapshotRegion } from "./SnapshotRegion.ts"
 import { compilerOverlayFor } from "./internal/CompilerOverlay.ts"
 import { WorkspaceRuntime } from "./Runtime.ts"
 
 interface WorkspaceService {
-  readonly definition: WorkspaceDefinition
+  readonly definition: WorkspaceDefinition.Type
   /** Absolute workspace root. Runtime configuration, not durable identity. */
   readonly root: string
   readonly withSnapshot: <A, E, R>(
@@ -50,13 +42,9 @@ export class Workspace extends Context.Service<Workspace, WorkspaceService>()(
 }
 
 const make = (
-  definition: WorkspaceDefinition,
+  definition: WorkspaceDefinition.Type,
   apiOptions: APIOptions,
-): Effect.Effect<
-  Workspace["Service"],
-  DuplicateConfiguredProject | InvalidProjectRelativePath,
-  Scope.Scope | WorkspaceRuntime
-> =>
+): Effect.Effect<Workspace["Service"], never, Scope.Scope | WorkspaceRuntime> =>
   Effect.gen(function* () {
     const runtime = yield* WorkspaceRuntime
     const compiler = yield* openCompiler(apiOptions)
@@ -65,21 +53,9 @@ const make = (
 
     const projects = Object.freeze([...definition.projects])
     const resolvedById = new Map<string, string>()
-    const configs = new Set<string>()
     for (const project of projects) {
-      const relativeConfig = parseProjectRelativePath(project.config)
-      if (relativeConfig === undefined) {
-        return yield* new InvalidProjectRelativePath({ path: project.config })
-      }
-      const configFileName = runtime.resolve(root, relativeConfig)
-      if (!isPathContained(runtime, root, configFileName)) {
-        return yield* new InvalidProjectRelativePath({ path: project.config })
-      }
-      if (resolvedById.has(project.id) || configs.has(configFileName)) {
-        return yield* new DuplicateConfiguredProject({ id: project.id, configFileName })
-      }
+      const configFileName = runtime.resolve(root, project.config)
       resolvedById.set(project.id, configFileName)
-      configs.add(configFileName)
     }
 
     let opened = false
@@ -134,10 +110,7 @@ const make = (
   })
 
 export const layer = (
-  definition: WorkspaceDefinition,
+  definition: WorkspaceDefinition.Type,
   options: APIOptions = {},
-): Layer.Layer<
-  Workspace,
-  DuplicateConfiguredProject | InvalidProjectRelativePath,
-  WorkspaceRuntime
-> => Layer.effect(Workspace, make(definition, options))
+): Layer.Layer<Workspace, never, WorkspaceRuntime> =>
+  Layer.effect(Workspace, make(definition, options))

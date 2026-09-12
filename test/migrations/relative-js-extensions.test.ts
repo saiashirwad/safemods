@@ -8,6 +8,7 @@ import { layer as nodeLayer, workspaceLayerNode } from "../../src/Node.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import { withFixture } from "../utils/declarative-fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
+import { workspaceDefinition } from "../utils/domain.ts"
 
 const fixturePath = fileURLToPath(
   new URL("../../fixtures/migrations/relative-js-extensions/", import.meta.url),
@@ -90,7 +91,10 @@ describe("relative-js-extensions", () => {
             const logger = yield* read(root, "src/telemetry/logger.ts")
             expect(logger).toContain('from "node:util"')
 
-            const freshWorkspaceLayer = workspaceLayerNode({ projects: [app] }, { cwd: root })
+            const freshWorkspaceLayer = workspaceLayerNode(
+              workspaceDefinition({ projects: [app] }),
+              { cwd: root },
+            )
             const second = yield* Recipe.run(relativeJsExtensions, undefined).pipe(
               Effect.provide(Layer.merge(freshWorkspaceLayer, nodeLayer)),
             )

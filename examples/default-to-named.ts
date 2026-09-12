@@ -12,14 +12,15 @@ import {
   isStringLiteral,
 } from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
+import type * as ProjectRelativePath from "safemods/ProjectRelativePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 
 export interface DefaultToNamedInput {
-  readonly project: ConfiguredProject
+  readonly project: ConfiguredProject.Type
   /** Project-relative file that currently default-exports the function. */
-  readonly declarationFile: string
+  readonly declarationFile: ProjectRelativePath.Type
   readonly exportName: string
 }
 

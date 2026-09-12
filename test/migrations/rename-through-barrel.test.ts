@@ -8,6 +8,7 @@ import { layer as nodeLayer, workspaceLayerNode } from "../../src/Node.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import { withFixture } from "../utils/declarative-fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
+import { workspaceDefinition } from "../utils/domain.ts"
 
 const fixturePath = fileURLToPath(
   new URL("../../fixtures/migrations/rename-through-barrel/", import.meta.url),
@@ -225,7 +226,10 @@ describe("rename-through-barrel", () => {
             expect(yield* readSource(root, "src/users/directory.ts")).toBe(unchangedDirectory)
             expect(yield* readSource(root, "src/audit/metrics.ts")).toBe(unchangedMetrics)
 
-            const freshWorkspaceLayer = workspaceLayerNode({ projects: [app] }, { cwd: root })
+            const freshWorkspaceLayer = workspaceLayerNode(
+              workspaceDefinition({ projects: [app] }),
+              { cwd: root },
+            )
             const second = yield* Recipe.run(renameThroughBarrel, undefined).pipe(
               Effect.provide(Layer.merge(freshWorkspaceLayer, nodeLayer)),
             )

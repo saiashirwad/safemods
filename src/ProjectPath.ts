@@ -1,6 +1,6 @@
-import { type Brand, Data, type Path } from "effect"
-
-export type ProjectRelativePath = Brand.Branded<string, "ProjectRelativePath">
+import type { Path } from "effect"
+import type * as ProjectId from "./ProjectId.ts"
+import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
 
 interface PathContainmentOptions {
   readonly includeRoot?: boolean
@@ -9,8 +9,8 @@ interface PathContainmentOptions {
 
 interface PlanProjectPaths {
   readonly projects: ReadonlyArray<{
-    readonly id: string
-    readonly configFileName: string
+    readonly id: ProjectId.Type
+    readonly configFileName: ProjectRelativePath.Type
   }>
 }
 
@@ -19,43 +19,8 @@ interface ResolvedPlanFilePath {
   readonly fileName: string
 }
 
-export class InvalidProjectRelativePath extends Data.TaggedError("InvalidProjectRelativePath")<{
-  readonly path: string
-}> {}
-
-const canonicalPath = (value: string): string | undefined => {
-  if (value.length === 0 || value.includes("\0")) return undefined
-  if (value.startsWith("/") || value.startsWith("\\") || /^[A-Za-z]:[\\/]/.test(value))
-    return undefined
-  const parts = value.replaceAll("\\", "/").split("/")
-  const result: Array<string> = []
-  for (const part of parts) {
-    if (part === "" || part === ".") continue
-    if (part === "..") {
-      if (result.length === 0) return undefined
-      result.pop()
-      continue
-    }
-    if (part.includes(":")) return undefined
-    result.push(part)
-  }
-  return result.length === 0 ? undefined : result.join("/")
-}
-
 export const projectRelative = (path: Path.Path, root: string, absolute: string): string =>
   path.relative(path.resolve(root), path.resolve(absolute)).split(path.sep).join("/")
-
-export const parseProjectRelativePath = (value: string): ProjectRelativePath | undefined => {
-  const normalized = canonicalPath(value)
-  // SAFETY: canonicalPath returns only normalized project-relative paths.
-  return normalized as ProjectRelativePath | undefined
-}
-
-export const requireProjectRelativePath = (value: string): ProjectRelativePath => {
-  const parsed = parseProjectRelativePath(value)
-  if (parsed === undefined) throw new InvalidProjectRelativePath({ path: value })
-  return parsed
-}
 
 export const isPathContained = (
   path: Path.Path,
@@ -84,17 +49,11 @@ export const resolvePlanFilePath = (
   path: Path.Path,
   plan: PlanProjectPaths,
   workspaceRoot: string,
-  projectId: string,
-  fileName: string,
+  projectId: ProjectId.Type,
+  fileName: ProjectRelativePath.Type,
 ): ResolvedPlanFilePath | undefined => {
   const project = plan.projects.find((candidate) => candidate.id === projectId)
-  if (
-    project === undefined ||
-    parseProjectRelativePath(fileName) !== fileName ||
-    parseProjectRelativePath(project.configFileName) !== project.configFileName
-  ) {
-    return undefined
-  }
+  if (project === undefined) return undefined
   const root = path.resolve(workspaceRoot)
   const configFile = path.resolve(root, project.configFileName)
   const projectRoot = path.dirname(configFile)

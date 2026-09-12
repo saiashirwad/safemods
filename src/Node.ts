@@ -8,7 +8,7 @@ import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import * as Fs from "node:fs"
 import { Effect, Layer, Path, UndefinedOr } from "effect"
 import type { APIOptions } from "typescript/unstable/async"
-import type { WorkspaceDefinition } from "./Workspace/index.ts"
+import type * as WorkspaceDefinition from "./Workspace/WorkspaceDefinition.ts"
 import { layer as workspaceLayer } from "./Workspace/Service.ts"
 import { WorkspaceRuntime } from "./Workspace/Runtime.ts"
 
@@ -29,8 +29,10 @@ const workspaceRuntimeLayer = Layer.effect(
   ),
 ).pipe(Layer.provide(NodePath.layer))
 
-export const workspaceLayerNode = (definition: WorkspaceDefinition, options: APIOptions = {}) =>
-  workspaceLayer(definition, options).pipe(Layer.provide(workspaceRuntimeLayer))
+export const workspaceLayerNode = (
+  definition: WorkspaceDefinition.Type,
+  options: APIOptions = {},
+) => workspaceLayer(definition, options).pipe(Layer.provide(workspaceRuntimeLayer))
 
 /** Every Node service the library needs: filesystem, path, and workspace runtime. */
 export const layer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, workspaceRuntimeLayer)

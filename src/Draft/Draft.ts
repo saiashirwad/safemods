@@ -54,7 +54,7 @@ const textEditForRange = (
 ): TextEdit =>
   textEdit({
     projectId: project.project.id,
-    fileName: project.relativeFileName(sourceFile.fileName),
+    fileName: project.pathOf(sourceFile),
     sourceText: sourceFile.text,
     start,
     end,

@@ -11,7 +11,7 @@ import * as Recipe from "../../src/Recipe.ts"
 import { type ConfiguredProject, WorkspaceSnapshot } from "../../src/Workspace/index.ts"
 
 export interface MigrateImportSourceInput {
-  readonly project: ConfiguredProject
+  readonly project: ConfiguredProject.Type
   readonly from: string
   readonly to: string
 }

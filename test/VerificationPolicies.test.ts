@@ -12,6 +12,7 @@ import * as Verification from "../src/Verification/index.ts"
 import { finalizePlan } from "../src/Plan.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
+import { projectPath } from "./utils/domain.ts"
 
 describe("verification diagnostics and policies", () => {
   it("computes diagnostic diffs accurately", () => {
@@ -78,8 +79,8 @@ describe("verification diagnostics and policies", () => {
                 const project = yield* fixtureProject(app)
                 // Resolve the TS2322 error, introduce one TS2304 error: count stays 1.
                 return yield* Draft.concat(
-                  yield* Draft.files.delete(project, "src/swap.ts"),
-                  yield* Draft.files.create(project, "src/other.ts", "missingName;\n"),
+                  yield* Draft.files.delete(project, projectPath("src/swap.ts")),
+                  yield* Draft.files.create(project, projectPath("src/other.ts"), "missingName;\n"),
                 )
               }),
           })
@@ -223,7 +224,7 @@ describe("verification diagnostics and policies", () => {
                 const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(
                   project,
-                  "src/repeated.ts",
+                  projectPath("src/repeated.ts"),
                   "export const repeated = true;\n",
                 )
               }),
@@ -252,7 +253,7 @@ describe("verification diagnostics and policies", () => {
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.files.create(project, "src/broken.ts", broken)
+                return yield* Draft.files.create(project, projectPath("src/broken.ts"), broken)
               }),
           })
           const plan = yield* Recipe.run(recipe, undefined)

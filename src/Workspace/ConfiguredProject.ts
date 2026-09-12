@@ -1,34 +1,28 @@
-/** Workspace identity, definition, and snapshot-transition contracts. */
-import { Brand, Data } from "effect"
+/** Validated identity for one configured TypeScript project. */
+import { Data, Effect, Schema } from "effect"
+import * as ProjectId from "../ProjectId.ts"
+import * as ProjectRelativePath from "../ProjectRelativePath.ts"
 
-/** A stable project identity within a Workspace. */
-export type ConfiguredProject = Brand.Branded<
-  { readonly id: string; readonly config: string },
-  "ConfiguredProject"
->
+export const schema = Schema.Struct({
+  id: ProjectId.schema,
+  config: ProjectRelativePath.schema,
+})
 
-export const ConfiguredProject = { make: Brand.nominal<ConfiguredProject>() }
+export type Type = typeof schema.Type
 
-export interface WorkspaceDefinition {
-  readonly projects: readonly [ConfiguredProject, ...ReadonlyArray<ConfiguredProject>]
-}
-
-export interface WorkspaceFileChanges {
-  readonly changed?: ReadonlyArray<string>
-  readonly created?: ReadonlyArray<string>
-  readonly deleted?: ReadonlyArray<string>
-}
-
-export interface SnapshotTransition {
-  readonly changes?: WorkspaceFileChanges
-}
-
-export class DuplicateConfiguredProject extends Data.TaggedError("DuplicateConfiguredProject")<{
+export const make = (input: {
   readonly id: string
-  readonly configFileName: string
-}> {}
+  readonly config: string
+}): Effect.Effect<
+  Type,
+  ProjectId.InvalidProjectId | ProjectRelativePath.InvalidProjectRelativePath
+> =>
+  Effect.all({
+    id: ProjectId.make(input.id),
+    config: ProjectRelativePath.make(input.config),
+  })
 
 export class ProjectNotInSnapshot extends Data.TaggedError("ProjectNotInSnapshot")<{
-  readonly projectId: string
+  readonly projectId: ProjectId.Type
   readonly generation: number
 }> {}

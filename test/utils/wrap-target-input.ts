@@ -5,14 +5,15 @@
 import { Effect } from "effect"
 import { isObjectLiteralExpression } from "typescript/unstable/ast/is"
 import * as Draft from "../../src/Draft/index.ts"
+import type * as ProjectRelativePath from "../../src/ProjectRelativePath.ts"
 import * as Query from "../../src/Query/index.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import { type ConfiguredProject, WorkspaceSnapshot } from "../../src/Workspace/index.ts"
 
 export interface WrapTargetInput {
-  readonly project: ConfiguredProject
+  readonly project: ConfiguredProject.Type
   /** Project-relative file declaring the target symbol. */
-  readonly declarationFile: string
+  readonly declarationFile: ProjectRelativePath.Type
   /** Property name used to wrap each argument. */
   readonly property: string
 }

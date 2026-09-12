@@ -1,20 +1,23 @@
 /** Project identity and source fingerprint revalidation. */
-import { hash } from "node:crypto"
 import { Effect, FileSystem, Order, Path } from "effect"
 import type { SourceFingerprint, TransformationPlan } from "../Plan.ts"
+import type * as ProjectId from "../ProjectId.ts"
 import { resolvePlanFilePath, unsafePlanFilePathMessage } from "../ProjectPath.ts"
-import { ConfiguredProject } from "../Workspace/index.ts"
+import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
+import * as Sha256 from "../Sha256.ts"
+import type { ConfiguredProject } from "../Workspace/index.ts"
 import { ProjectIdentityMismatch, StalePlanError, VerificationFailure } from "./Errors.ts"
 
 /** Plan projects are already sorted by id (see Plan.ts canonicalize). */
 export const requireMatchingProjectIdentity = (
   plan: TransformationPlan,
-  liveProjects: ReadonlyArray<ConfiguredProject>,
+  liveProjects: ReadonlyArray<ConfiguredProject.Type>,
 ): Effect.Effect<void, ProjectIdentityMismatch> => {
   const expected = [...liveProjects].sort(Order.Struct({ id: Order.String }))
-  const actual = plan.projects.map((project) =>
-    ConfiguredProject.make({ id: project.id, config: project.configFileName }),
-  )
+  const actual: ReadonlyArray<ConfiguredProject.Type> = plan.projects.map((project) => ({
+    id: project.id,
+    config: project.configFileName,
+  }))
   const same =
     expected.length === actual.length &&
     expected.every((p, i) => p.id === actual[i]!.id && p.config === actual[i]!.config)
@@ -26,8 +29,8 @@ export const requireMatchingProjectIdentity = (
 export const absoluteTarget = (
   plan: TransformationPlan,
   workspaceRoot: string,
-  projectId: string,
-  fileName: string,
+  projectId: ProjectId.Type,
+  fileName: ProjectRelativePath.Type,
 ): Effect.Effect<string, VerificationFailure, Path.Path> =>
   Effect.gen(function* () {
     const path = yield* Path.Path
@@ -65,6 +68,6 @@ export const revalidateSource = (
       return undefined
     }
     const content = yield* fs.readFileString(absolute).pipe(Effect.mapError(() => stale))
-    if (hash("sha256", content, "hex") !== source.hash) return yield* stale
+    if (Sha256.digest(content) !== source.hash) return yield* stale
     return content
   })

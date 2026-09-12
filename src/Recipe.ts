@@ -1,5 +1,4 @@
 /** Recipes: definition, input validation, workspace fingerprinting, and planning. */
-import { hash } from "node:crypto"
 import { Data, Effect, FileSystem, Path, Schema } from "effect"
 import type { Draft } from "./Draft/index.ts"
 import {
@@ -22,7 +21,8 @@ import {
   type MissingDraftEvidence,
   finalizeDraftEvidence,
 } from "./Evidence.ts"
-import { parseProjectRelativePath } from "./ProjectPath.ts"
+import * as ProjectRelativePath from "./ProjectRelativePath.ts"
+import * as Sha256 from "./Sha256.ts"
 
 /**
  * A reusable transformation. The recipe body runs in a Workspace Snapshot
@@ -108,23 +108,33 @@ const fingerprintWorkspace = (
     const sources = new Map<string, SourceFingerprint>()
     for (const configured of snapshot.projects) {
       const project = yield* snapshot.project(configured)
-      const files = [
-        path.resolve(workspaceRoot, configured.config),
-        ...(yield* project.sourceFileNames),
-      ]
-      for (const absolute of files) {
-        const relative = parseProjectRelativePath(project.relativeFileName(absolute))
-        if (relative === undefined) continue
-        const content = yield* fs
-          .readFileString(absolute, "utf8")
-          .pipe(Effect.orElseSucceed(() => undefined))
-        const kind = content === undefined ? "missing" : "file"
-        const digest = content === undefined ? "" : hash("sha256", content, "hex")
-        sources.set(`${configured.id}\0${kind}\0${relative}`, {
+      const configFileName = ProjectRelativePath.schema.make(
+        configured.config.slice(configured.config.lastIndexOf("/") + 1),
+      )
+      const configContent = yield* fs
+        .readFileString(path.resolve(workspaceRoot, configured.config), "utf8")
+        .pipe(Effect.orElseSucceed(() => undefined))
+      const configFingerprint: SourceFingerprint =
+        configContent === undefined
+          ? { projectId: configured.id, fileName: configFileName, kind: "missing" }
+          : {
+              projectId: configured.id,
+              fileName: configFileName,
+              hash: Sha256.digest(configContent),
+              kind: "file",
+            }
+      sources.set(
+        `${configured.id}\0${configFingerprint.kind}\0${configFileName}`,
+        configFingerprint,
+      )
+
+      for (const file of yield* project.files) {
+        const content = yield* file.sourceText
+        sources.set(`${configured.id}\0file\0${file.path}`, {
           projectId: configured.id,
-          fileName: relative,
-          hash: digest,
-          kind,
+          fileName: file.path,
+          hash: Sha256.digest(content),
+          kind: "file",
         })
       }
     }

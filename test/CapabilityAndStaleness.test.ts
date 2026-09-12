@@ -10,6 +10,7 @@ import * as Recipe from "../src/Recipe.ts"
 import * as Verification from "../src/Verification/index.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
+import { projectPath } from "./utils/domain.ts"
 
 interface ForgedPlanCapability extends Partial<Verification.VerifiedPlan> {
   readonly [key: PropertyKey]:
@@ -44,7 +45,7 @@ describe("Node application capability and staleness checks", () => {
               const project = yield* fixtureProject(app)
               return yield* Draft.files.create(
                 project,
-                "src/escape/outside.ts",
+                projectPath("src/escape/outside.ts"),
                 "export const escaped = true;\n",
               )
             }),
@@ -73,7 +74,7 @@ describe("Node application capability and staleness checks", () => {
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
-              return yield* Draft.files.create(project, "src/created.ts", contents)
+              return yield* Draft.files.create(project, projectPath("src/created.ts"), contents)
             }),
         })
         const plan = yield* Recipe.run(recipe, undefined)

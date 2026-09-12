@@ -4,11 +4,12 @@
  */
 import { Effect } from "effect"
 import * as Draft from "safemods/Draft"
+import * as ProjectRelativePath from "safemods/ProjectRelativePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { WorkspaceSnapshot } from "safemods/Workspace"
 
-const DECLARATION_FILE = "src/accounts/store.ts"
+const DECLARATION_FILE = ProjectRelativePath.schema.make("src/accounts/store.ts")
 
 export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
   version: "1.0.0",

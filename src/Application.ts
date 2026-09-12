@@ -1,7 +1,10 @@
 /** Apply a verified plan to the real filesystem. */
-import { hash, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import { Data, Effect, FileSystem, Path } from "effect"
 import type { TransformationPlan } from "./Plan.ts"
+import type * as ProjectId from "./ProjectId.ts"
+import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
+import * as Sha256 from "./Sha256.ts"
 import { isPathContained, resolvePlanFilePath, unsafePlanFilePathMessage } from "./ProjectPath.ts"
 import { StalePlanError } from "./Verification/Errors.ts"
 import { requireMatchingProjectIdentity } from "./Verification/SourceRevalidation.ts"
@@ -14,12 +17,12 @@ export class ApplicationFailure extends Data.TaggedError("ApplicationFailure")<{
 }> {}
 
 export interface ApplicationReceipt {
-  readonly planId: string
-  readonly snapshotHash: string
+  readonly planId: Sha256.Type
+  readonly snapshotHash: Sha256.Type
   readonly outputs: ReadonlyArray<{
-    readonly projectId: string
-    readonly fileName: string
-    readonly hash: string
+    readonly projectId: ProjectId.Type
+    readonly fileName: ProjectRelativePath.Type
+    readonly hash: Sha256.Type
   }>
 }
 
@@ -31,8 +34,8 @@ const failWith =
 const safeTarget = (
   plan: TransformationPlan,
   workspaceRoot: string,
-  projectId: string,
-  fileName: string,
+  projectId: ProjectId.Type,
+  fileName: ProjectRelativePath.Type,
 ): Effect.Effect<string, ApplicationFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function* () {
     const fail = failWith(plan.planId)
@@ -125,7 +128,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     }
     if (exists && file.before.hash !== undefined) {
       const text = yield* fs.readFileString(target).pipe(fail)
-      if (hash("sha256", text, "hex") !== file.before.hash) {
+      if (Sha256.digest(text) !== file.before.hash) {
         return yield* new StalePlanError({
           planId: plan.planId,
           projectId: file.projectId,

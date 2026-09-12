@@ -34,14 +34,14 @@ export const resolvesTo = <A extends Node>(
               const node = location(selection.value)
               return node.getStart(node.getSourceFile())
             })
-            const fileName = project.resolveFileName(group[0]!.selection.fileName)
+            const fileName = group[0]!.selection.fileName
             const symbols = yield* project.symbolsAt(fileName, positions)
             const declarationFile = symbol.valueDeclaration?.path ?? symbol.declarations[0]?.path
             const declarationPath =
               declarationFile === undefined
                 ? "unknown"
-                : project.containsFileName(String(declarationFile))
-                  ? project.relativeFileName(String(declarationFile))
+                : String(declarationFile) === group[0]!.selection.value.getSourceFile().fileName
+                  ? fileName
                   : "external"
             for (let index = 0; index < symbols.length; index++) {
               const candidate = symbols[index]

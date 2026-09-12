@@ -19,8 +19,11 @@
       "safemods/Draft": ["./src/Draft/index.ts"],
       "safemods/Node": ["./src/Node.ts"],
       "safemods/Plan": ["./src/Plan.ts"],
+      "safemods/ProjectId": ["./src/ProjectId.ts"],
+      "safemods/ProjectRelativePath": ["./src/ProjectRelativePath.ts"],
       "safemods/Query": ["./src/Query/index.ts"],
       "safemods/Recipe": ["./src/Recipe.ts"],
+      "safemods/Sha256": ["./src/Sha256.ts"],
       "safemods/Verification": ["./src/Verification/index.ts"],
       "safemods/Workspace": ["./src/Workspace/index.ts"]
     },

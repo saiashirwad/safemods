@@ -1,6 +1,6 @@
 import { Data, type Effect, type Stream } from "effect"
 import type { EvidenceFact, QueryEvidence } from "../Evidence.ts"
-import type { ProjectRelativePath } from "../ProjectPath.ts"
+import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
 import type { ProjectFile, ProjectSnapshot } from "../Workspace/index.ts"
 
 export type ProjectScope = ProjectSnapshot | ProjectFile | ReadonlyArray<ProjectFile>
@@ -8,7 +8,7 @@ export type ProjectScope = ProjectSnapshot | ProjectFile | ReadonlyArray<Project
 export interface Selection<A> {
   readonly value: A
   readonly project: ProjectSnapshot
-  readonly fileName: ProjectRelativePath
+  readonly fileName: ProjectRelativePath.Type
   readonly start: number
   readonly end: number
   readonly evidence: ReadonlyArray<QueryEvidence>

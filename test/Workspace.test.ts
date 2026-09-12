@@ -1,48 +1,48 @@
 import * as Fs from "node:fs/promises"
-import { workspaceLayerNode } from "../src/Node.ts"
+import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Path as EffectPath } from "effect"
-import { NodePath } from "@effect/platform-node"
+import { Effect } from "effect"
 import { fileURLToPath } from "node:url"
 import {
   ConfiguredProject,
   DuplicateConfiguredProject,
-  InvalidProjectRelativePath,
   SnapshotExpired,
   Workspace,
+  WorkspaceDefinition,
 } from "../src/Workspace/index.ts"
+import { InvalidProjectRelativePath } from "../src/ProjectRelativePath.ts"
+import { InvalidProjectId } from "../src/ProjectId.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
-
-const Path = Effect.runSync(Effect.provide(EffectPath.Path, NodePath.layer))
+import { projectPath } from "./utils/domain.ts"
 
 describe("workspace path confinement, overlay FS, and symbol lookup", () => {
-  effect("rejects escaping and duplicate project configs", () =>
-    withFixture((root, app) =>
+  effect("rejects invalid project identities and duplicate workspace entries", () =>
+    withFixture((_, app) =>
       Effect.gen(function* () {
-        for (const config of [
-          "../tsconfig.json",
-          "/tmp/tsconfig.json",
-          Path.resolve(root, "..", "tsconfig.json"),
-        ]) {
-          const escaped = ConfiguredProject.make({ id: "escaped", config })
-          const failure = yield* Effect.void.pipe(
-            Effect.provide(workspaceLayerNode({ projects: [escaped] }, { cwd: root })),
-            Effect.flip,
-          )
+        for (const config of ["../tsconfig.json", "/tmp/tsconfig.json"]) {
+          const failure = yield* ConfiguredProject.make({ id: "escaped", config }).pipe(Effect.flip)
           expect(failure).toBeInstanceOf(InvalidProjectRelativePath)
         }
-        const twice = yield* Effect.void.pipe(
-          Effect.provide(workspaceLayerNode({ projects: [app, app] }, { cwd: root })),
-          Effect.flip,
-        )
-        expect(twice).toBeInstanceOf(DuplicateConfiguredProject)
+        for (const id of ["", "app\0other"]) {
+          const failure = yield* ConfiguredProject.make({ id, config: "tsconfig.json" }).pipe(
+            Effect.flip,
+          )
+          expect(failure).toBeInstanceOf(InvalidProjectId)
+        }
+
+        const duplicateId = yield* ConfiguredProject.make({ id: "app", config: "other.json" })
+        const duplicateConfig = yield* ConfiguredProject.make({ id: "other", config: app.config })
+        for (const projects of [[app, duplicateId] as const, [app, duplicateConfig] as const]) {
+          const failure = yield* WorkspaceDefinition.make({ projects }).pipe(Effect.flip)
+          expect(failure).toBeInstanceOf(DuplicateConfiguredProject)
+        }
       }),
     ),
   )
 
   effect(
-    "rejects absolute and escaping snapshot paths",
+    "exposes portable paths and source files without host paths",
     () =>
       withFixture((_, app) =>
         Effect.gen(function* () {
@@ -51,40 +51,12 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
             {},
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
-              const library = Path.join(project.root, "src/library.ts")
-              expect(project.resolveFileName("src/library.ts")).toBe(library)
-              expect(project.relativeFileName(library)).toBe("src/library.ts")
-              expect(project.containsFileName(library)).toBe(true)
-              // Compiler-returned paths may vary in case on case-insensitive hosts.
-              const rootBase = Path.basename(project.root)
-              const flippedBase = rootBase.replace(/[a-z]/i, (char) =>
-                char === char.toLowerCase() ? char.toUpperCase() : char.toLowerCase(),
-              )
-              expect(flippedBase).not.toBe(rootBase)
-              const caseVariant = Path.join(
-                Path.dirname(project.root),
-                flippedBase,
-                "src/library.ts",
-              )
-              expect(project.containsFileName(caseVariant)).toBe(true)
-              expect(project.relativeFileName(caseVariant)).toBe("src/library.ts")
-              expect(yield* project.sourceFile(caseVariant)).toBeDefined()
-              expect(project.containsFileName(Path.resolve(project.root, "../outside.ts"))).toBe(
-                false,
-              )
-              const escaped = ["../secret.ts", "/tmp/secret.ts"]
-              for (const path of escaped) {
-                expect(yield* project.file(path).pipe(Effect.flip)).toBeInstanceOf(
-                  InvalidProjectRelativePath,
-                )
-                expect(yield* project.sourceFile(path)).toBeUndefined()
-                expect((yield* project.sourceText(path).pipe(Effect.flip))._tag).toBe(
-                  "FileNotFound",
-                )
-                expect(
-                  (yield* project.symbolNamed("target", { within: path }).pipe(Effect.flip))._tag,
-                ).toBe("SymbolNotFound")
-              }
+              const libraryPath = projectPath("src/library.ts")
+              const library = yield* project.file(libraryPath)
+              const source = yield* library.sourceFile
+              expect(project.pathOf(source)).toBe(libraryPath)
+              expect(yield* library.sourceText).toContain("function target")
+              expect((yield* project.files).map((file) => file.path)).toContain(libraryPath)
             }),
           )
         }),
@@ -108,7 +80,7 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
               { files: new Map(), created: new Set(), deleted: new Set() },
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                const text = yield* project.sourceText("src/library.ts")
+                const text = yield* project.sourceText(projectPath("src/library.ts"))
                 expect(text).toBe(marker)
                 expect(disk).not.toBe(marker)
               }),
@@ -148,8 +120,9 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
             },
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
-              expect(yield* project.sourceText("src/virtual-dir/created.ts")).toBe(content)
-              expect(yield* project.sourceFileNames).toContain(createdPath)
+              const created = yield* project.file(projectPath("src/virtual-dir/created.ts"))
+              expect(created.path).toBe("src/virtual-dir/created.ts")
+              expect(yield* created.sourceText).toBe(content)
             }),
           )
         }),
@@ -167,13 +140,17 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
             {},
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
-              const original = yield* project.symbolNamed("target", { within: "src/library.ts" })
-              const aliased = yield* project.symbolNamed("renamed", { within: "src/consumer.ts" })
+              const original = yield* project.symbolNamed("target", {
+                within: projectPath("src/library.ts"),
+              })
+              const aliased = yield* project.symbolNamed("renamed", {
+                within: projectPath("src/consumer.ts"),
+              })
               const reexported = yield* project.symbolNamed("publicTarget", {
-                within: "src/barrel.ts",
+                within: projectPath("src/barrel.ts"),
               })
               const throughBarrel = yield* project.symbolNamed("publicTarget", {
-                within: "src/reexport-consumer.ts",
+                within: projectPath("src/reexport-consumer.ts"),
               })
               expect(aliased).toBe(original)
               expect(reexported).toBe(original)
@@ -195,11 +172,11 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
             {},
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
-              const source = yield* project.sourceFile("src/library.ts")
+              const libraryPath = projectPath("src/library.ts")
+              const source = yield* project.sourceFile(libraryPath)
               expect(source).toBeDefined()
               if (source === undefined) return
 
-              const libraryPath = project.resolveFileName("src/library.ts")
               const positions = [source.getStart(source)]
               const symbols = yield* project.symbolsAt(libraryPath, positions)
               expect(symbols).toHaveLength(1)
@@ -217,9 +194,11 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
         Effect.gen(function* () {
           const workspace = yield* Workspace
           const escaped = yield* workspace.withSnapshot({}, fixtureProject(app))
-          const sourceText = yield* escaped.sourceText("src/library.ts").pipe(Effect.flip)
+          const sourceText = yield* escaped
+            .sourceText(projectPath("src/library.ts"))
+            .pipe(Effect.flip)
           const symbol = yield* escaped
-            .symbolNamed("target", { within: "src/library.ts" })
+            .symbolNamed("target", { within: projectPath("src/library.ts") })
             .pipe(Effect.flip)
           expect(sourceText).toBeInstanceOf(SnapshotExpired)
           expect(symbol).toBeInstanceOf(SnapshotExpired)

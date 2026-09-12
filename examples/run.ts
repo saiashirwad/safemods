@@ -16,8 +16,9 @@ import { Argument, Command, Flag } from "effect/unstable/cli"
 import { applyVerifiedPlan } from "../src/Application.ts"
 import { layer as nodeLayer, workspaceLayerNode } from "../src/Node.ts"
 import { run, type Recipe } from "../src/Recipe.ts"
+import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
 import { verify } from "../src/Verification/index.ts"
-import { ConfiguredProject } from "../src/Workspace/index.ts"
+import { ConfiguredProject, WorkspaceDefinition } from "../src/Workspace/index.ts"
 import { defaultToNamed } from "./default-to-named.ts"
 import { moveModule } from "./move-module.ts"
 import { positionalToOptions } from "./positional-to-options.ts"
@@ -56,11 +57,11 @@ const defineExample = <Input, E, R>(example: {
   readonly id: string
   readonly fixture: string
   readonly recipe: Recipe<Input, E, R>
-  readonly input: (project: ConfiguredProject) => Input
+  readonly input: (project: ConfiguredProject.Type) => Input
 }) => ({
   id: example.id,
   fixture: example.fixture,
-  execute: (project: ConfiguredProject) => {
+  execute: (project: ConfiguredProject.Type) => {
     const input = example.input(project)
     return Effect.gen(function* () {
       const plan = yield* run(example.recipe, input)
@@ -95,8 +96,8 @@ const examples = [
     recipe: moveModule,
     input: (project) => ({
       project,
-      from: "src/users/account.ts",
-      to: "src/identity/account.ts",
+      from: ProjectRelativePath.schema.make("src/users/account.ts"),
+      to: ProjectRelativePath.schema.make("src/identity/account.ts"),
     }),
   }),
   defineExample({
@@ -105,7 +106,7 @@ const examples = [
     recipe: defaultToNamed,
     input: (project) => ({
       project,
-      declarationFile: "src/auth/authenticate.ts",
+      declarationFile: ProjectRelativePath.schema.make("src/auth/authenticate.ts"),
       exportName: "authenticate",
     }),
   }),
@@ -185,14 +186,15 @@ export const runExample = Effect.fn("runExample")(function* (
     return yield* new UnknownExample({ id })
   }
   const workspace = yield* copyFixture(example.fixture, destination)
-  const project = ConfiguredProject.make({ id: "app", config: "tsconfig.json" })
+  const project = yield* ConfiguredProject.make({ id: "app", config: "tsconfig.json" })
+  const definition = yield* WorkspaceDefinition.make({ projects: [project] })
   const { plan, verified } = yield* Effect.gen(function* () {
     const executed = yield* example.execute(project)
     if (!preview) {
       yield* applyVerifiedPlan(executed.verified)
     }
     return executed
-  }).pipe(Effect.provide(workspaceLayerNode({ projects: [project] }, { cwd: workspace })))
+  }).pipe(Effect.provide(workspaceLayerNode(definition, { cwd: workspace })))
   yield* git(workspace, ["add", "-A"])
   const diff = yield* git(workspace, ["--no-pager", "diff", "--no-color", "HEAD"])
   return {

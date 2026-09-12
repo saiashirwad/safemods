@@ -1,10 +1,6 @@
-import { hash } from "node:crypto"
 import { Effect } from "effect"
-import {
-  InvalidProjectRelativePath,
-  parseProjectRelativePath,
-  type ProjectRelativePath,
-} from "../ProjectPath.ts"
+import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
+import * as Sha256 from "../Sha256.ts"
 import type { FileNotFound, ProjectSnapshot, ProjectSnapshotError } from "../Workspace/index.ts"
 import type { Draft } from "./Draft.ts"
 
@@ -12,11 +8,10 @@ export const files = {
   /** Propose creating a new source file in the project with initial content. */
   create: (
     project: ProjectSnapshot,
-    relativePath: string,
+    path: ProjectRelativePath.Type,
     content: string,
-  ): Effect.Effect<Draft, ProjectSnapshotError | InvalidProjectRelativePath> =>
+  ): Effect.Effect<Draft, ProjectSnapshotError> =>
     Effect.gen(function* () {
-      const path = yield* checkedPath(relativePath)
       yield* project.sourceFile(path)
       return {
         edits: [],
@@ -43,10 +38,9 @@ export const files = {
   /** Propose deleting an existing source file from the project. */
   delete: (
     project: ProjectSnapshot,
-    relativePath: string,
-  ): Effect.Effect<Draft, ProjectSnapshotError | FileNotFound | InvalidProjectRelativePath> =>
+    path: ProjectRelativePath.Type,
+  ): Effect.Effect<Draft, ProjectSnapshotError | FileNotFound> =>
     Effect.gen(function* () {
-      const path = yield* checkedPath(relativePath)
       const source = yield* project.sourceText(path)
       return {
         edits: [],
@@ -55,7 +49,7 @@ export const files = {
             kind: "delete",
             projectId: project.project.id,
             path,
-            initialHash: hash("sha256", source, "hex"),
+            initialHash: Sha256.digest(source),
             evidenceIds: [`file:delete:${project.project.id}:${path}`],
           },
         ],
@@ -73,24 +67,22 @@ export const files = {
   /** Propose moving/renaming a source file, carrying its content unchanged. */
   move: (
     project: ProjectSnapshot,
-    fromPath: string,
-    toPath: string,
-  ): Effect.Effect<Draft, ProjectSnapshotError | FileNotFound | InvalidProjectRelativePath> =>
+    fromPath: ProjectRelativePath.Type,
+    toPath: ProjectRelativePath.Type,
+  ): Effect.Effect<Draft, ProjectSnapshotError | FileNotFound> =>
     Effect.gen(function* () {
-      const sourcePath = yield* checkedPath(fromPath)
-      const targetPath = yield* checkedPath(toPath)
-      const source = yield* project.sourceText(sourcePath)
-      const moveEvidence = `file:move:${project.project.id}:${sourcePath}->${targetPath}`
+      const source = yield* project.sourceText(fromPath)
+      const moveEvidence = `file:move:${project.project.id}:${fromPath}->${toPath}`
       return {
         edits: [],
         fileOperations: [
           {
             kind: "move",
             projectId: project.project.id,
-            path: sourcePath,
-            toPath: targetPath,
+            path: fromPath,
+            toPath,
             content: source,
-            initialHash: hash("sha256", source, "hex"),
+            initialHash: Sha256.digest(source),
             evidenceIds: [moveEvidence],
           },
         ],
@@ -101,21 +93,12 @@ export const files = {
             facts: {
               kind: "move",
               projectId: project.project.id,
-              path: sourcePath,
-              toPath: targetPath,
+              path: fromPath,
+              toPath,
             },
           },
         ],
         matches: 1,
       }
     }),
-}
-
-const checkedPath = (
-  value: string,
-): Effect.Effect<ProjectRelativePath, InvalidProjectRelativePath> => {
-  const path = parseProjectRelativePath(value)
-  return path === undefined
-    ? Effect.fail(new InvalidProjectRelativePath({ path: value }))
-    : Effect.succeed(path)
 }

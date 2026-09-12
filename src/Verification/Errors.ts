@@ -1,13 +1,16 @@
 /** Verification failures at plan, recipe, policy, and workspace boundaries. */
 import { Data, type Schema } from "effect"
 import type { TransformationPlan } from "../Plan.ts"
+import type * as ProjectId from "../ProjectId.ts"
+import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
+import type * as Sha256 from "../Sha256.ts"
 import type { DiagnosticRecord } from "./Diagnostics.ts"
 import type { ConfiguredProject } from "../Workspace/index.ts"
 
 export class StalePlanError extends Data.TaggedError("StalePlanError")<{
-  readonly planId: string
-  readonly projectId: string
-  readonly fileName: string
+  readonly planId: Sha256.Type
+  readonly projectId: ProjectId.Type
+  readonly fileName: ProjectRelativePath.Type
 }> {}
 
 export class VerificationFailure extends Data.TaggedError("VerificationFailure")<{
@@ -21,8 +24,8 @@ export class VerificationFailure extends Data.TaggedError("VerificationFailure")
 /** A plan's project identities are not the live Workspace definition. */
 export class ProjectIdentityMismatch extends Data.TaggedError("ProjectIdentityMismatch")<{
   readonly planId: string
-  readonly expected: ReadonlyArray<ConfiguredProject>
-  readonly actual: ReadonlyArray<ConfiguredProject>
+  readonly expected: ReadonlyArray<ConfiguredProject.Type>
+  readonly actual: ReadonlyArray<ConfiguredProject.Type>
 }> {}
 
 /** The supplied recipe is not the recipe that authored the durable plan. */

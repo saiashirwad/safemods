@@ -6,12 +6,13 @@
 import { Effect } from "effect"
 import { isObjectLiteralExpression } from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
+import * as ProjectRelativePath from "safemods/ProjectRelativePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 
 export interface PositionalToOptionsInput {
-  readonly project: ConfiguredProject
+  readonly project: ConfiguredProject.Type
 }
 
 export const positionalToOptions = Recipe.define("positional-to-options", {
@@ -19,10 +20,11 @@ export const positionalToOptions = Recipe.define("positional-to-options", {
   policies: { matchCount: { min: 1 }, idempotence: "required" },
   run: (input: PositionalToOptionsInput) =>
     Effect.gen(function* () {
+      // TODO: potentially unify the next 2 lines if this is always the only access pattern
       const snapshot = yield* WorkspaceSnapshot
       const project = yield* snapshot.project(input.project)
       const createSession = yield* project.symbolNamed("createSession", {
-        within: "src/sessions.ts",
+        within: ProjectRelativePath.schema.make("src/sessions.ts"),
       })
 
       const matches = yield* Query.calls(project).pipe(

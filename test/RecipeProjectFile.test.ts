@@ -12,6 +12,7 @@ import * as Recipe from "../src/Recipe.ts"
 import { Workspace } from "../src/Workspace/index.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
+import { projectPath } from "./utils/domain.ts"
 
 describe("recipe project-file composition", () => {
   effect(
@@ -25,10 +26,10 @@ describe("recipe project-file composition", () => {
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
 
-                const consumerFile = yield* project.file("src/consumer.ts")
+                const consumerFile = yield* project.file(projectPath("src/consumer.ts"))
                 expect(consumerFile.path).toBe("src/consumer.ts")
 
-                const libraryFile = yield* project.file("src/library.ts")
+                const libraryFile = yield* project.file(projectPath("src/library.ts"))
                 const targetSymbol = yield* libraryFile.symbolNamed("target")
                 expect(targetSymbol.name).toBe("target")
 
@@ -79,8 +80,8 @@ describe("recipe project-file composition", () => {
             {},
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
-              const libraryFile = yield* project.file("src/library.ts")
-              const consumerFile = yield* project.file("src/consumer.ts")
+              const libraryFile = yield* project.file(projectPath("src/library.ts"))
+              const consumerFile = yield* project.file(projectPath("src/consumer.ts"))
               const targetSymbol = yield* libraryFile.symbolNamed("target")
 
               const callsInSlice = yield* Query.calls([libraryFile, consumerFile]).pipe(

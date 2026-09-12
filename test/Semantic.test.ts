@@ -4,6 +4,7 @@ import { SyntaxKind, type NumericLiteral } from "typescript/unstable/ast"
 import { isNumericLiteral } from "typescript/unstable/ast/is"
 import type { ProjectSnapshot } from "../src/Workspace/index.ts"
 import { withProject } from "./utils/project-fixture.ts"
+import { projectPath } from "./utils/domain.ts"
 import * as Query from "../src/Query/index.ts"
 
 const SEM_SOURCE = [
@@ -43,7 +44,9 @@ describe("Query semantic criteria", () => {
         },
         (project) =>
           Effect.gen(function* () {
-            const symbol = yield* project.symbolNamed("oldThing", { within: "src/sem.ts" })
+            const symbol = yield* project.symbolNamed("oldThing", {
+              within: projectPath("src/sem.ts"),
+            })
 
             const references = yield* Query.referencesTo(project, symbol).pipe(Query.collect)
             expect(

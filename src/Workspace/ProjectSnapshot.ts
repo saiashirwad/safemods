@@ -1,5 +1,5 @@
 /** Project-scoped compiler operations for one active snapshot region. */
-import { Data, Effect, Predicate } from "effect"
+import { Data, Effect, Option, Predicate } from "effect"
 import type { Identifier, SourceFile } from "typescript/unstable/ast"
 import {
   isExportDeclaration,
@@ -15,15 +15,10 @@ import {
   type Type as NativeType,
 } from "typescript/unstable/async"
 import { nativeRequest, type WorkspaceCompilerError } from "./NativeRequest.ts"
-import {
-  InvalidProjectRelativePath,
-  isPathContained,
-  parseProjectRelativePath,
-  projectRelative,
-  requireProjectRelativePath,
-  type ProjectRelativePath,
-} from "../ProjectPath.ts"
-import type { ConfiguredProject } from "./ConfiguredProject.ts"
+import type * as ProjectId from "../ProjectId.ts"
+import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
+import type * as ConfiguredProject from "./ConfiguredProject.ts"
+import * as CompilerFileName from "./internal/CompilerFileName.ts"
 import type { WorkspaceRuntimeService } from "./Runtime.ts"
 
 export class SnapshotExpired extends Data.TaggedError("SnapshotExpired")<{
@@ -32,12 +27,12 @@ export class SnapshotExpired extends Data.TaggedError("SnapshotExpired")<{
 
 export class SymbolNotFound extends Data.TaggedError("SymbolNotFound")<{
   readonly name: string
-  readonly fileName: string
+  readonly fileName: ProjectRelativePath.Type
 }> {}
 
 export class FileNotFound extends Data.TaggedError("FileNotFound")<{
-  readonly fileName: string
-  readonly projectId: string
+  readonly fileName: ProjectRelativePath.Type
+  readonly projectId: ProjectId.Type
 }> {}
 
 export type ProjectSnapshotError = WorkspaceCompilerError | SnapshotExpired
@@ -62,9 +57,9 @@ export interface ProjectFile {
   readonly [ProjectFileTypeSymbol]: true
   readonly project: ProjectSnapshot
   /** Canonical portable path for this checked project file. */
-  readonly path: ProjectRelativePath
-  readonly sourceFile: Effect.Effect<SourceFile, FileNotFound | ProjectSnapshotError>
-  readonly sourceText: Effect.Effect<string, FileNotFound | ProjectSnapshotError>
+  readonly path: ProjectRelativePath.Type
+  readonly sourceFile: Effect.Effect<SourceFile, SnapshotExpired>
+  readonly sourceText: Effect.Effect<string, SnapshotExpired>
   readonly symbolNamed: (
     name: string,
   ) => Effect.Effect<NativeSymbol, SymbolNotFound | ProjectSnapshotError>
@@ -76,32 +71,25 @@ export const isProjectFile = (value: unknown): value is ProjectFile =>
 
 /** A checked view of one configured project in one Workspace Snapshot. */
 export interface ProjectSnapshot {
-  readonly project: ConfiguredProject
-  /** Absolute directory containing the project configuration. */
-  readonly root: string
-  /** True when an absolute file name is a descendant of this project root. */
-  readonly containsFileName: (fileName: string) => boolean
-  /** Resolve a project-relative file name against this project root. */
-  readonly resolveFileName: (fileName: string) => string
-  /** Convert an absolute file name to slash-separated relative form. External paths can escape. */
-  readonly relativeFileName: (fileName: string) => string
-  readonly sourceFileNames: Effect.Effect<ReadonlyArray<string>, ProjectSnapshotError>
+  readonly project: ConfiguredProject.Type
+  /** Return the portable path for a source file owned by this snapshot. */
+  readonly pathOf: (sourceFile: SourceFile) => ProjectRelativePath.Type
   readonly sourceFile: (
-    fileName: string,
+    path: ProjectRelativePath.Type,
   ) => Effect.Effect<SourceFile | undefined, ProjectSnapshotError>
   readonly sourceText: (
-    fileName: string,
+    path: ProjectRelativePath.Type,
   ) => Effect.Effect<string, FileNotFound | ProjectSnapshotError>
   readonly file: (
-    fileName: string,
-  ) => Effect.Effect<ProjectFile, FileNotFound | InvalidProjectRelativePath | ProjectSnapshotError>
+    path: ProjectRelativePath.Type,
+  ) => Effect.Effect<ProjectFile, FileNotFound | ProjectSnapshotError>
   readonly files: Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError>
   readonly symbolsAt: (
-    fileName: string,
+    path: ProjectRelativePath.Type,
     positions: ReadonlyArray<number>,
   ) => Effect.Effect<ReadonlyArray<NativeSymbol | undefined>, ProjectSnapshotError>
   readonly referencesToSymbolInFile: (
-    fileName: string,
+    path: ProjectRelativePath.Type,
     symbol: NativeSymbol,
   ) => Effect.Effect<ReadonlyArray<Identifier>, ProjectSnapshotError>
   readonly canonicalSymbol: (
@@ -109,10 +97,10 @@ export interface ProjectSnapshot {
   ) => Effect.Effect<NativeSymbol, ProjectSnapshotError>
   readonly symbolNamed: (
     name: string,
-    options: { readonly within: string },
+    options: { readonly within: ProjectRelativePath.Type },
   ) => Effect.Effect<NativeSymbol, SymbolNotFound | ProjectSnapshotError>
   readonly typesAt: (
-    fileName: string,
+    path: ProjectRelativePath.Type,
     positions: ReadonlyArray<number>,
   ) => Effect.Effect<ReadonlyArray<NativeType | undefined>, ProjectSnapshotError>
   readonly typeToString: (type: NativeType) => Effect.Effect<string, ProjectSnapshotError>
@@ -130,7 +118,7 @@ export interface ProjectSnapshot {
 }
 
 interface ProjectSnapshotOptions {
-  readonly configured: ConfiguredProject
+  readonly configured: ConfiguredProject.Type
   readonly nativeProject: NativeProject
   readonly projectRoot: string
   readonly ensureActive: Effect.Effect<void, SnapshotExpired>
@@ -145,87 +133,11 @@ export const projectSnapshotFor = ({
   ensureActive,
   runtime,
 }: ProjectSnapshotOptions): ProjectSnapshot => {
-  const containmentOptions = { caseInsensitive: true } as const
-  const resolvedProjectRoot = runtime.resolve(projectRoot)
-  const canonicalProjectRoot = runtime.realPath(resolvedProjectRoot) ?? resolvedProjectRoot
-  const comparisonHostPath = (fileName: string): string => {
-    const resolved = runtime.resolve(fileName)
-    const real = runtime.realPath(resolved)
-    if (real !== undefined) return real
-    if (
-      !isPathContained(runtime, resolvedProjectRoot, resolved, {
-        ...containmentOptions,
-        includeRoot: true,
-      })
-    ) {
-      return resolved
-    }
-    const relative = isPathContained(runtime, resolvedProjectRoot, resolved, {
-      includeRoot: true,
-    })
-      ? runtime.relative(resolvedProjectRoot, resolved)
-      : runtime.relative(
-          resolvedProjectRoot.toLocaleLowerCase("en-US"),
-          resolved.toLocaleLowerCase("en-US"),
-        )
-    return relative === "" ? canonicalProjectRoot : runtime.resolve(canonicalProjectRoot, relative)
-  }
-  const isWithinProject = (fileName: string): boolean =>
-    isPathContained(runtime, canonicalProjectRoot, comparisonHostPath(fileName), containmentOptions)
-  const resolveFileName = (fileName: string): string => runtime.resolve(projectRoot, fileName)
-  const relativeFileName = (fileName: string): string => {
-    const resolved = runtime.resolve(fileName)
-    const real = runtime.realPath(resolved)
-    if (real !== undefined) {
-      const canonicalRelative = projectRelative(runtime, canonicalProjectRoot, real)
-      if (parseProjectRelativePath(canonicalRelative) !== undefined) return canonicalRelative
-    }
-    const lexicalRelative = projectRelative(runtime, resolvedProjectRoot, resolved)
-    if (parseProjectRelativePath(lexicalRelative) !== undefined) return lexicalRelative
-    return projectRelative(
-      runtime,
-      resolvedProjectRoot.toLocaleLowerCase("en-US"),
-      resolved.toLocaleLowerCase("en-US"),
-    )
-  }
-  const requireContainedPath = (fileName: string): string | undefined => {
-    const relative = parseProjectRelativePath(fileName)
-    const lexical =
-      relative !== undefined
-        ? runtime.resolve(projectRoot, relative)
-        : runtime.isAbsolute(fileName)
-          ? runtime.resolve(fileName)
-          : undefined
-    if (
-      lexical === undefined ||
-      !isPathContained(runtime, projectRoot, lexical, containmentOptions)
-    )
-      return undefined
-    let lookup = lexical
-    if (
-      !isPathContained(runtime, resolvedProjectRoot, lexical, {
-        includeRoot: true,
-      })
-    ) {
-      const folded = runtime.relative(
-        resolvedProjectRoot.toLocaleLowerCase("en-US"),
-        lexical.toLocaleLowerCase("en-US"),
-      )
-      lookup = folded === "" ? resolvedProjectRoot : runtime.resolve(resolvedProjectRoot, folded)
-    }
-    return isPathContained(
-      runtime,
-      canonicalProjectRoot,
-      comparisonHostPath(lookup),
-      containmentOptions,
-    )
-      ? lookup
-      : undefined
-  }
+  const compilerFileNames = CompilerFileName.forProject(runtime, projectRoot)
 
   const isOwnedSourceFile = (sf: SourceFile, observedName = sf.fileName) =>
     Effect.gen(function* () {
-      if (!isWithinProject(observedName)) return false
+      if (!compilerFileNames.contains(observedName)) return false
       const isDefault = yield* nativeRequest("isSourceFileDefaultLibrary", () =>
         nativeProject.program.isSourceFileDefaultLibrary(sf),
       )
@@ -239,30 +151,31 @@ export const projectSnapshotFor = ({
     const allFileNames = yield* nativeRequest("getSourceFileNames", () =>
       nativeProject.program.getSourceFileNames(),
     )
-    const owned: Array<{ relative: ProjectRelativePath; sourceFile: SourceFile }> = []
+    const owned: Array<{
+      relative: ProjectRelativePath.Type
+      sourceFile: SourceFile
+    }> = []
     for (const fileName of allFileNames) {
-      if (!isWithinProject(fileName)) continue
+      const relative = Option.getOrUndefined(compilerFileNames.toProjectPath(fileName))
+      if (relative === undefined) continue
       const sourceFile = yield* nativeRequest("getSourceFile", () =>
         nativeProject.program.getSourceFile(fileName),
       )
       if (sourceFile === undefined) continue
       if (!(yield* isOwnedSourceFile(sourceFile, fileName))) continue
       owned.push({
-        relative: requireProjectRelativePath(relativeFileName(fileName)),
+        relative,
         sourceFile,
       })
     }
     return owned
   })
 
-  const sourceFileNames = Effect.gen(function* () {
+  const sourceFile = Effect.fn("ProjectSnapshot.sourceFile")(function* (
+    fileName: ProjectRelativePath.Type,
+  ) {
     yield* ensureActive
-    return (yield* ownedSourceFiles).map((file) => runtime.resolve(projectRoot, file.relative))
-  })
-
-  const sourceFile = Effect.fn("ProjectSnapshot.sourceFile")(function* (fileName: string) {
-    yield* ensureActive
-    const absolute = requireContainedPath(fileName)
+    const absolute = Option.getOrUndefined(compilerFileNames.fromProjectPath(fileName))
     if (absolute === undefined) return undefined
     const found = yield* nativeRequest("getSourceFile", () =>
       nativeProject.program.getSourceFile(absolute),
@@ -271,7 +184,9 @@ export const projectSnapshotFor = ({
     return found
   })
 
-  const sourceText = Effect.fn("ProjectSnapshot.sourceText")(function* (fileName: string) {
+  const sourceText = Effect.fn("ProjectSnapshot.sourceText")(function* (
+    fileName: ProjectRelativePath.Type,
+  ) {
     yield* ensureActive
     const file = yield* sourceFile(fileName)
     if (file === undefined) {
@@ -281,23 +196,23 @@ export const projectSnapshotFor = ({
   })
 
   const symbolsAt = Effect.fn("ProjectSnapshot.symbolsAt")(function* (
-    fileName: string,
+    fileName: ProjectRelativePath.Type,
     positions: ReadonlyArray<number>,
   ) {
     yield* ensureActive
     if (positions.length === 0) return []
-    const absolute = requireContainedPath(fileName)
+    const absolute = Option.getOrUndefined(compilerFileNames.fromProjectPath(fileName))
     if (absolute === undefined) return positions.map(() => undefined)
     return yield* nativeRequest("getSymbolsAtPositions", () =>
       nativeProject.checker.getSymbolAtPosition(absolute, positions),
     )
   })
   const referencesToSymbolInFile = Effect.fn("ProjectSnapshot.referencesToSymbolInFile")(function* (
-    fileName: string,
+    fileName: ProjectRelativePath.Type,
     symbol: NativeSymbol,
   ) {
     yield* ensureActive
-    const absolute = requireContainedPath(fileName)
+    const absolute = Option.getOrUndefined(compilerFileNames.fromProjectPath(fileName))
     if (absolute === undefined) return []
     return yield* nativeRequest("getReferencesToSymbolInFile", async () => {
       const source = await nativeProject.program.getSourceFile(absolute)
@@ -408,10 +323,10 @@ export const projectSnapshotFor = ({
 
   const symbolNamed = Effect.fn("ProjectSnapshot.symbolNamed")(function* (
     name: string,
-    options: { readonly within: string },
+    options: { readonly within: ProjectRelativePath.Type },
   ) {
     yield* ensureActive
-    const absolute = requireContainedPath(options.within)
+    const absolute = Option.getOrUndefined(compilerFileNames.fromProjectPath(options.within))
     if (absolute === undefined) {
       return yield* new SymbolNotFound({ name, fileName: options.within })
     }
@@ -444,12 +359,12 @@ export const projectSnapshotFor = ({
   })
 
   const typesAt = Effect.fn("ProjectSnapshot.typesAt")(function* (
-    fileName: string,
+    fileName: ProjectRelativePath.Type,
     positions: ReadonlyArray<number>,
   ) {
     yield* ensureActive
     if (positions.length === 0) return []
-    const absolute = requireContainedPath(fileName)
+    const absolute = Option.getOrUndefined(compilerFileNames.fromProjectPath(fileName))
     if (absolute === undefined) return positions.map(() => undefined)
     return yield* nativeRequest("getTypeAtPosition", () =>
       nativeProject.checker.getTypeAtPosition(absolute, positions),
@@ -501,47 +416,37 @@ export const projectSnapshotFor = ({
       Effect.suspend(() => use(nativeProject)),
     )
 
-  const makeProjectFile = (relativePath: ProjectRelativePath): ProjectFile => ({
+  const makeProjectFile = (
+    relativePath: ProjectRelativePath.Type,
+    source: SourceFile,
+  ): ProjectFile => ({
     [ProjectFileTypeSymbol]: true,
     project: snapshotView,
     path: relativePath,
-    sourceFile: snapshotView
-      .sourceFile(relativePath)
-      .pipe(
-        Effect.flatMap((source) =>
-          source !== undefined
-            ? Effect.succeed(source)
-            : Effect.fail(new FileNotFound({ projectId: configured.id, fileName: relativePath })),
-        ),
-      ),
-    sourceText: snapshotView.sourceText(relativePath),
+    sourceFile: Effect.as(ensureActive, source),
+    sourceText: Effect.as(ensureActive, source.text),
     symbolNamed: (name) => snapshotView.symbolNamed(name, { within: relativePath }),
   })
 
-  const file = Effect.fn("ProjectSnapshot.file")(function* (fileName: string) {
+  const file = Effect.fn("ProjectSnapshot.file")(function* (fileName: ProjectRelativePath.Type) {
     yield* ensureActive
-    if (parseProjectRelativePath(fileName) === undefined) {
-      return yield* new InvalidProjectRelativePath({ path: fileName })
-    }
     const found = yield* sourceFile(fileName)
     if (found === undefined) {
       return yield* new FileNotFound({ projectId: configured.id, fileName })
     }
-    return makeProjectFile(requireProjectRelativePath(relativeFileName(found.fileName)))
+    return makeProjectFile(fileName, found)
   })
 
   const files: ProjectSnapshot["files"] = Effect.gen(function* () {
     yield* ensureActive
-    return (yield* ownedSourceFiles).map((owned) => makeProjectFile(owned.relative))
+    return (yield* ownedSourceFiles).map((owned) =>
+      makeProjectFile(owned.relative, owned.sourceFile),
+    )
   })
 
   const snapshotView: ProjectSnapshot = {
     project: configured,
-    root: projectRoot,
-    containsFileName: isWithinProject,
-    resolveFileName,
-    relativeFileName,
-    sourceFileNames,
+    pathOf: (sourceFile) => Option.getOrThrow(compilerFileNames.toProjectPath(sourceFile.fileName)),
     sourceFile,
     sourceText,
     file,

@@ -10,7 +10,7 @@ import {
 } from "typescript/unstable/ast"
 import { isCallExpression, isIdentifier, isImportDeclaration } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol } from "typescript/unstable/async"
-import { requireProjectRelativePath } from "../ProjectPath.ts"
+import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
 import {
   isProjectFile,
   type ProjectFile,
@@ -27,7 +27,7 @@ const syntaxKindName = (kind: number): string =>
 
 interface TargetFileScope {
   readonly project: ProjectSnapshot
-  readonly fileName: string
+  readonly fileName: ProjectRelativePath.Type
 }
 
 const isProjectFileArray = (value: ProjectScope): value is ReadonlyArray<ProjectFile> =>
@@ -44,33 +44,26 @@ const resolveScope = (
     const uniqueFiles: Array<TargetFileScope> = []
     for (const f of scope) {
       const key = `${f.project.project.id}:${f.path}`
-      const fileName = f.project.resolveFileName(f.path)
-      if (!seen.has(key) && f.project.containsFileName(fileName)) {
+      if (!seen.has(key)) {
         seen.add(key)
         uniqueFiles.push({
           project: f.project,
-          fileName,
+          fileName: f.path,
         })
       }
     }
     return Stream.fromIterable(uniqueFiles)
   }
   if (isProjectFile(scope)) {
-    const fileName = scope.project.resolveFileName(scope.path)
-    return scope.project.containsFileName(fileName)
-      ? Stream.make({
-          project: scope.project,
-          fileName,
-        })
-      : Stream.empty
+    return Stream.make({
+      project: scope.project,
+      fileName: scope.path,
+    })
   }
   return Stream.fromIterableEffect(
     scope.files.pipe(
       Effect.map((projectFiles) =>
-        projectFiles.flatMap((file) => {
-          const fileName = file.project.resolveFileName(file.path)
-          return file.project.containsFileName(fileName) ? [{ project: scope, fileName }] : []
-        }),
+        projectFiles.map((file) => ({ project: scope, fileName: file.path })),
       ),
     ),
   )
@@ -96,7 +89,7 @@ const collectNodes = <A extends Node>(
   guard: (node: Node) => node is A,
   syntaxKind?: SyntaxKindFilter,
 ): Array<Selection<A>> => {
-  const fileName = requireProjectRelativePath(project.relativeFileName(sourceFile.fileName))
+  const fileName = project.pathOf(sourceFile)
   const selections: Array<Selection<A>> = []
   forEachMatchingNode(sourceFile, syntaxKind, (node) => {
     if (!guard(node)) return
@@ -158,20 +151,17 @@ export const referencesTo = (
           const sourceFile = yield* project.sourceFile(fileName)
           if (sourceFile === undefined) return []
           const references = yield* project.referencesToSymbolInFile(fileName, symbol)
-          const relativeFileName = requireProjectRelativePath(
-            project.relativeFileName(sourceFile.fileName),
-          )
           const declarationFile = symbol.valueDeclaration?.path ?? symbol.declarations[0]?.path
           const declarationPath =
             declarationFile === undefined
               ? "unknown"
-              : project.containsFileName(String(declarationFile))
-                ? project.relativeFileName(String(declarationFile))
+              : String(declarationFile) === sourceFile.fileName
+                ? fileName
                 : "external"
           return references.map((node): Selection<Identifier> => ({
             value: node,
             project,
-            fileName: relativeFileName,
+            fileName,
             start: node.getStart(sourceFile),
             end: node.getEnd(),
             evidence: [

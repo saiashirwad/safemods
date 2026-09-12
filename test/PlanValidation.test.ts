@@ -10,6 +10,13 @@ import {
   validatePlan,
 } from "../src/Plan.ts"
 import { richInput, semanticMutations } from "./utils/plan-schema.ts"
+import type * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
+import type * as Sha256 from "../src/Sha256.ts"
+
+// SAFETY: these tests deliberately build invalid plans to exercise validation.
+const uncheckedPath = (value: string) => value as ProjectRelativePath.Type
+// SAFETY: these tests deliberately build invalid plans to exercise validation.
+const uncheckedHash = (value: string) => value as Sha256.Type
 
 const rejects = (plan: TransformationPlan) =>
   Effect.gen(function* () {
@@ -50,9 +57,9 @@ describe("plan validation", () => {
         planId: planHashOf(candidate),
       })
       const sources = [...plan.sources].reverse()
-      const tampered = [
-        { ...plan, planId: "0".repeat(64) },
-        { ...plan, snapshotHash: "0".repeat(64) },
+      const tampered: ReadonlyArray<TransformationPlan> = [
+        { ...plan, planId: uncheckedHash("0".repeat(64)) },
+        { ...plan, snapshotHash: uncheckedHash("0".repeat(64)) },
         rehash({ ...plan, evidence: [...plan.evidence].reverse() }),
         rehash({ ...plan, fileOperations: [...plan.fileOperations].reverse() }),
         rehash({
@@ -60,7 +67,10 @@ describe("plan validation", () => {
           sources,
           snapshotHash: snapshotHashOf({ projects: plan.projects, sources }),
         }),
-        rehash({ ...plan, edits: [{ ...plan.edits[0]!, fileName: "./src/index.ts" }] }),
+        rehash({
+          ...plan,
+          edits: [{ ...plan.edits[0]!, fileName: uncheckedPath("./src/index.ts") }],
+        }),
       ]
       for (const candidate of tampered) expect(yield* rejects(candidate)).toBe(true)
     }),

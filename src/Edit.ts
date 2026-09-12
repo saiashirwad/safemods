@@ -1,15 +1,17 @@
 /** Hash-guarded text edits: construction, validation, and application. */
-import { hash } from "node:crypto"
 import { Data, Effect, Schema } from "effect"
+import * as ProjectId from "./ProjectId.ts"
+import * as ProjectRelativePath from "./ProjectRelativePath.ts"
+import * as Sha256 from "./Sha256.ts"
 
 export const NonNegativeInt = Schema.Finite.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
 
 export const TextEdit = Schema.Struct({
-  projectId: Schema.String,
-  fileName: Schema.String,
+  projectId: ProjectId.schema,
+  fileName: ProjectRelativePath.schema,
   start: NonNegativeInt,
   end: NonNegativeInt,
-  expectedTextHash: Schema.String,
+  expectedTextHash: Sha256.schema,
   newText: Schema.String,
   evidenceIds: Schema.Array(Schema.String),
 }).check(
@@ -18,8 +20,8 @@ export const TextEdit = Schema.Struct({
 export type TextEdit = typeof TextEdit.Type
 
 export const textEdit = (options: {
-  readonly projectId: string
-  readonly fileName: string
+  readonly projectId: ProjectId.Type
+  readonly fileName: ProjectRelativePath.Type
   readonly sourceText: string
   readonly start: number
   readonly end: number
@@ -31,7 +33,7 @@ export const textEdit = (options: {
   start: options.start,
   end: options.end,
   newText: options.newText,
-  expectedTextHash: hash("sha256", options.sourceText.slice(options.start, options.end), "hex"),
+  expectedTextHash: Sha256.digest(options.sourceText.slice(options.start, options.end)),
   evidenceIds: options.evidenceIds ?? [],
 })
 
@@ -88,7 +90,7 @@ export const applyFileEdits = (
       if (editsConflict(left, right)) return yield* new EditConflict({ left, right })
     }
     for (const edit of sorted) {
-      if (hash("sha256", sourceText.slice(edit.start, edit.end), "hex") !== edit.expectedTextHash) {
+      if (Sha256.digest(sourceText.slice(edit.start, edit.end)) !== edit.expectedTextHash) {
         return yield* new InvalidEdit({ edit, reason: "source-mismatch" })
       }
     }

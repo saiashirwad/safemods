@@ -8,6 +8,7 @@ import { defaultToNamed, type DefaultToNamedInput } from "../../examples/default
 import * as Recipe from "../../src/Recipe.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
 import { withFixture } from "../utils/declarative-fixture.ts"
+import { projectPath, workspaceDefinition } from "../utils/domain.ts"
 
 const fixturePath = fileURLToPath(
   new URL("../../fixtures/migrations/default-to-named/", import.meta.url),
@@ -22,7 +23,7 @@ describe("default-to-named", () => {
           Effect.gen(function* () {
             const input: DefaultToNamedInput = {
               project: app,
-              declarationFile: "src/auth/authenticate.ts",
+              declarationFile: projectPath("src/auth/authenticate.ts"),
               exportName: "authenticate",
             }
 
@@ -74,7 +75,10 @@ describe("default-to-named", () => {
               "export const servicePort: string = 8080",
             )
 
-            const freshWorkspaceLayer = workspaceLayerNode({ projects: [app] }, { cwd: root })
+            const freshWorkspaceLayer = workspaceLayerNode(
+              workspaceDefinition({ projects: [app] }),
+              { cwd: root },
+            )
             const second = yield* Recipe.run(defaultToNamed, input).pipe(
               Effect.provide(Layer.merge(freshWorkspaceLayer, nodeLayer)),
             )
