@@ -57,7 +57,8 @@
     "effect:check": "effect-tsgo diagnostics --project tsconfig.json",
     "prepare": "effect-tsgo patch --no-typescript --oxlint",
     "test": "vitest run",
-    "test:package": "node tools/package-smoke.mjs"
+    "test:package": "node tools/package-smoke.mjs",
+    "example": "node examples/run.ts"
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-rc.109",

@@ -25,7 +25,7 @@
       "safemods/Verification": ["./src/Verification/index.ts"],
       "safemods/Workspace": ["./src/Workspace/index.ts"]
     },
-    "skipLibCheck": false,
+    "skipLibCheck": true,
     "types": ["node", "vitest/globals"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "examples/**/*.ts", "vitest.config.ts"]
