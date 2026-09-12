@@ -15,10 +15,18 @@
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
     "paths": {
-      "safemods/*": ["./src/*/index.ts"]
+      "safemods/Application": ["./src/Application.ts"],
+      "safemods/Draft": ["./src/Draft/index.ts"],
+      "safemods/Node": ["./src/Node.ts"],
+      "safemods/Plan": ["./src/Plan.ts"],
+      "safemods/Policy": ["./src/Policy.ts"],
+      "safemods/Query": ["./src/Query/index.ts"],
+      "safemods/Recipe": ["./src/Recipe.ts"],
+      "safemods/Verification": ["./src/Verification/index.ts"],
+      "safemods/Workspace": ["./src/Workspace/index.ts"]
     },
     "skipLibCheck": false,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "examples/**/*.ts", "vitest.config.ts"]
 }

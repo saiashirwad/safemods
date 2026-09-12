@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@acme/legacy-client": ["./src/acme-modules.ts"],
+      "@acme/client": ["./src/acme-modules.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}
