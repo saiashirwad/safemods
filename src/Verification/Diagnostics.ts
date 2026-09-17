@@ -57,8 +57,8 @@ export const collectDiagnostics = Effect.gen(function* () {
   return diagnostics
 })
 
-const identity = ({ category, code, fileName, message }: DiagnosticRecord): string =>
-  JSON.stringify([category, code, fileName, message])
+const identity = ({ category, code, fileName }: DiagnosticRecord): string =>
+  JSON.stringify([category, code, fileName])
 
 export const diffDiagnostics = (
   baseline: ReadonlyArray<DiagnosticRecord>,

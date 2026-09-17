@@ -61,6 +61,16 @@ describe("diagnostic diffs", () => {
     ).toEqual({ introduced: [], resolved: [], unchanged: [after] })
   })
 
+  it("treats changed error text as the same diagnostic kind", () => {
+    const before = diagnostic({ message: "Cannot find name 'before'" })
+    const after = diagnostic({ message: "Cannot find name 'after'" })
+    expect(diffDiagnostics([before], [after])).toEqual({
+      introduced: [],
+      resolved: [],
+      unchanged: [after],
+    })
+  })
+
   it("ignores position, but counts repeats and category changes", () => {
     const warning = diagnostic({ category: "warning" })
     const moved = { ...warning, start: 40 }
@@ -101,6 +111,35 @@ describe("Verification.verify", () => {
           )
         }),
       { files: { "src/swap.ts": 'export const n: number = "text";\n' } },
+    ),
+  )
+
+  effect("accepts a renamed unresolved identifier at the same site", () =>
+    withFixture(
+      (_, app) =>
+        Effect.gen(function* () {
+          const recipe = Recipe.define("rename-unresolved", {
+            version: "1.0.0",
+            run: () =>
+              Effect.gen(function* () {
+                const project = yield* fixtureProject(app)
+                const source = (yield* project.file(projectPath("src/message.ts")))!.sourceFile
+                return Draft.replace(project, source.statements[0]!, "after")
+              }),
+          })
+
+          const verified = yield* Verification.verify(
+            yield* Recipe.run(recipe, undefined),
+            recipe,
+            undefined,
+          )
+          expect(verified.diagnosticDiff.introduced).toEqual([])
+          expect(verified.diagnosticDiff.resolved).toEqual([])
+          expect(verified.diagnosticDiff.unchanged).toEqual([
+            expect.objectContaining({ code: 2304, message: "Cannot find name 'after'." }),
+          ])
+        }),
+      { files: { "src/message.ts": "before;\n" } },
     ),
   )
 
