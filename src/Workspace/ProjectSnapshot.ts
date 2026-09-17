@@ -89,6 +89,10 @@ export interface ProjectSnapshot {
   readonly resolvedCallSignature: (
     call: CallExpression,
   ) => Effect.Effect<CallSignatureSummary | undefined, ProjectSnapshotError>
+  readonly resolvedModule: (
+    fileName: ProjectRelativePath.Type,
+    specifierPosition: number,
+  ) => Effect.Effect<ProjectFile | undefined, ProjectSnapshotError>
   readonly unsafeNative: <A, E, R>(
     use: (project: NativeProject) => Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E | SnapshotExpired, R>
@@ -236,6 +240,22 @@ export const make = (options: {
           hasRestParameter: signature.hasRestParameter,
         }
       }),
+
+    resolvedModule: (fileName, specifierPosition) =>
+      request("resolveModuleReference", async () => {
+        const sourceFile = await program.getSourceFile(absolute(fileName))
+        if (sourceFile === undefined) return undefined
+        const symbol = await checker.getSymbolAtPosition(absolute(fileName), specifierPosition)
+        if (symbol === undefined) return undefined
+        const canonical = await canonicalSymbolOf(symbol)
+        const handle = canonical.valueDeclaration ?? canonical.declarations[0]
+        const declaration = handle === undefined ? undefined : await handle.resolve(native)
+        return declaration?.getSourceFile().fileName
+      }).pipe(
+        Effect.flatMap((resolved) =>
+          resolved === undefined ? Effect.succeed(undefined) : ownedFile(resolved),
+        ),
+      ),
 
     unsafeNative: (use) =>
       Effect.andThen(

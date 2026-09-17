@@ -1,6 +1,6 @@
 import type { Node } from "typescript/unstable/ast"
 import { textEdit, type TextEdit } from "./Edit.ts"
-import type { FileOperation } from "./Plan.ts"
+import type { FileOperation, UnsupportedFinding } from "./Plan.ts"
 import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import type { Selection } from "./Query.ts"
 import type { ProjectFile, ProjectSnapshot, TextFile } from "./Workspace/index.ts"
@@ -8,13 +8,15 @@ import type { ProjectFile, ProjectSnapshot, TextFile } from "./Workspace/index.t
 export interface Draft {
   readonly edits: ReadonlyArray<TextEdit>
   readonly fileOperations: ReadonlyArray<FileOperation>
+  readonly unsupported: ReadonlyArray<UnsupportedFinding>
 }
 
-export const empty: Draft = { edits: [], fileOperations: [] }
+export const empty: Draft = { edits: [], fileOperations: [], unsupported: [] }
 
 export const concat = (...drafts: ReadonlyArray<Draft>): Draft => ({
   edits: drafts.flatMap((draft) => draft.edits),
   fileOperations: drafts.flatMap((draft) => draft.fileOperations),
+  unsupported: drafts.flatMap((draft) => draft.unsupported),
 })
 
 const editBetween = (
@@ -43,6 +45,19 @@ const oneEdit = (edit: TextEdit): Draft => ({ ...empty, edits: [edit] })
 const oneOperation = (operation: FileOperation): Draft => ({
   ...empty,
   fileOperations: [operation],
+})
+
+export const unsupported = <A>(selection: Selection<A>, reason: string): Draft => ({
+  ...empty,
+  unsupported: [
+    {
+      projectId: selection.project.project.id,
+      fileName: selection.fileName,
+      start: selection.start,
+      end: selection.end,
+      reason,
+    },
+  ],
 })
 
 export const replace = (project: ProjectSnapshot, node: Node, newText: string): Draft =>

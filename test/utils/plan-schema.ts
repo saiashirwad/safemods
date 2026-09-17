@@ -52,6 +52,7 @@ export const richInput: PlanInput = {
       newText: "x",
     },
   ],
+  unsupported: [],
   fileOperations: [
     {
       kind: "create",

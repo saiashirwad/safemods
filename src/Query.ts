@@ -1,11 +1,12 @@
 import { matchesGlob } from "node:path"
 import { Data, Effect, Order, Predicate, Stream } from "effect"
-import type {
-  CallExpression,
-  Identifier,
-  ImportDeclaration,
-  Node,
-  StringLiteral,
+import {
+  type CallExpression,
+  type Identifier,
+  type ImportDeclaration,
+  type Node,
+  type StringLiteral,
+  SyntaxKind,
 } from "typescript/unstable/ast"
 import {
   isCallExpression,
@@ -18,6 +19,17 @@ import {
   isImportTypeNode,
   isLiteralTypeNode,
   isStringLiteral,
+  isBinaryExpression,
+  isExportSpecifier,
+  isImportClause,
+  isImportSpecifier,
+  isNamespaceImport,
+  isPostfixUnaryExpression,
+  isPrefixUnaryExpression,
+  isPropertyAccessExpression,
+  isPropertyAssignment,
+  isShorthandPropertyAssignment,
+  isTypeNode,
 } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol, Type as NativeType } from "typescript/unstable/async"
 import * as FileRef from "./FileRef.ts"
@@ -183,6 +195,90 @@ export const moduleReferences = (scope: Scope): Query<ModuleReference, ProjectSn
       ),
     ),
     Stream.map((selection) => ({ ...selection, value: moduleReferenceOf(selection.value)! })),
+  )
+
+export interface ResolvedModuleReference extends ModuleReference {
+  readonly resolved: ProjectFile | undefined
+}
+
+export const resolvedModuleReferences = (
+  scope: Scope,
+): Query<ResolvedModuleReference, ProjectSnapshotError> =>
+  moduleReferences(scope).pipe(
+    Stream.mapEffect((selection) =>
+      selection.project
+        .resolvedModule(selection.fileName, selection.value.specifier.getStart())
+        .pipe(
+          Effect.map((resolved) => ({ ...selection, value: { ...selection.value, resolved } })),
+        ),
+    ),
+  )
+
+export type ReferenceRole =
+  | "declaration"
+  | "read"
+  | "write"
+  | "type"
+  | "import"
+  | "export"
+  | "property-name"
+  | "shorthand"
+
+export interface SemanticReference {
+  readonly node: Identifier
+  readonly role: ReferenceRole
+}
+
+const hasTypeAncestor = (node: Node): boolean => {
+  let parent = node.parent
+  for (;;) {
+    if (isTypeNode(parent)) return true
+    if (parent.getSourceFile() === parent) return false
+    parent = parent.parent
+  }
+}
+
+const roleOf = (node: Identifier): ReferenceRole => {
+  const parent = node.parent
+  if (
+    isImportSpecifier(parent) ||
+    isImportClause(parent) ||
+    isNamespaceImport(parent) ||
+    isImportEqualsDeclaration(parent)
+  ) {
+    return "import"
+  }
+  if (isExportSpecifier(parent)) return "export"
+  if (isShorthandPropertyAssignment(parent)) return "shorthand"
+  if (
+    (isPropertyAccessExpression(parent) && parent.name === node) ||
+    (isPropertyAssignment(parent) && parent.name === node)
+  ) {
+    return "property-name"
+  }
+  if (hasTypeAncestor(node)) return "type"
+  if (isBinaryExpression(parent) && parent.left === node) {
+    const operator = parent.operatorToken.kind
+    if (operator >= SyntaxKind.FirstAssignment && operator <= SyntaxKind.LastAssignment)
+      return "write"
+  }
+  if (
+    (isPrefixUnaryExpression(parent) || isPostfixUnaryExpression(parent)) &&
+    (parent.operator === SyntaxKind.PlusPlusToken || parent.operator === SyntaxKind.MinusMinusToken)
+  ) {
+    return "write"
+  }
+  const symbolParent = parent as Node & { readonly name?: Node }
+  if (symbolParent.name === node && !isPropertyAssignment(parent)) return "declaration"
+  return "read"
+}
+
+export const semanticReferences = (scope: Scope): Query<SemanticReference, ProjectSnapshotError> =>
+  identifiers(scope).pipe(
+    Stream.map((selection) => ({
+      ...selection,
+      value: { node: selection.value, role: roleOf(selection.value) },
+    })),
   )
 
 export const filter: {

@@ -69,7 +69,7 @@ describe("plan codec and canonicalization", () => {
   effect("keeps the established canonical JSON and hash format", () =>
     Effect.gen(function* () {
       const plan = yield* finalizePlan(richInput)
-      expect(plan.planId).toBe("6bca49c0503f3c9d3ef6e936b1995e323bd91376c5d7f11cfbd0dc3d3f0952f7")
+      expect(plan.planId).toBe("6d3f25da8d721eda17a5144b81210ebbb08239ac6337db79536e3ee9882b2213")
       expect(serializePlan(plan)).toMatchSnapshot()
     }),
   )

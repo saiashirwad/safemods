@@ -163,6 +163,7 @@ export const verify = <Input, E, R>(
           ),
           edits: draft.edits,
           fileOperations: draft.fileOperations,
+          unsupported: draft.unsupported,
           policies: validated.policies,
         }).pipe(
           Effect.mapError(

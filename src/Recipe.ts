@@ -135,6 +135,7 @@ export const run = <Input, E, R>(
           sources: yield* fingerprintSources(captured, draft.fileOperations),
           edits: draft.edits,
           fileOperations: draft.fileOperations,
+          unsupported: draft.unsupported,
           policies: recipe.policies,
         })
       }),

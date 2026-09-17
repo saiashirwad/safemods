@@ -40,6 +40,14 @@ export const PlanPolicies = Schema.Struct({
 })
 export type PlanPolicies = typeof PlanPolicies.Type
 
+export const UnsupportedFinding = Schema.Struct({
+  ...fileRef,
+  start: NonNegativeInt,
+  end: NonNegativeInt,
+  reason: Schema.String,
+})
+export type UnsupportedFinding = typeof UnsupportedFinding.Type
+
 const contentFields = {
   recipe: Schema.Struct({ name: Schema.String, version: Schema.String, options: Schema.Json }),
   projects: Schema.Array(
@@ -48,6 +56,7 @@ const contentFields = {
   sources: Schema.Array(SourceFingerprint),
   edits: Schema.Array(TextEdit),
   fileOperations: Schema.Array(FileOperation),
+  unsupported: Schema.Array(UnsupportedFinding),
   policies: PlanPolicies,
 }
 
@@ -132,6 +141,9 @@ const canonicalize = (input: PlanContent): PlanContent => ({
   sources: [...input.sources].sort(bySource),
   edits: [...input.edits].sort(byEdit),
   fileOperations: [...input.fileOperations].sort(byOperation),
+  unsupported: [...input.unsupported].sort(
+    Order.Struct({ projectId: Order.String, fileName: Order.String, start: Order.Number }),
+  ),
 })
 
 const encodedUnsignedPlan = ({

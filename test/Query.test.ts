@@ -275,6 +275,78 @@ describe("queries", () => {
     ),
   )
 
+  effect("classifies semantic references by their syntactic role", () =>
+    withProject(
+      {
+        "src/roles.ts": [
+          'import { oldThing as imported } from "./sem.js"',
+          "export { imported as publicThing }",
+          "type Alias = typeof imported",
+          "let value = imported",
+          "value = imported",
+          "value++",
+          "const object = { value, explicit: value }",
+          "object.value",
+          "",
+        ].join("\n"),
+        "src/sem.ts": "export const oldThing = 1\n",
+      },
+      (project) =>
+        Effect.gen(function* () {
+          const references = yield* Query.semanticReferences(project).pipe(
+            Query.within("src/roles.ts"),
+            Query.collect,
+          )
+          expect(references.map(({ value }) => `${value.node.text}:${value.role}`)).toEqual([
+            "oldThing:import",
+            "imported:import",
+            "imported:export",
+            "publicThing:export",
+            "Alias:declaration",
+            "imported:type",
+            "value:declaration",
+            "imported:read",
+            "value:write",
+            "imported:read",
+            "value:write",
+            "object:declaration",
+            "value:shorthand",
+            "explicit:property-name",
+            "value:read",
+            "object:read",
+            "value:property-name",
+          ])
+        }),
+    ),
+  )
+
+  effect("resolves module references through the compiler", () =>
+    withProject(
+      {
+        "src/module-user.ts": [
+          'import { oldThing } from "./sem.js"',
+          'export * from "./missing.js"',
+          "void oldThing",
+          "",
+        ].join("\n"),
+        "src/sem.ts": "export const oldThing = 1\n",
+      },
+      (project) =>
+        Effect.gen(function* () {
+          const references = yield* Query.resolvedModuleReferences(project).pipe(
+            Query.within("src/module-user.ts"),
+            Query.collect,
+          )
+          expect(
+            references.map(({ value }) => [value.specifier.text, value.resolved?.fileName]),
+          ).toEqual([
+            ["./sem.js", "src/sem.ts"],
+            ["./missing.js", undefined],
+          ])
+        }),
+    ),
+  )
+
   effect("summarizes the overload selected for a call", () =>
     withProject(
       {
