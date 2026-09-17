@@ -127,8 +127,9 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
         )
         const ownership = new Map<string, Array<ProjectId.Type>>()
         for (const project of projects.values()) {
+          const configFile = configFiles.get(project.project.id)!
           for (const file of yield* project.files) {
-            const absolute = Path.resolve(yield* projectRoot(project.project.id), file.fileName)
+            const absolute = Path.resolve(Path.dirname(configFile), file.fileName)
             const owners = ownership.get(absolute) ?? []
             owners.push(project.project.id)
             ownership.set(absolute, owners)
