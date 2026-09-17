@@ -21,6 +21,7 @@ export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
       if (project === undefined) {
         return Draft.empty
       }
+
       const spelledInDeclaration = yield* Query.identifiers(project).pipe(
         Query.within(DECLARATION_FILE),
         Query.filter((selection) => selection.value.text === "loadAccount"),

@@ -1,3 +1,4 @@
+import { NodeServices } from "@effect/platform-node"
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
@@ -9,7 +10,6 @@ import {
   WorkspaceSnapshot,
   layer as workspaceLayer,
 } from "../src/Workspace/index.ts"
-import { NodeServices } from "@effect/platform-node"
 import { projectPath } from "./utils/domain.ts"
 import { fixturePath, fixtureProject, withFixture, withProject, write } from "./utils/fixture.ts"
 
@@ -60,7 +60,11 @@ describe("workspace snapshots", () => {
         )
         expect(result).toMatchObject({
           _tag: "Failure",
-          failure: { _tag: "OverlappingProjectOwnership", projectIds: ["root", "nested"] },
+          failure: {
+            _tag: "OverlappingProjectOwnership",
+            fileName: Path.join(fixturePath("multi-overlap"), "nested/src/shared.ts"),
+            projectIds: ["root", "nested"],
+          },
         })
       }),
     60_000,

@@ -20,7 +20,7 @@ export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
   run: () =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
-      const project = yield* Effect.succeed(snapshot.projects[0]!)
+      const project = snapshot.projects[0]!
       const symbol = yield* project.symbolNamed("loadAccount", { within: store })
       const matches = yield* Query.identifiers(project).pipe(
         Query.where(Query.resolvesTo(symbol)),

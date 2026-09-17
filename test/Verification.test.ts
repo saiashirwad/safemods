@@ -331,6 +331,41 @@ describe("Verification.verify", () => {
   )
 
   effect(
+    "keeps a pre-existing diagnostic unchanged when its file is moved",
+    () =>
+      withFixture(
+        (_, app) =>
+          Effect.gen(function* () {
+            const from = projectPath("src/broken.ts")
+            const to = projectPath("src/moved/broken.ts")
+            const recipe = Recipe.define("move-broken-file", {
+              version: "1.0.0",
+              run: () =>
+                Effect.gen(function* () {
+                  const project = yield* fixtureProject(app)
+                  return Draft.moveFile((yield* project.file(from))!, to)
+                }),
+            })
+
+            const verified = yield* Verification.verify(
+              yield* Recipe.run(recipe, undefined),
+              recipe,
+              undefined,
+            )
+            expect(verified.diagnosticDiff.introduced).toEqual([])
+            expect(verified.diagnosticDiff.resolved).toEqual([])
+            expect(
+              verified.diagnosticDiff.unchanged.some((diagnostic) =>
+                diagnostic.fileName?.endsWith("/moved/broken.ts"),
+              ),
+            ).toBe(true)
+          }),
+        { files: { "src/broken.ts": "missingName;\n" } },
+      ),
+    60_000,
+  )
+
+  effect(
     "issues a deeply frozen verified plan",
     () =>
       withFixture((_, app) =>
