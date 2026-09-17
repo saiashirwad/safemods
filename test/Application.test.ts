@@ -1,7 +1,7 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, FileSystem } from "effect"
+import { Deferred, Effect, Fiber, FileSystem } from "effect"
 import * as Application from "../src/Application.ts"
 import * as Draft from "../src/Draft.ts"
 import * as Query from "../src/Query.ts"
@@ -272,6 +272,40 @@ describe("Application.applyVerifiedPlan", () => {
         expect(exit._tag).toBe("Failure")
         expect(yield* read(root, "src/barrel.ts")).toBe(barrelBefore)
         expect(yield* read(root, "src/reexport-consumer.ts")).toBe(consumerBefore)
+      }),
+    ),
+  )
+
+  effect("rolls back before observing interruption", () =>
+    withFixture((root, app) =>
+      Effect.gen(function* () {
+        const recipe = Recipe.define("interrupt-edit", {
+          version: "1.0.0",
+          run: () =>
+            Effect.gen(function* () {
+              const project = yield* fixtureProject(app)
+              const barrel = (yield* project.file(projectPath("src/barrel.ts")))!
+              return Draft.insertBefore(project, barrel.sourceFile.statements[0]!, "// edited\n")
+            }),
+        })
+        const plan = yield* verified(recipe)
+        const before = yield* read(root, "src/barrel.ts")
+        const writing = yield* Deferred.make<void>()
+
+        const fiber = yield* Application.applyVerifiedPlan(plan).pipe(
+          withFaultyFileSystem((fs) => ({
+            ...fs,
+            writeFile: (target, data, options) =>
+              target.includes(".safemods-")
+                ? Deferred.succeed(writing, undefined).pipe(Effect.andThen(Effect.never))
+                : fs.writeFile(target, data, options),
+          })),
+          Effect.forkChild,
+        )
+        yield* Deferred.await(writing)
+        yield* Fiber.interrupt(fiber)
+
+        expect(yield* read(root, "src/barrel.ts")).toBe(before)
       }),
     ),
   )

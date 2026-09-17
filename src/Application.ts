@@ -205,25 +205,32 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       if (file.after.exists) yield* write(file, target, file.after.bytes, mode)
     }
   })
-  yield* Effect.uninterruptibleMask((restore) => restore(commit).pipe(Effect.catchCause(rollback)))
-
-  const cleanupFailures: Array<ApplicationOperationFailure> = []
-  for (const { backup } of backups) {
-    const failure = yield* attempt(
-      "cleanup",
-      "cleanup-backup",
-      backup,
-      fs.remove(backup, { force: true }),
-    )
-    if (failure !== undefined) cleanupFailures.push(failure)
-  }
-  if (cleanupFailures.length > 0) {
-    return yield* new ApplicationFailure({
-      planId: plan.planId,
-      reason: "committed",
-      failures: cleanupFailures,
-    })
-  }
+  yield* Effect.uninterruptibleMask((restore) =>
+    restore(commit).pipe(
+      Effect.catchCause(rollback),
+      Effect.andThen(
+        Effect.gen(function* () {
+          const cleanupFailures: Array<ApplicationOperationFailure> = []
+          for (const { backup } of backups) {
+            const failure = yield* attempt(
+              "cleanup",
+              "cleanup-backup",
+              backup,
+              fs.remove(backup, { force: true }),
+            )
+            if (failure !== undefined) cleanupFailures.push(failure)
+          }
+          if (cleanupFailures.length > 0) {
+            return yield* new ApplicationFailure({
+              planId: plan.planId,
+              reason: "committed",
+              failures: cleanupFailures,
+            })
+          }
+        }),
+      ),
+    ),
+  )
 
   return {
     planId: plan.planId,
