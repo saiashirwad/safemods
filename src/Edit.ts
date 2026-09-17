@@ -63,12 +63,17 @@ const editsConflict = (left: TextEdit, right: TextEdit): boolean => {
 }
 
 export const firstConflict = (
-  sorted: ReadonlyArray<TextEdit>,
+  edits: ReadonlyArray<TextEdit>,
 ): readonly [TextEdit, TextEdit] | undefined => {
-  for (let index = 1; index < sorted.length; index++) {
-    const left = sorted[index - 1]!
-    const right = sorted[index]!
-    if (editsConflict(left, right)) return [left, right]
+  const sorted = [...edits].sort(compareEdits)
+  for (let index = 0; index < sorted.length; index++) {
+    const left = sorted[index]!
+    for (let otherIndex = index + 1; otherIndex < sorted.length; otherIndex++) {
+      const right = sorted[otherIndex]!
+      if (right.projectId !== left.projectId || right.fileName !== left.fileName) break
+      if (right.start > left.end) break
+      if (editsConflict(left, right)) return [left, right]
+    }
   }
   return undefined
 }

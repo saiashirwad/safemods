@@ -33,6 +33,16 @@ describe("Edit", () => {
     }),
   )
 
+  effect("rejects every overlap, not only adjacent sorted edits", () =>
+    Effect.gen(function* () {
+      const edits = [edit(0, 4, "left"), edit(1, 1, "comment"), edit(2, 5, "right")]
+      const overlap = yield* Effect.exit(applyFileEdits("abcdef", edits))
+      const differentlyOrdered = yield* Effect.exit(applyFileEdits("abcdef", edits.toReversed()))
+      expect(Exit.isFailure(overlap)).toBe(true)
+      expect(Exit.isFailure(differentlyOrdered)).toBe(true)
+    }),
+  )
+
   effect("guards expected source text", () =>
     Effect.gen(function* () {
       const guarded = textEdit({
