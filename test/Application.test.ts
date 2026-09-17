@@ -162,6 +162,23 @@ describe("Application.applyVerifiedPlan", () => {
     ),
   )
 
+  effect("does not apply mutations to bytes exposed by the public preview", () =>
+    withFixture((root, app) =>
+      Effect.gen(function* () {
+        const plan = yield* verified(
+          createFile(app, "src/created.ts", "export const safe = true\n"),
+        )
+        const exposed = plan.preview.files[0]!.after
+        if (!exposed.exists) throw new Error("Expected created file bytes")
+        exposed.bytes.fill(0)
+
+        yield* Application.applyVerifiedPlan(plan)
+
+        expect(yield* read(root, "src/created.ts")).toBe("export const safe = true\n")
+      }),
+    ),
+  )
+
   effect("rechecks every touched file and writes nothing when one changed after verification", () =>
     withFixture((root, app) =>
       Effect.gen(function* () {

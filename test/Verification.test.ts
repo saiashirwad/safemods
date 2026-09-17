@@ -358,9 +358,6 @@ describe("Verification.verify", () => {
           undefined,
         )
         expect(Object.isFrozen(verified)).toBe(true)
-        expect(Object.isFrozen(verified.workspace)).toBe(false)
-        expect(Object.isFrozen(verified.workspace.definition)).toBe(false)
-        expect(Object.isFrozen(verified.plan.projects[0])).toBe(true)
         expect(Object.isFrozen(verified.preview.files[0]?.after)).toBe(true)
       }),
     ),

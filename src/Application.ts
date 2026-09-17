@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { Data, Effect, FileSystem, Path, type PlatformError } from "effect"
 import * as Sha256 from "./Sha256.ts"
 import { type FilePreview, StalePlanError, type VerifiedPlan } from "./Verification/index.ts"
-import { isIssued } from "./Verification/VerifiedPlan.ts"
+import { applicationState } from "./Verification/VerifiedPlan.ts"
 
 export interface ApplicationOperationFailure {
   readonly phase: "commit" | "rollback" | "cleanup"
@@ -27,10 +27,11 @@ export interface ApplicationReceipt {
 export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(function* (
   verified: VerifiedPlan,
 ) {
-  if (!isIssued(verified)) {
+  const state = applicationState(verified)
+  if (state === undefined) {
     return yield* new ApplicationFailure({ planId: "unissued", reason: "unissued" })
   }
-  const { workspace, plan, preview } = verified
+  const { workspace, plan, preview } = state
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
 

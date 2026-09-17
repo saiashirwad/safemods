@@ -8,13 +8,17 @@ declare const VerifiedPlanTypeId: unique symbol
 
 export interface VerifiedPlan {
   readonly [VerifiedPlanTypeId]: true
-  readonly workspace: Workspace["Service"]
-  readonly plan: ValidatedPlan
   readonly preview: PlanPreview
   readonly diagnosticDiff: DiagnosticDiff
 }
 
-const issued = new WeakSet<object>()
+interface ApplicationState {
+  readonly workspace: Workspace["Service"]
+  readonly plan: ValidatedPlan
+  readonly preview: PlanPreview
+}
+
+const issued = new WeakMap<object, ApplicationState>()
 
 const deepFreeze = <A>(value: A): A => {
   if (ArrayBuffer.isView(value)) return value
@@ -25,6 +29,8 @@ const deepFreeze = <A>(value: A): A => {
   return value
 }
 
+const clonePreview = (preview: PlanPreview): PlanPreview => structuredClone(preview)
+
 export const issue = (
   workspace: Workspace["Service"],
   plan: ValidatedPlan,
@@ -32,13 +38,12 @@ export const issue = (
   diagnosticDiff: DiagnosticDiff,
 ): VerifiedPlan => {
   const verified = Object.freeze({
-    workspace,
-    plan: deepFreeze(plan),
-    preview: deepFreeze(preview),
+    preview: deepFreeze(clonePreview(preview)),
     diagnosticDiff: deepFreeze(diagnosticDiff),
   }) as VerifiedPlan
-  issued.add(verified)
+  issued.set(verified, { workspace, plan, preview })
   return verified
 }
 
-export const isIssued = (verified: VerifiedPlan): boolean => issued.has(verified)
+export const applicationState = (verified: VerifiedPlan): ApplicationState | undefined =>
+  issued.get(verified)
