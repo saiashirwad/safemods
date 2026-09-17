@@ -1,12 +1,8 @@
 import { randomUUID } from "node:crypto"
 import { Data, Effect, FileSystem, Path } from "effect"
 import type * as Sha256 from "./Sha256.ts"
-import {
-  type FilePreview,
-  isIssued,
-  StalePlanError,
-  type VerifiedPlan,
-} from "./Verification/index.ts"
+import { type FilePreview, StalePlanError, type VerifiedPlan } from "./Verification/index.ts"
+import { isIssued } from "./Verification/VerifiedPlan.ts"
 
 export class ApplicationFailure extends Data.TaggedError("ApplicationFailure")<{
   readonly planId: string

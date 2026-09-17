@@ -30,7 +30,12 @@ export const issue = (
   preview: PlanPreview,
   diagnosticDiff: DiagnosticDiff,
 ): VerifiedPlan => {
-  const verified = deepFreeze({ workspace, plan, preview, diagnosticDiff }) as VerifiedPlan
+  const verified = Object.freeze({
+    workspace,
+    plan: deepFreeze(plan),
+    preview: deepFreeze(preview),
+    diagnosticDiff: deepFreeze(diagnosticDiff),
+  }) as VerifiedPlan
   issued.add(verified)
   return verified
 }

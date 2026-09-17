@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import { DiagnosticCategory, type Diagnostic } from "typescript/unstable/async"
-import { nativeRequest, WorkspaceSnapshot } from "../Workspace/index.ts"
+import { nativeRequest } from "../Workspace/NativeRequest.ts"
+import { WorkspaceSnapshot } from "../Workspace/index.ts"
 
 export interface DiagnosticRecord {
   readonly code: number

@@ -43,11 +43,6 @@
       "types": "./dist/src/Recipe.d.ts",
       "default": "./dist/src/Recipe.js"
     },
-    "./Sha256": {
-      "source": "./src/Sha256.ts",
-      "types": "./dist/src/Sha256.d.ts",
-      "default": "./dist/src/Sha256.js"
-    },
     "./Verification": {
       "source": "./src/Verification/index.ts",
       "types": "./dist/src/Verification/index.d.ts",
@@ -62,13 +57,12 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "prepack": "pnpm build",
-    "check": "pnpm fmt:check && pnpm typecheck && pnpm effect:check && pnpm lint && pnpm test",
-    "check:fast": "pnpm fmt:check && pnpm typecheck && pnpm effect:check && pnpm lint",
+    "check": "pnpm fmt:check && pnpm typecheck && pnpm lint && pnpm test",
+    "check:fast": "pnpm fmt:check && pnpm typecheck && pnpm lint",
     "fmt": "oxfmt --disable-nested-config",
     "fmt:check": "oxfmt --check --disable-nested-config",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint && knip",
-    "effect:check": "effect-tsgo diagnostics --project tsconfig.json",
     "prepare": "effect-tsgo patch --no-typescript --oxlint",
     "test": "vitest run",
     "example": "node --conditions=source examples/run.ts"

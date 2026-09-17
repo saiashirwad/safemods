@@ -28,168 +28,150 @@ const verified = <E, R>(recipe: Recipe.Recipe<undefined, E, R>) =>
   )
 
 describe("Application.applyVerifiedPlan", () => {
-  effect(
-    "creates, moves, edits, and deletes files in one plan, including empty ones",
-    () =>
-      withFixture(
-        (root, app) =>
-          Effect.gen(function* () {
-            const recipe = Recipe.define("file-lifecycle", {
-              version: "1.0.0",
-              policies: { diagnostics: "allow-new-errors" },
-              run: () =>
-                Effect.gen(function* () {
-                  const project = yield* fixtureProject(app)
-                  const library = (yield* project.file(projectPath("src/library.ts")))!
-                  const empty = (yield* project.file(projectPath("src/empty.ts")))!
-                  const doomed = (yield* project.file(projectPath("src/doomed.ts")))!
-                  return Draft.concat(
-                    Draft.createFile(project, projectPath("src/created-empty.ts"), ""),
-                    Draft.moveFile(library, projectPath("src/shared/core.ts")),
-                    Draft.insertBefore(project, library.sourceFile.statements[0]!, "// core\n"),
-                    Draft.moveFile(empty, projectPath("src/moved-empty.ts")),
-                    Draft.deleteFile(doomed),
-                  )
-                }),
-            })
-
-            const { receipt } = yield* executeRecipe(recipe, undefined)
-            expect(receipt.written.map((file) => file.fileName)).toEqual([
-              "src/created-empty.ts",
-              "src/moved-empty.ts",
-              "src/shared/core.ts",
-            ])
-            expect(receipt.removed.map((file) => file.fileName)).toEqual([
-              "src/doomed.ts",
-              "src/empty.ts",
-              "src/library.ts",
-            ])
-
-            expect(yield* read(root, "src/created-empty.ts")).toBe("")
-            expect(yield* read(root, "src/moved-empty.ts")).toBe("")
-            expect(yield* read(root, "src/shared/core.ts")).toMatch(/^\/\/ core\n.*function other/s)
-            expect(yield* exists(root, "src/library.ts")).toBe(false)
-            expect(yield* exists(root, "src/empty.ts")).toBe(false)
-            expect(yield* exists(root, "src/doomed.ts")).toBe(false)
-          }),
-        { files: { "src/empty.ts": "", "src/doomed.ts": "export {}\n" } },
-      ),
-    60_000,
-  )
-
-  effect(
-    "keeps an edited file's mode and byte-order mark",
-    () =>
-      withFixture(
-        (root, app) =>
-          Effect.gen(function* () {
-            const script = Path.join(root, "src/script.ts")
-            yield* Effect.promise(() => Fs.chmod(script, 0o755))
-            const recipe = Recipe.define("edit-script", {
-              version: "1.0.0",
-              run: () =>
-                Effect.gen(function* () {
-                  const project = yield* fixtureProject(app)
-                  const file = (yield* project.file(projectPath("src/script.ts")))!
-                  return Draft.insertAfter(project, file.sourceFile.statements[0]!, "\nexport {}")
-                }),
-            })
-            yield* executeRecipe(recipe, undefined)
-
-            const bytes = yield* Effect.promise(() => Fs.readFile(script))
-            expect(bytes.toString("utf8")).toBe("\uFEFFexport const script = 1\nexport {}\n")
-            expect((yield* Effect.promise(() => Fs.stat(script))).mode & 0o777).toBe(0o755)
-          }),
-        { files: { "src/script.ts": "\uFEFFexport const script = 1\n" } },
-      ),
-    60_000,
-  )
-
-  effect(
-    "refuses to write through a symlink that leaves the project",
-    () =>
-      withFixture((root, app) =>
+  effect("creates, moves, edits, and deletes files in one plan, including empty ones", () =>
+    withFixture(
+      (root, app) =>
         Effect.gen(function* () {
-          const outside = yield* Effect.promise(() =>
-            Fs.mkdtemp(Path.join(Path.dirname(root), "safemods-outside-")),
-          )
-          yield* Effect.promise(() => Fs.symlink(outside, Path.join(root, "src/escape"), "dir"))
+          const recipe = Recipe.define("file-lifecycle", {
+            version: "1.0.0",
+            policies: { diagnostics: "allow-new-errors" },
+            run: () =>
+              Effect.gen(function* () {
+                const project = yield* fixtureProject(app)
+                const library = (yield* project.file(projectPath("src/library.ts")))!
+                const empty = (yield* project.file(projectPath("src/empty.ts")))!
+                const doomed = (yield* project.file(projectPath("src/doomed.ts")))!
+                return Draft.concat(
+                  Draft.createFile(project, projectPath("src/created-empty.ts"), ""),
+                  Draft.moveFile(library, projectPath("src/shared/core.ts")),
+                  Draft.insertBefore(project, library.sourceFile.statements[0]!, "// core\n"),
+                  Draft.moveFile(empty, projectPath("src/moved-empty.ts")),
+                  Draft.deleteFile(doomed),
+                )
+              }),
+          })
 
-          const plan = yield* verified(createFile(app, "src/escape/outside.ts", "export {}\n"))
-          const failure = yield* Effect.flip(Application.applyVerifiedPlan(plan))
-          expect(failure._tag).toBe("ApplicationFailure")
-          expect(yield* exists(outside, "outside.ts")).toBe(false)
-          yield* Effect.promise(() => Fs.rm(outside, { recursive: true, force: true }))
+          const { receipt } = yield* executeRecipe(recipe, undefined)
+          expect(receipt.written.map((file) => file.fileName)).toEqual([
+            "src/created-empty.ts",
+            "src/moved-empty.ts",
+            "src/shared/core.ts",
+          ])
+          expect(receipt.removed.map((file) => file.fileName)).toEqual([
+            "src/doomed.ts",
+            "src/empty.ts",
+            "src/library.ts",
+          ])
+
+          expect(yield* read(root, "src/created-empty.ts")).toBe("")
+          expect(yield* read(root, "src/moved-empty.ts")).toBe("")
+          expect(yield* read(root, "src/shared/core.ts")).toMatch(/^\/\/ core\n.*function other/s)
+          expect(yield* exists(root, "src/library.ts")).toBe(false)
+          expect(yield* exists(root, "src/empty.ts")).toBe(false)
+          expect(yield* exists(root, "src/doomed.ts")).toBe(false)
         }),
-      ),
-    60_000,
+      { files: { "src/empty.ts": "", "src/doomed.ts": "export {}\n" } },
+    ),
   )
 
-  effect(
-    "accepts only the verified plan object that verification issued",
-    () =>
-      withFixture((root, app) =>
+  effect("keeps an edited file's mode and byte-order mark", () =>
+    withFixture(
+      (root, app) =>
         Effect.gen(function* () {
-          const issued = yield* verified(createFile(app, "src/created.ts", "export {}\n"))
-          const forgeries: ReadonlyArray<Verification.VerifiedPlan> = [
-            { ...issued },
-            { ...issued, preview: structuredClone(issued.preview) },
-          ]
-          for (const forgery of forgeries) {
-            const failure = yield* Effect.flip(Application.applyVerifiedPlan(forgery))
-            expect(failure._tag).toBe("ApplicationFailure")
-          }
-          expect(yield* exists(root, "src/created.ts")).toBe(false)
-        }),
-      ),
-    60_000,
-  )
-
-  effect(
-    "rechecks every touched file and writes nothing when one changed after verification",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          const recipe = Recipe.define("comment-imports", {
+          const script = Path.join(root, "src/script.ts")
+          yield* Effect.promise(() => Fs.chmod(script, 0o755))
+          const recipe = Recipe.define("edit-script", {
             version: "1.0.0",
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                const imports = yield* Query.collect(Query.imports(project))
-                return Draft.concat(
-                  ...imports.map(({ value }) => Draft.insertBefore(project, value, "// seen\n")),
-                )
+                const file = (yield* project.file(projectPath("src/script.ts")))!
+                return Draft.insertAfter(project, file.sourceFile.statements[0]!, "\nexport {}")
               }),
           })
-          const plan = yield* verified(recipe)
-          expect(plan.preview.files.length).toBeGreaterThan(1)
-          const barrel = yield* read(root, "src/barrel.ts")
-          yield* write(root, "src/reexport-consumer.ts", "changed\n")
+          yield* executeRecipe(recipe, undefined)
 
-          const failure = yield* Effect.flip(Application.applyVerifiedPlan(plan))
-          expect(failure).toMatchObject({
-            _tag: "StalePlanError",
-            fileName: "src/reexport-consumer.ts",
-          })
-          expect(yield* read(root, "src/reexport-consumer.ts")).toBe("changed\n")
-          expect(yield* read(root, "src/barrel.ts")).toBe(barrel)
+          const bytes = yield* Effect.promise(() => Fs.readFile(script))
+          expect(bytes.toString("utf8")).toBe("\uFEFFexport const script = 1\nexport {}\n")
+          expect((yield* Effect.promise(() => Fs.stat(script))).mode & 0o777).toBe(0o755)
         }),
-      ),
-    60_000,
+      { files: { "src/script.ts": "\uFEFFexport const script = 1\n" } },
+    ),
   )
 
-  effect(
-    "does not overwrite a file that appeared at a create target",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          const plan = yield* verified(createFile(app, "src/raced.ts", ""))
-          yield* write(root, "src/raced.ts", "created by another process\n")
-          const failure = yield* Effect.flip(Application.applyVerifiedPlan(plan))
-          expect(failure._tag).toBe("StalePlanError")
-          expect(yield* read(root, "src/raced.ts")).toBe("created by another process\n")
-        }),
-      ),
-    60_000,
+  effect("refuses to write through a symlink that leaves the project", () =>
+    withFixture((root, app) =>
+      Effect.gen(function* () {
+        const outside = yield* Effect.promise(() =>
+          Fs.mkdtemp(Path.join(Path.dirname(root), "safemods-outside-")),
+        )
+        yield* Effect.promise(() => Fs.symlink(outside, Path.join(root, "src/escape"), "dir"))
+
+        const plan = yield* verified(createFile(app, "src/escape/outside.ts", "export {}\n"))
+        const failure = yield* Effect.flip(Application.applyVerifiedPlan(plan))
+        expect(failure._tag).toBe("ApplicationFailure")
+        expect(yield* exists(outside, "outside.ts")).toBe(false)
+        yield* Effect.promise(() => Fs.rm(outside, { recursive: true, force: true }))
+      }),
+    ),
+  )
+
+  effect("accepts only the verified plan object that verification issued", () =>
+    withFixture((root, app) =>
+      Effect.gen(function* () {
+        const issued = yield* verified(createFile(app, "src/created.ts", "export {}\n"))
+        const forgeries: ReadonlyArray<Verification.VerifiedPlan> = [
+          { ...issued },
+          { ...issued, preview: structuredClone(issued.preview) },
+        ]
+        for (const forgery of forgeries) {
+          const failure = yield* Effect.flip(Application.applyVerifiedPlan(forgery))
+          expect(failure._tag).toBe("ApplicationFailure")
+        }
+        expect(yield* exists(root, "src/created.ts")).toBe(false)
+      }),
+    ),
+  )
+
+  effect("rechecks every touched file and writes nothing when one changed after verification", () =>
+    withFixture((root, app) =>
+      Effect.gen(function* () {
+        const recipe = Recipe.define("comment-imports", {
+          version: "1.0.0",
+          run: () =>
+            Effect.gen(function* () {
+              const project = yield* fixtureProject(app)
+              const imports = yield* Query.collect(Query.imports(project))
+              return Draft.concat(
+                ...imports.map(({ value }) => Draft.insertBefore(project, value, "// seen\n")),
+              )
+            }),
+        })
+        const plan = yield* verified(recipe)
+        expect(plan.preview.files.length).toBeGreaterThan(1)
+        const barrel = yield* read(root, "src/barrel.ts")
+        yield* write(root, "src/reexport-consumer.ts", "changed\n")
+
+        const failure = yield* Effect.flip(Application.applyVerifiedPlan(plan))
+        expect(failure).toMatchObject({
+          _tag: "StalePlanError",
+          fileName: "src/reexport-consumer.ts",
+        })
+        expect(yield* read(root, "src/reexport-consumer.ts")).toBe("changed\n")
+        expect(yield* read(root, "src/barrel.ts")).toBe(barrel)
+      }),
+    ),
+  )
+
+  effect("does not overwrite a file that appeared at a create target", () =>
+    withFixture((root, app) =>
+      Effect.gen(function* () {
+        const plan = yield* verified(createFile(app, "src/raced.ts", ""))
+        yield* write(root, "src/raced.ts", "created by another process\n")
+        const failure = yield* Effect.flip(Application.applyVerifiedPlan(plan))
+        expect(failure._tag).toBe("StalePlanError")
+        expect(yield* read(root, "src/raced.ts")).toBe("created by another process\n")
+      }),
+    ),
   )
 })

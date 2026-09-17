@@ -6,8 +6,8 @@ import {
   validatePlan,
 } from "../Plan.ts"
 import { encodeInput, type Recipe, type RecipeInputError } from "../Recipe.ts"
+import type { Overlay } from "../Workspace/Overlay.ts"
 import {
-  type Overlay,
   type ProjectNotInSnapshot,
   type ProjectSnapshotError,
   Workspace,

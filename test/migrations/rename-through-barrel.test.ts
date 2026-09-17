@@ -224,6 +224,5 @@ describe("rename-through-barrel", () => {
           }),
         { fixture },
       ),
-    60_000,
   )
 })
