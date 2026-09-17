@@ -1,9 +1,10 @@
 import * as Path from "node:path"
 import { Data, Effect, Option, Schema } from "effect"
-import type { SourceFile } from "typescript/unstable/ast"
+import type { CallExpression, SourceFile } from "typescript/unstable/ast"
 import {
   SymbolFlags,
   type Project as NativeProject,
+  type Signature as NativeSignature,
   type Symbol as NativeSymbol,
   type Type as NativeType,
 } from "typescript/unstable/async"
@@ -38,6 +39,13 @@ export interface ProjectFile {
   readonly sourceFile: SourceFile
 }
 
+export interface CallSignatureSummary {
+  readonly signature: NativeSignature
+  readonly parameters: ReadonlyArray<{ readonly name: string; readonly type: string }>
+  readonly returnType: string
+  readonly hasRestParameter: boolean
+}
+
 export interface ProjectSnapshot {
   readonly project: ConfiguredProject.Type
   readonly fileNameOf: (sourceFile: SourceFile) => Option.Option<ProjectRelativePath.Type>
@@ -68,6 +76,9 @@ export interface ProjectSnapshot {
   readonly intrinsicType: (
     name: IntrinsicTypeName,
   ) => Effect.Effect<NativeType, ProjectSnapshotError>
+  readonly resolvedCallSignature: (
+    call: CallExpression,
+  ) => Effect.Effect<CallSignatureSummary | undefined, ProjectSnapshotError>
   readonly unsafeNative: <A, E, R>(
     use: (project: NativeProject) => Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E | SnapshotExpired, R>
@@ -179,6 +190,29 @@ export const make = (options: {
 
     intrinsicType: (name) =>
       request("getIntrinsicType", () => checker[intrinsicTypeGetters[name]]()),
+
+    resolvedCallSignature: (call) =>
+      request("getResolvedSignature", async () => {
+        const signature = await checker.getResolvedSignature(call)
+        if (signature === undefined) return undefined
+        const parameters = await signature.getParameters()
+        const parameterTypes = await Promise.all(
+          parameters.map(async (parameter, index) => {
+            const type = await checker.getParameterType(signature, index)
+            return {
+              name: parameter.name,
+              type: type === undefined ? "unknown" : await checker.typeToString(type),
+            }
+          }),
+        )
+        const returnType = await checker.getReturnTypeOfSignature(signature)
+        return {
+          signature,
+          parameters: parameterTypes,
+          returnType: returnType === undefined ? "unknown" : await checker.typeToString(returnType),
+          hasRestParameter: signature.hasRestParameter,
+        }
+      }),
 
     unsafeNative: (use) =>
       Effect.andThen(

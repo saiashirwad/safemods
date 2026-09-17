@@ -1,7 +1,24 @@
 import { matchesGlob } from "node:path"
 import { Data, Effect, Order, Predicate, Stream } from "effect"
-import type { CallExpression, Identifier, ImportDeclaration, Node } from "typescript/unstable/ast"
-import { isCallExpression, isIdentifier, isImportDeclaration } from "typescript/unstable/ast/is"
+import type {
+  CallExpression,
+  Identifier,
+  ImportDeclaration,
+  Node,
+  StringLiteral,
+} from "typescript/unstable/ast"
+import {
+  isCallExpression,
+  isExportDeclaration,
+  isExternalModuleReference,
+  isIdentifier,
+  isImportDeclaration,
+  isImportEqualsDeclaration,
+  isImportExpression,
+  isImportTypeNode,
+  isLiteralTypeNode,
+  isStringLiteral,
+} from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol, Type as NativeType } from "typescript/unstable/async"
 import * as FileRef from "./FileRef.ts"
 import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
@@ -94,6 +111,79 @@ export const imports = (scope: Scope): Query<ImportDeclaration, ProjectSnapshotE
 
 export const identifiers = (scope: Scope): Query<Identifier, ProjectSnapshotError> =>
   nodes(scope, isIdentifier)
+
+export type ModuleReferenceKind =
+  | "import"
+  | "export"
+  | "dynamic-import"
+  | "import-type"
+  | "require"
+  | "import-equals"
+
+export interface ModuleReference {
+  readonly node: Node
+  readonly specifier: StringLiteral
+  readonly kind: ModuleReferenceKind
+  readonly typeOnly: boolean
+}
+
+const moduleReferenceOf = (node: Node): ModuleReference | undefined => {
+  if (isImportDeclaration(node) && isStringLiteral(node.moduleSpecifier)) {
+    return {
+      node,
+      specifier: node.moduleSpecifier,
+      kind: "import",
+      typeOnly: node.importClause?.phaseModifier !== undefined,
+    }
+  }
+  if (
+    isExportDeclaration(node) &&
+    node.moduleSpecifier !== undefined &&
+    isStringLiteral(node.moduleSpecifier)
+  ) {
+    return { node, specifier: node.moduleSpecifier, kind: "export", typeOnly: node.isTypeOnly }
+  }
+  if (
+    isImportEqualsDeclaration(node) &&
+    isExternalModuleReference(node.moduleReference) &&
+    isStringLiteral(node.moduleReference.expression)
+  ) {
+    return {
+      node,
+      specifier: node.moduleReference.expression,
+      kind: "import-equals",
+      typeOnly: node.isTypeOnly,
+    }
+  }
+  if (
+    isImportTypeNode(node) &&
+    isLiteralTypeNode(node.argument) &&
+    isStringLiteral(node.argument.literal)
+  ) {
+    return { node, specifier: node.argument.literal, kind: "import-type", typeOnly: true }
+  }
+  if (isCallExpression(node)) {
+    const [specifier] = node.arguments
+    if (specifier === undefined || !isStringLiteral(specifier)) return undefined
+    if (isImportExpression(node.expression)) {
+      return { node, specifier, kind: "dynamic-import", typeOnly: false }
+    }
+    if (isIdentifier(node.expression) && node.expression.text === "require") {
+      return { node, specifier, kind: "require", typeOnly: false }
+    }
+  }
+  return undefined
+}
+
+export const moduleReferences = (scope: Scope): Query<ModuleReference, ProjectSnapshotError> =>
+  filesIn(scope).pipe(
+    Stream.flatMap((file) =>
+      Stream.fromIterable(
+        selectionsIn(file, (node): node is Node => moduleReferenceOf(node) !== undefined),
+      ),
+    ),
+    Stream.map((selection) => ({ ...selection, value: moduleReferenceOf(selection.value)! })),
+  )
 
 export const filter: {
   <A, B extends A>(

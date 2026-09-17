@@ -48,6 +48,53 @@ const oneOperation = (operation: FileOperation): Draft => ({
 export const replace = (project: ProjectSnapshot, node: Node, newText: string): Draft =>
   oneEdit(editBetween(project, node, "node", newText))
 
+export const replaceSelection = <A>(selection: Selection<A>, newText: string): Draft => {
+  const sourceFile =
+    "getSourceFile" in (selection.value as object)
+      ? (selection.value as Node).getSourceFile()
+      : undefined
+  if (sourceFile === undefined) throw new Error("Selection value is not a syntax node")
+  return oneEdit(
+    textEdit({
+      projectId: selection.project.project.id,
+      fileName: selection.fileName,
+      sourceText: sourceFile.text,
+      start: selection.start,
+      end: selection.end,
+      newText,
+    }),
+  )
+}
+
+export const replaceRange = <A>(
+  selection: Selection<A>,
+  range: { readonly start: number; readonly end: number },
+  newText: string,
+): Draft => {
+  const sourceFile =
+    "getSourceFile" in (selection.value as object)
+      ? (selection.value as Node).getSourceFile()
+      : undefined
+  if (
+    sourceFile === undefined ||
+    range.start < 0 ||
+    range.end < range.start ||
+    selection.start + range.end > selection.end
+  ) {
+    throw new Error("Range is outside selection")
+  }
+  return oneEdit(
+    textEdit({
+      projectId: selection.project.project.id,
+      fileName: selection.fileName,
+      sourceText: sourceFile.text,
+      start: selection.start + range.start,
+      end: selection.start + range.end,
+      newText,
+    }),
+  )
+}
+
 export const remove = (project: ProjectSnapshot, node: Node): Draft => replace(project, node, "")
 
 export const insertBefore = (project: ProjectSnapshot, node: Node, text: string): Draft =>
@@ -87,8 +134,4 @@ export const replaceEach = <A extends Node>(
   selections: ReadonlyArray<Selection<A>>,
   replacement: (selection: Selection<A>) => string,
 ): Draft =>
-  concat(
-    ...selections.map((selection) =>
-      replace(selection.project, selection.value, replacement(selection)),
-    ),
-  )
+  concat(...selections.map((selection) => replaceSelection(selection, replacement(selection))))

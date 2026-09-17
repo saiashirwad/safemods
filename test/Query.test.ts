@@ -236,6 +236,78 @@ describe("queries", () => {
     ),
   )
 
+  effect("finds every supported module reference form", () =>
+    withProject(
+      {
+        "src/modules.ts": [
+          'import type { Thing } from "./thing.js"',
+          'export * from "./barrel.js"',
+          'import legacy = require("./legacy.cjs")',
+          'type Lazy = typeof import("./lazy.js")',
+          'const dynamic = import("./dynamic.js")',
+          'const common = require("./common.cjs")',
+          "void [legacy, dynamic, common]",
+          "export type { Thing, Lazy }",
+          "",
+        ].join("\n"),
+        "src/thing.ts": "export interface Thing {}\n",
+        "src/barrel.ts": "export {}\n",
+        "src/legacy.cts": "export = {}\n",
+        "src/lazy.ts": "export {}\n",
+        "src/dynamic.ts": "export {}\n",
+        "src/common.cts": "export = {}\n",
+      },
+      (project) =>
+        Effect.gen(function* () {
+          const references = yield* Query.moduleReferences(project).pipe(
+            Query.within("src/modules.ts"),
+            Query.collect,
+          )
+          expect(references.map(({ value }) => [value.kind, value.specifier.text])).toEqual([
+            ["import", "./thing.js"],
+            ["export", "./barrel.js"],
+            ["import-equals", "./legacy.cjs"],
+            ["import-type", "./lazy.js"],
+            ["dynamic-import", "./dynamic.js"],
+            ["require", "./common.cjs"],
+          ])
+        }),
+    ),
+  )
+
+  effect("summarizes the overload selected for a call", () =>
+    withProject(
+      {
+        "src/overload.ts": [
+          "function parse(value: string): string",
+          "function parse(value: number, radix: number): number",
+          "function parse(value: string | number, radix?: number): string | number {",
+          '  return typeof value === "string" ? value : Number(value.toString(radix))',
+          "}",
+          "export const result = parse(10, 16)",
+          "",
+        ].join("\n"),
+      },
+      (project) =>
+        Effect.gen(function* () {
+          const calls = yield* Query.calls(project).pipe(
+            Query.within("src/overload.ts"),
+            Query.filter(({ value }) => value.expression.getText() === "parse"),
+            Query.collect,
+          )
+          const summary = yield* project.resolvedCallSignature(calls[0]!.value)
+          expect(summary).toMatchObject({
+            parameters: [
+              { name: "value", type: "number" },
+              { name: "radix", type: "number" },
+            ],
+            returnType: "number",
+            hasRestParameter: false,
+          })
+        }),
+    ),
+  )
+
   effect("typeAssignableTo admits nodes by their checked type", () =>
     withProject({ "src/sem.ts": SEM_SOURCE }, (project) =>
       Effect.gen(function* () {

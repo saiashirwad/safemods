@@ -34,6 +34,24 @@ describe("drafts", () => {
     ),
   )
 
+  effect("replaces a selection-relative range", () =>
+    withProject({ "src/arguments.ts": ARGUMENTS_SOURCE }, (project) =>
+      Effect.gen(function* () {
+        const [call] = yield* Query.calls(project).pipe(
+          Query.within("src/arguments.ts"),
+          Query.collect,
+        )
+        const text = call!.value.getText()
+        const draft = Draft.replaceRange(
+          call!,
+          { start: text.indexOf("1, 2, 3"), end: text.indexOf("1, 2, 3") + 7 },
+          "options",
+        )
+        expect(yield* applyFileEdits(ARGUMENTS_SOURCE, draft.edits)).toContain("run(options)")
+      }),
+    ),
+  )
+
   effect("replaceEach replaces every selected node", () =>
     withProject({ "src/arguments.ts": ARGUMENTS_SOURCE }, (project) =>
       Effect.gen(function* () {

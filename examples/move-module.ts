@@ -4,17 +4,6 @@
  */
 import { dirname, normalize, relative } from "node:path/posix"
 import { Effect } from "effect"
-import { and, or, refineDefinedKey } from "is-kit"
-import type { Node, StringLiteral } from "typescript/unstable/ast"
-import {
-  isCallExpression,
-  isExportDeclaration,
-  isImportDeclaration,
-  isImportExpression,
-  isImportTypeNode,
-  isLiteralTypeNode,
-  isStringLiteral,
-} from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
 import type * as ProjectRelativePath from "safemods/ProjectRelativePath"
 import * as Query from "safemods/Query"
@@ -33,34 +22,6 @@ const resolve = (fromFile: string, specifier: string): string =>
 const specifierTo = (fromFile: string, target: string): string => {
   const rel = relative(dirname(fromFile), target)
   return rel.startsWith(".") ? rel : `./${rel}`
-}
-
-const isStaticModuleReference = and(
-  or(isImportDeclaration, isExportDeclaration),
-  refineDefinedKey("moduleSpecifier", isStringLiteral),
-)
-
-interface ModuleReference {
-  readonly specifier: StringLiteral
-}
-
-const moduleReference = (node: Node): ModuleReference | undefined => {
-  if (isStaticModuleReference(node)) return { specifier: node.moduleSpecifier }
-  if (isCallExpression(node)) {
-    const [specifier] = node.arguments
-    if (
-      isImportExpression(node.expression) &&
-      specifier !== undefined &&
-      isStringLiteral(specifier)
-    ) {
-      return { specifier }
-    }
-  }
-  if (isImportTypeNode(node) && isLiteralTypeNode(node.argument)) {
-    const specifier = node.argument.literal
-    if (isStringLiteral(specifier)) return { specifier }
-  }
-  return undefined
 }
 
 export const moveModule = Recipe.define("move-module", {
@@ -84,12 +45,9 @@ export const moveModule = Recipe.define("move-module", {
             : resolve(fileName, specifier),
         )
 
-      const references = yield* Query.nodes(
-        project,
-        (node): node is Node => moduleReference(node) !== undefined,
-      ).pipe(
+      const references = yield* Query.moduleReferences(project).pipe(
         Query.filter(({ value, fileName }) => {
-          const specifier = moduleReference(value)!.specifier.text
+          const specifier = value.specifier.text
           return (
             specifier.startsWith(".") &&
             (fileName === input.from || pointsAtMoved(fileName, specifier)) &&
@@ -103,7 +61,7 @@ export const moveModule = Recipe.define("move-module", {
         Draft.moveFile(moved, input.to),
         Draft.concat(
           ...references.map(({ project, value, fileName }) => {
-            const specifier = moduleReference(value)!.specifier
+            const specifier = value.specifier
             const quote = specifier.getText().startsWith("'") ? "'" : '"'
             const next = specifierAfterMove(fileName, specifier.text)
             return Draft.replace(project, specifier, `${quote}${next}${quote}`)
