@@ -18,6 +18,7 @@ import { run, type Recipe } from "../src/Recipe.ts"
 import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
 import { type PublicFilePreview, verify } from "../src/Verification/index.ts"
 import * as Workspace from "../src/Workspace/index.ts"
+import { asAssertionToSatisfies } from "./as-assertion-to-satisfies.ts"
 import { commonJsToEsm } from "./commonjs-to-esm.ts"
 import { defaultToNamed } from "./default-to-named.ts"
 import { enumToConstObject } from "./enum-to-const-object.ts"
@@ -75,6 +76,12 @@ const defineExample = <Input, E, R>(example: {
 })
 
 const examples = [
+  defineExample({
+    id: "as-assertion-to-satisfies",
+    fixture: "fixtures/migrations/as-assertion-to-satisfies",
+    recipe: asAssertionToSatisfies,
+    input: () => undefined,
+  }),
   defineExample({
     id: "rename-package-import",
     fixture: "fixtures/migrations/rename-package-import",
