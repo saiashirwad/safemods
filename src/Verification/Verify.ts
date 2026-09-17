@@ -1,4 +1,4 @@
-import { Effect, type FileSystem, Schema } from "effect"
+import { Effect, type FileSystem, type PlatformError, Schema } from "effect"
 import * as FileRef from "../FileRef.ts"
 import {
   finalizePlan,
@@ -106,6 +106,7 @@ export const verify = <Input, E, R>(
   | PlanContextMismatch
   | RecipeInputError
   | StalePlanError
+  | PlatformError.PlatformError
   | VerificationFailure
   | ProjectSnapshotError
   | ProjectNotInSnapshot

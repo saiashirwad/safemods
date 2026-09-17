@@ -1,4 +1,4 @@
-import { Effect, FileSystem, Order, Schema } from "effect"
+import { Effect, FileSystem, Order, type PlatformError, Schema } from "effect"
 import { applyFileEdits } from "../Edit.ts"
 import * as FileRef from "../FileRef.ts"
 import {
@@ -73,10 +73,16 @@ const readSource = (plan: ValidatedPlan, source: SourceFingerprint) =>
     const { projectId, fileName } = source
     const stale = new StalePlanError({ planId: plan.planId, projectId, fileName })
     if (source.kind === "missing") {
-      const exists = yield* fs.exists(absolute).pipe(Effect.mapError(() => stale))
+      const exists = yield* fs.exists(absolute)
       return exists ? yield* stale : undefined
     }
-    const bytes = yield* fs.readFile(absolute).pipe(Effect.mapError(() => stale))
+    const bytes = yield* fs
+      .readFile(absolute)
+      .pipe(
+        Effect.mapError((cause): PlatformError.PlatformError | StalePlanError =>
+          cause.reason._tag === "NotFound" ? stale : cause,
+        ),
+      )
     return Sha256.digest(bytes) === source.hash ? bytes : yield* stale
   })
 
@@ -147,7 +153,11 @@ export const previewCaptured = (
 
 export const previewValidated = (
   plan: ValidatedPlan,
-): Effect.Effect<PlanPreview, InvalidPlan | StalePlanError, Workspace | FileSystem.FileSystem> =>
+): Effect.Effect<
+  PlanPreview,
+  InvalidPlan | StalePlanError | PlatformError.PlatformError,
+  Workspace | FileSystem.FileSystem
+> =>
   Effect.gen(function* () {
     const captured: FileRef.Map<Uint8Array | undefined> = new Map()
     for (const source of plan.sources) {
@@ -160,7 +170,7 @@ export const preview = (
   plan: TransformationPlan,
 ): Effect.Effect<
   PlanPreview,
-  InvalidPlan | PlanContextMismatch | StalePlanError,
+  InvalidPlan | PlanContextMismatch | StalePlanError | PlatformError.PlatformError,
   Workspace | FileSystem.FileSystem
 > =>
   Effect.gen(function* () {

@@ -3,7 +3,7 @@ import { Context, Data, Effect, FileSystem, Layer, type PlatformError } from "ef
 import { API } from "typescript/unstable/async"
 import * as FileRef from "../FileRef.ts"
 import type * as ProjectId from "../ProjectId.ts"
-import { nativeRequest, type WorkspaceCompilerError } from "./NativeRequest.ts"
+import { nativeRequest, WorkspaceCompilerError } from "./NativeRequest.ts"
 import * as Overlay from "./Overlay.ts"
 import * as ProjectSnapshot from "./ProjectSnapshot.ts"
 import type * as WorkspaceDefinition from "./WorkspaceDefinition.ts"
@@ -94,21 +94,23 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
     withSnapshot: (program, overlay) =>
       Effect.gen(function* () {
         const api = yield* Effect.acquireRelease(
-          Effect.sync(
-            () =>
+          Effect.try({
+            try: () =>
               new API(
                 overlay === undefined
                   ? { cwd: root }
                   : { cwd: root, fs: Overlay.fileSystem(overlay) },
               ),
-          ),
-          (api) => Effect.promise(() => api.close()),
+            catch: (cause) => new WorkspaceCompilerError({ operation: "createAPI", cause }),
+          }),
+          (api) => nativeRequest("closeAPI", () => api.close()).pipe(Effect.orDie),
         )
         const native = yield* Effect.acquireRelease(
           nativeRequest("updateSnapshot", () =>
             api.updateSnapshot({ openProjects: [...configFiles.values()] }),
           ),
-          (snapshot) => Effect.promise(() => snapshot.dispose()),
+          (snapshot) =>
+            nativeRequest("disposeSnapshot", () => snapshot.dispose()).pipe(Effect.orDie),
         )
 
         let active = true
