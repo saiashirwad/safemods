@@ -139,6 +139,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       if (failure !== undefined) failures.push(failure)
     }
     for (const { target, backup } of backups.toReversed()) {
+      if (written.has(target)) continue
       const failure = yield* attempt("rollback", "restore", target, fs.rename(backup, target))
       if (failure !== undefined) failures.push(failure)
     }
