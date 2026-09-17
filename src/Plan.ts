@@ -61,12 +61,15 @@ const UnsignedPlan = Schema.Struct({
 })
 type UnsignedPlan = typeof UnsignedPlan.Type
 
+type EncodedUnsignedPlan = typeof UnsignedPlan.Encoded
+
 export const TransformationPlan = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   planId: Sha256.schema,
   ...contentFields,
 })
 export type TransformationPlan = typeof TransformationPlan.Type
+export type EncodedTransformationPlan = typeof TransformationPlan.Encoded
 
 declare const ValidatedPlanTypeId: unique symbol
 export type ValidatedPlan = TransformationPlan & { readonly [ValidatedPlanTypeId]: true }
@@ -92,8 +95,8 @@ export const canonicalJson = (value: Schema.Json): string =>
 const strict = { onExcessProperty: "error" } as const
 const PlanJson = Schema.fromJsonString(TransformationPlan, { replacer: canonicalReplacer })
 
-const encodePlan = Schema.encodeSync(PlanJson, strict)
-export const serializePlan = (plan: TransformationPlan): string => encodePlan(plan)
+const encodePlan = Schema.encodeSync(TransformationPlan, strict)
+export const serializePlan = (plan: TransformationPlan): string => canonicalJson(encodePlan(plan))
 
 const encodeUnsignedPlan = Schema.encodeSync(UnsignedPlan, strict)
 
@@ -130,6 +133,11 @@ const canonicalize = (input: PlanContent): PlanContent => ({
   edits: [...input.edits].sort(byEdit),
   fileOperations: [...input.fileOperations].sort(byOperation),
 })
+
+const encodedUnsignedPlan = ({
+  planId: _,
+  ...unsigned
+}: EncodedTransformationPlan): EncodedUnsignedPlan => unsigned
 
 const duplicate = (values: ReadonlyArray<string>): string | undefined => {
   const seen = new Set<string>()
@@ -231,7 +239,12 @@ export const validatePlan = (plan: TransformationPlan): Effect.Effect<ValidatedP
     const rebuilt = yield* finalizePlan(content).pipe(
       Effect.mapError((error) => new InvalidPlan({ phase: "decode", detail: error.detail })),
     )
-    if (serializePlan(rebuilt) !== canonicalJson(plan)) {
+    const encoded = encodePlan(decoded)
+    if (
+      canonicalJson(plan) !== canonicalJson(encoded) ||
+      serializePlan(decoded) !== serializePlan(rebuilt) ||
+      decoded.planId !== Sha256.digest(canonicalJson(encodedUnsignedPlan(encoded)))
+    ) {
       return yield* new InvalidPlan({
         phase: "decode",
         detail: "Plan is not canonical or its hash is wrong",
