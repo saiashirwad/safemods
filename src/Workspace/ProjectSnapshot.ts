@@ -85,19 +85,29 @@ const decodePath = Schema.decodeOption(ProjectRelativePath.schema)
 export const make = (options: {
   readonly configured: ConfiguredProject.Type
   readonly native: NativeProject
+  readonly workspaceRoot: string
   readonly projectRoot: string
   readonly ensureActive: Effect.Effect<void, SnapshotExpired>
 }): ProjectSnapshot => {
-  const { configured, native, projectRoot, ensureActive } = options
+  const { configured, native, workspaceRoot, projectRoot, ensureActive } = options
   const { program, checker } = native
 
   const request = <A>(operation: string, evaluate: () => PromiseLike<A>) =>
     Effect.andThen(ensureActive, nativeRequest(operation, evaluate))
 
-  const absolute = (fileName: ProjectRelativePath.Type): string => Path.join(projectRoot, fileName)
+  const absolute = (fileName: ProjectRelativePath.Type): string =>
+    fileName.startsWith("../")
+      ? Path.join(workspaceRoot, fileName.slice(3))
+      : Path.join(projectRoot, fileName)
 
-  const relative = (absoluteName: string): Option.Option<ProjectRelativePath.Type> =>
-    decodePath(Path.relative(projectRoot, absoluteName))
+  const relative = (absoluteName: string): Option.Option<ProjectRelativePath.Type> => {
+    const projectRelative = Path.relative(projectRoot, absoluteName)
+    if (!projectRelative.startsWith(`..${Path.sep}`)) return decodePath(projectRelative)
+    const workspaceRelative = Path.relative(workspaceRoot, absoluteName)
+    if (workspaceRelative.startsWith(`..${Path.sep}`)) return Option.none()
+    const fileName = ProjectRelativePath.decodeWorkspaceFile(Path.join("..", workspaceRelative))
+    return fileName === undefined ? Option.none() : Option.some(fileName)
+  }
 
   const ownedFile = (absoluteName: string) =>
     request("getSourceFile", async (): Promise<ProjectFile | undefined> => {

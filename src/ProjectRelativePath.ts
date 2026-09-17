@@ -1,12 +1,15 @@
 import { Effect, Schema, SchemaIssue, SchemaTransformation } from "effect"
 
-const normalize = (value: string): string | undefined => {
+const normalize = (value: string, allowParent = false): string | undefined => {
   if (value.includes("\0") || /^([\\/]|[A-Za-z]:[\\/])/.test(value)) return undefined
   const parts: Array<string> = []
   for (const part of value.replaceAll("\\", "/").split("/")) {
     if (part === "" || part === ".") continue
     if (part === "..") {
-      if (parts.pop() === undefined) return undefined
+      if (parts.length === 0 || parts.at(-1) === "..") {
+        if (!allowParent) return undefined
+        parts.push(part)
+      } else parts.pop()
       continue
     }
     if (part.includes(":")) return undefined
@@ -46,3 +49,8 @@ export const schema = Schema.String.pipe(
 )
 
 export type Type = typeof schema.Type
+
+export const decodeWorkspaceFile = (value: string): Type | undefined => {
+  const path = normalize(value, true)
+  return path === undefined ? undefined : (path as Type)
+}

@@ -91,12 +91,49 @@ describe("workspace snapshots", () => {
     ),
   )
 
-  effect("fileNameOf returns None for a source file outside its project", () =>
+  effect("includes source files discovered outside the config directory", () =>
+    withFixture(
+      (_, app) =>
+        Effect.gen(function* () {
+          const workspace = yield* Workspace
+          yield* workspace.withSnapshot(
+            Effect.gen(function* () {
+              const project = yield* fixtureProject(app)
+              const outside = projectPath("shared/outside.ts")
+              const file = yield* project.file(outside)
+              expect(file?.sourceFile.text).toContain("function outside")
+              expect(Option.getOrUndefined(project.fileNameOf(file!.sourceFile))).toBe(outside)
+              expect((yield* project.files).map((source) => source.fileName)).toContain(outside)
+            }),
+          )
+        }),
+      {
+        fixture: "empty",
+        files: {
+          "tsconfig.json": JSON.stringify({
+            compilerOptions: {
+              strict: true,
+              target: "ES2024",
+              module: "NodeNext",
+              moduleResolution: "NodeNext",
+              rootDir: "src",
+              noEmit: true,
+            },
+            include: ["src/**/*.ts"],
+          }),
+          "src/main.ts": 'import { outside } from "../shared/outside.js"\noutside()\n',
+          "shared/outside.ts": "export function outside(): void {}\n",
+        },
+      },
+    ),
+  )
+
+  effect("fileNameOf returns None for an unrelated source file", () =>
     withProject({}, (project) =>
       Effect.gen(function* () {
         const library = yield* project.file(libraryPath)
-        const external = { ...library!.sourceFile, fileName: "/outside/project.ts" }
-        expect(Option.isNone(project.fileNameOf(external))).toBe(true)
+        const unrelated = { ...library!.sourceFile, fileName: "/outside/project.ts" }
+        expect(Option.isNone(project.fileNameOf(unrelated))).toBe(true)
       }),
     ),
   )

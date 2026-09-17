@@ -77,7 +77,11 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
     root,
     projectRoot,
     absolutePath: (file) =>
-      Effect.map(projectRoot(file.projectId), (root) => Path.join(root, file.fileName)),
+      Effect.map(projectRoot(file.projectId), (projectRoot) =>
+        file.fileName.startsWith("../")
+          ? Path.join(root, file.fileName.slice(3))
+          : Path.join(projectRoot, file.fileName),
+      ),
     withSnapshot: (program, overlay) =>
       Effect.gen(function* () {
         const api = yield* Effect.acquireRelease(
@@ -118,6 +122,7 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
                     ProjectSnapshot.make({
                       configured,
                       native: nativeProject,
+                      workspaceRoot: root,
                       projectRoot: Path.dirname(configFile),
                       ensureActive,
                     }),
@@ -129,7 +134,10 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
         for (const project of projects.values()) {
           const configFile = configFiles.get(project.project.id)!
           for (const file of yield* project.files) {
-            const absolute = Path.resolve(Path.dirname(configFile), file.fileName)
+            const absolute = Path.resolve(
+              file.fileName.startsWith("../") ? root : Path.dirname(configFile),
+              file.fileName.startsWith("../") ? file.fileName.slice(3) : file.fileName,
+            )
             const owners = ownership.get(absolute) ?? []
             owners.push(project.project.id)
             ownership.set(absolute, owners)
@@ -166,7 +174,11 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
                 FileRef.set(
                   captured,
                   { projectId: configured.id, fileName: file.fileName },
-                  yield* fs.readFile(Path.join(Path.dirname(configFile), file.fileName)),
+                  yield* fs.readFile(
+                    file.fileName.startsWith("../")
+                      ? Path.join(root, file.fileName.slice(3))
+                      : Path.join(Path.dirname(configFile), file.fileName),
+                  ),
                 )
               }
             }
