@@ -3,6 +3,7 @@ import { canonicalJson, type InvalidPlan, type TransformationPlan, validatePlan 
 import { encodeInput, type Recipe, type RecipeInputError } from "../Recipe.ts"
 import type { Overlay } from "../Workspace/Overlay.ts"
 import {
+  type OverlappingProjectOwnership,
   type ProjectNotInSnapshot,
   type ProjectSnapshotError,
   Workspace,
@@ -79,7 +80,8 @@ export const verify = <Input, E, R>(
   | StalePlanError
   | VerificationFailure
   | ProjectSnapshotError
-  | ProjectNotInSnapshot,
+  | ProjectNotInSnapshot
+  | OverlappingProjectOwnership,
   Workspace | FileSystem.FileSystem | Exclude<R, WorkspaceSnapshot>
 > =>
   Effect.gen(function* () {
@@ -104,7 +106,22 @@ export const verify = <Input, E, R>(
       { concurrency: 2 },
     )
 
-    const diff = diffDiagnostics(baseline, proposed)
+    const moves = new Map(
+      validated.fileOperations.flatMap((operation) =>
+        operation.kind === "move"
+          ? [
+              [
+                workspace.absolutePath(operation),
+                workspace.absolutePath({
+                  projectId: operation.projectId,
+                  fileName: operation.toFileName,
+                }),
+              ] as const,
+            ]
+          : [],
+      ),
+    )
+    const diff = diffDiagnostics(baseline, proposed, moves)
     const failure = policyFailure(validated, preview, diff, replayedChanges)
     if (failure !== undefined) {
       return yield* new VerificationFailure({ planId: validated.planId, ...failure })

@@ -8,4 +8,10 @@ export type {
   ProjectSnapshot,
   ProjectSnapshotError,
 } from "./ProjectSnapshot.ts"
-export { layer, ProjectNotInSnapshot, Workspace, WorkspaceSnapshot } from "./Workspace.ts"
+export {
+  layer,
+  OverlappingProjectOwnership,
+  ProjectNotInSnapshot,
+  Workspace,
+  WorkspaceSnapshot,
+} from "./Workspace.ts"

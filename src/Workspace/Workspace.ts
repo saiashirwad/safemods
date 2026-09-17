@@ -12,6 +12,11 @@ export class ProjectNotInSnapshot extends Data.TaggedError("ProjectNotInSnapshot
   readonly projectId: ProjectId.Type
 }> {}
 
+export class OverlappingProjectOwnership extends Data.TaggedError("OverlappingProjectOwnership")<{
+  readonly fileName: string
+  readonly projectIds: ReadonlyArray<ProjectId.Type>
+}> {}
+
 export class WorkspaceSnapshot extends Context.Service<
   WorkspaceSnapshot,
   {
@@ -32,7 +37,14 @@ export class Workspace extends Context.Service<
     readonly withSnapshot: <A, E, R>(
       program: Effect.Effect<A, E, R | WorkspaceSnapshot>,
       overlay?: Overlay.Overlay,
-    ) => Effect.Effect<A, E | WorkspaceCompilerError, Exclude<R, WorkspaceSnapshot>>
+    ) => Effect.Effect<
+      A,
+      | E
+      | WorkspaceCompilerError
+      | ProjectSnapshot.ProjectSnapshotError
+      | OverlappingProjectOwnership,
+      Exclude<R, WorkspaceSnapshot>
+    >
   }
 >()("safemods/Workspace/Workspace") {}
 
@@ -77,25 +89,46 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
           active ? Effect.void : Effect.fail(new ProjectSnapshot.SnapshotExpired()),
         )
 
-        const projects = definition.projects.flatMap((configured) => {
-          const configFile = configFiles.get(configured.id)
-          const nativeProject = configFile === undefined ? undefined : native.getProject(configFile)
-          return configFile === undefined || nativeProject === undefined
-            ? []
-            : [
-                ProjectSnapshot.make({
-                  configured,
-                  native: nativeProject,
-                  projectRoot: Path.dirname(configFile),
-                  ensureActive,
-                }),
-              ]
-        })
-        const byId = new Map(projects.map((project) => [project.project.id, project]))
+        const projects = new Map(
+          definition.projects.flatMap((configured) => {
+            const configFile = configFiles.get(configured.id)
+            const nativeProject = configFile === undefined ? undefined : native.getProject(configFile)
+            return configFile === undefined || nativeProject === undefined
+              ? []
+              : [
+                  [
+                    configured.id,
+                    ProjectSnapshot.make({
+                      configured,
+                      native: nativeProject,
+                      projectRoot: Path.dirname(configFile),
+                      ensureActive,
+                    }),
+                  ] as const,
+                ]
+          }),
+        )
+        const ownership = new Map<string, Array<ProjectId.Type>>()
+        for (const project of projects.values()) {
+          for (const file of yield* project.files) {
+            const absolute = Path.resolve(projectRoot(project.project.id), file.fileName)
+            const owners = ownership.get(absolute) ?? []
+            owners.push(project.project.id)
+            ownership.set(absolute, owners)
+          }
+        }
+        const overlap = [...ownership].find(([, owners]) => owners.length > 1)
+        if (overlap !== undefined) {
+          return yield* new OverlappingProjectOwnership({
+            fileName: overlap[0],
+            projectIds: overlap[1],
+          })
+        }
+
         const snapshot = WorkspaceSnapshot.of({
-          projects,
+          projects: [...projects.values()],
           project: (projectId) => {
-            const project = byId.get(projectId)
+            const project = projects.get(projectId)
             return project === undefined
               ? Effect.fail(new ProjectNotInSnapshot({ projectId }))
               : Effect.succeed(project)

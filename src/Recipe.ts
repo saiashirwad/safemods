@@ -12,6 +12,7 @@ import {
 import * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import * as Sha256 from "./Sha256.ts"
 import {
+  type OverlappingProjectOwnership,
   type ProjectNotInSnapshot,
   type ProjectSnapshotError,
   Workspace,
@@ -109,7 +110,7 @@ export const run = <Input, E, R>(
   input: Input,
 ): Effect.Effect<
   TransformationPlan,
-  E | RecipeInputError | InvalidPlan | ProjectSnapshotError | ProjectNotInSnapshot,
+  E | RecipeInputError | InvalidPlan | ProjectSnapshotError | ProjectNotInSnapshot | OverlappingProjectOwnership,
   Workspace | FileSystem.FileSystem | Exclude<R, WorkspaceSnapshot>
 > =>
   Effect.gen(function* () {

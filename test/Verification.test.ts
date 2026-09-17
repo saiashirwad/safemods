@@ -48,6 +48,18 @@ describe("diagnostic diffs", () => {
     })
   })
 
+  it("treats diagnostics in moved files as unchanged", () => {
+    const before = diagnostic({ fileName: "/workspace/src/a.ts" })
+    const after = diagnostic({ fileName: "/workspace/src/moved.ts" })
+    expect(
+      diffDiagnostics(
+        [before],
+        [after],
+        new Map([["/workspace/src/a.ts", "/workspace/src/moved.ts"]]),
+      ),
+    ).toEqual({ introduced: [], resolved: [], unchanged: [after] })
+  })
+
   it("ignores position, but counts repeats and category changes", () => {
     const warning = diagnostic({ category: "warning" })
     const moved = { ...warning, start: 40 }

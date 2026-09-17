@@ -1,10 +1,17 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Schema } from "effect"
-import { SnapshotExpired, Workspace, WorkspaceDefinition } from "../src/Workspace/index.ts"
+import { Effect, Layer, Schema } from "effect"
+import {
+  SnapshotExpired,
+  Workspace,
+  WorkspaceDefinition,
+  WorkspaceSnapshot,
+  layer as workspaceLayer,
+} from "../src/Workspace/index.ts"
+import { NodeServices } from "@effect/platform-node"
 import { projectPath } from "./utils/domain.ts"
-import { fixtureProject, withFixture, withProject, write } from "./utils/fixture.ts"
+import { fixturePath, fixtureProject, withFixture, withProject, write } from "./utils/fixture.ts"
 
 const libraryPath = projectPath("src/library.ts")
 
@@ -29,6 +36,34 @@ describe("workspace snapshots", () => {
       const valid = yield* WorkspaceDefinition.make({ projects: [app] })
       expect(valid.projects).toEqual([app])
     }),
+  )
+
+  effect(
+    "rejects overlapping physical source ownership",
+    () =>
+      Effect.gen(function* () {
+        const definition = yield* WorkspaceDefinition.make({
+          projects: [
+            { id: "root", config: "tsconfig.json" },
+            { id: "nested", config: "nested/tsconfig.json" },
+          ],
+        })
+        const result = yield* Workspace.use((workspace) =>
+          workspace.withSnapshot(WorkspaceSnapshot).pipe(Effect.result),
+        ).pipe(
+          Effect.provide(
+            Layer.merge(
+              workspaceLayer(definition, fixturePath("multi-overlap")),
+              NodeServices.layer,
+            ),
+          ),
+        )
+        expect(result).toMatchObject({
+          _tag: "Failure",
+          failure: { _tag: "OverlappingProjectOwnership", projectIds: ["root", "nested"] },
+        })
+      }),
+    60_000,
   )
 
   effect("exposes owned files by portable path", () =>

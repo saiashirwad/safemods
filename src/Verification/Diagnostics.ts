@@ -63,8 +63,18 @@ const identity = ({ category, code, fileName, message }: DiagnosticRecord): stri
 export const diffDiagnostics = (
   baseline: ReadonlyArray<DiagnosticRecord>,
   proposed: ReadonlyArray<DiagnosticRecord>,
+  moves: ReadonlyMap<string, string> = new Map(),
 ): DiagnosticDiff => {
-  const remaining = Map.groupBy(baseline, identity)
+  const remaining = Map.groupBy(
+    baseline.map((diagnostic) => ({
+      ...diagnostic,
+      fileName:
+        diagnostic.fileName === undefined
+          ? undefined
+          : (moves.get(diagnostic.fileName) ?? diagnostic.fileName),
+    })),
+    identity,
+  )
   const introduced: Array<DiagnosticRecord> = []
   const unchanged: Array<DiagnosticRecord> = []
   for (const diagnostic of proposed) {
