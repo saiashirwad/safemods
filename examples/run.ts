@@ -19,11 +19,13 @@ import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
 import { type PublicFilePreview, verify } from "../src/Verification/index.ts"
 import * as Workspace from "../src/Workspace/index.ts"
 import { defaultToNamed } from "./default-to-named.ts"
+import { enumToConstObject } from "./enum-to-const-object.ts"
 import { moveModule } from "./move-module.ts"
 import { positionalToOptions } from "./positional-to-options.ts"
 import { relativeJsExtensions } from "./relative-js-extensions.ts"
 import { renamePackageImport } from "./rename-package-import.ts"
 import { renameThroughBarrel } from "./rename-through-barrel.ts"
+import { splitModule } from "./split-module.ts"
 
 const repoRoot = NodePath.join(import.meta.dirname, "..")
 const fixturesRoot = NodePath.join(repoRoot, "fixtures")
@@ -99,6 +101,12 @@ const examples = [
     }),
   }),
   defineExample({
+    id: "split-module",
+    fixture: "fixtures/migrations/split-module",
+    recipe: splitModule,
+    input: (project) => ({ project }),
+  }),
+  defineExample({
     id: "default-to-named",
     fixture: "fixtures/migrations/default-to-named",
     recipe: defaultToNamed,
@@ -106,6 +114,16 @@ const examples = [
       project,
       declarationFile: ProjectRelativePath.schema.make("src/auth/authenticate.ts"),
       exportName: "authenticate",
+    }),
+  }),
+  defineExample({
+    id: "enum-to-const-object",
+    fixture: "fixtures/migrations/enum-to-const-object",
+    recipe: enumToConstObject,
+    input: (project) => ({
+      project,
+      declarationFile: ProjectRelativePath.schema.make("src/status.ts"),
+      enumName: "Status",
     }),
   }),
   defineExample({

@@ -90,7 +90,9 @@ pnpm example --help
 | `positional-to-options`  | `createSession(userId, ttl)` → options object             |
 | `rename-through-barrel`  | `loadAccount` → `findAccount` through barrels and aliases |
 | `move-module`            | move a module and rewrite relative importers              |
+| `split-module`           | split model/service/index and coordinate consumers        |
 | `default-to-named`       | default export → named export                             |
+| `enum-to-const-object`    | string enum → const object and value union                |
 | `relative-js-extensions` | add `.js` to relative specifiers                          |
 
 Requires Node 24+.
