@@ -53,13 +53,13 @@ export const requireWorkspaceProjects = (
 ): Effect.Effect<void, PlanContextMismatch, Workspace> =>
   Effect.gen(function* () {
     const workspace = yield* Workspace
+    const byProject = Order.Struct({ projectId: Order.String, configFileName: Order.String })
     const live = workspace.definition.projects
       .map(({ id, config }) => ({ projectId: id, configFileName: config }))
-      .sort(Order.Struct({ projectId: Order.String }))
-    const planned = plan.projects.map(({ id, configFileName }) => ({
-      projectId: id,
-      configFileName,
-    }))
+      .sort(byProject)
+    const planned = plan.projects
+      .map(({ id, configFileName }) => ({ projectId: id, configFileName }))
+      .sort(byProject)
     if (!workspaceProjectsEquivalent(live, planned)) {
       return yield* new PlanContextMismatch({ planId: plan.planId, field: "workspace" })
     }

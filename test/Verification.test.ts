@@ -1,5 +1,5 @@
 import { describe, effect, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import * as Draft from "../src/Draft.ts"
 import { finalizePlan, type TransformationPlan } from "../src/Plan.ts"
 import type * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
@@ -191,6 +191,20 @@ describe("Verification.verify", () => {
         expect(yield* mismatch(define("other", "1.0.0"), 1)).toMatchObject({ field: "name" })
         expect(yield* mismatch(define("author", "2.0.0"), 1)).toMatchObject({ field: "version" })
         expect(yield* mismatch(author, 2)).toMatchObject({ field: "input" })
+
+        const reorderedInput = Recipe.define("author", {
+          version: "1.0.0",
+          schema: Schema.Struct({ a: Schema.Number, b: Schema.Number }),
+          run: () => Effect.succeed(Draft.empty),
+        })
+        const reorderedPlan = yield* Recipe.run(reorderedInput, { a: 1, b: 2 })
+        const { schemaVersion: ___, planId: ____, ...reorderedContent } = reorderedPlan
+        const reorderedOptions = yield* finalizePlan({
+          ...reorderedContent,
+          recipe: { ...reorderedPlan.recipe, options: { b: 2, a: 1 } },
+        })
+        yield* Verification.verify(reorderedOptions, reorderedInput, { a: 1, b: 2 })
+
         expect(
           yield* mismatch(define("author", "1.0.0", { idempotence: "required" }), 1),
         ).toMatchObject({ _tag: "PlanContextMismatch", field: "policies" })

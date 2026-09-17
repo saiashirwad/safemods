@@ -27,6 +27,7 @@ import {
 } from "./Preview.ts"
 import { issue, type VerifiedPlan } from "./VerifiedPlan.ts"
 
+const jsonEquivalent = Schema.toEquivalence(Schema.Json)
 const policiesEquivalent = Schema.toEquivalence(PlanPolicies)
 
 const requireAuthoringRecipe = <Input, E, R>(
@@ -36,17 +37,7 @@ const requireAuthoringRecipe = <Input, E, R>(
 ): Effect.Effect<void, PlanContextMismatch | RecipeInputError> =>
   Effect.gen(function* () {
     const options = yield* encodeInput(recipe, input)
-    const inputMatches =
-      recipe.schema === undefined
-        ? Schema.toEquivalence(Schema.Json)(options, plan.recipe.options)
-        : Schema.toEquivalence(recipe.schema)(
-            input,
-            yield* Schema.decodeUnknownEffect(recipe.schema)(plan.recipe.options).pipe(
-              Effect.mapError(
-                () => new PlanContextMismatch({ planId: plan.planId, field: "input" }),
-              ),
-            ),
-          )
+    const inputMatches = jsonEquivalent(options, plan.recipe.options)
     const mismatches = {
       name: recipe.name !== plan.recipe.name,
       version: recipe.version !== plan.recipe.version,
