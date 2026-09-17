@@ -2,13 +2,27 @@ import { Predicate } from "effect"
 import type { ValidatedPlan } from "../Plan.ts"
 import type { Workspace } from "../Workspace/index.ts"
 import type { DiagnosticDiff } from "./Diagnostics.ts"
-import type { PlanPreview } from "./Preview.ts"
+import type { FilePreview, FileState, PlanPreview } from "./Preview.ts"
 
 declare const VerifiedPlanTypeId: unique symbol
 
+export type PublicFileState =
+  | { readonly exists: false }
+  | { readonly exists: true; readonly text: string }
+
+export interface PublicFilePreview extends Omit<FilePreview, "before" | "after"> {
+  readonly before: PublicFileState
+  readonly after: PublicFileState
+}
+
+export interface PublicPlanPreview extends Omit<PlanPreview, "sources" | "files"> {
+  readonly sources: ReadonlyArray<PublicFilePreview>
+  readonly files: ReadonlyArray<PublicFilePreview>
+}
+
 export interface VerifiedPlan {
   readonly [VerifiedPlanTypeId]: true
-  readonly preview: PlanPreview
+  readonly preview: PublicPlanPreview
   readonly diagnosticDiff: DiagnosticDiff
 }
 
@@ -29,10 +43,10 @@ const deepFreeze = <A>(value: A): A => {
   return value
 }
 
-const cloneFileState = (state: PlanPreview["files"][number]["before"]) =>
-  state.exists ? { exists: true as const, text: state.text, bytes: state.bytes } : state
+const cloneFileState = (state: FileState): FileState =>
+  state.exists ? { exists: true, text: state.text, bytes: state.bytes } : state
 
-const cloneFilePreview = ({ before, after, ...file }: PlanPreview["files"][number]) => ({
+const cloneFilePreview = ({ before, after, ...file }: FilePreview): FilePreview => ({
   ...file,
   before: cloneFileState(before),
   after: cloneFileState(after),
@@ -44,6 +58,21 @@ const clonePreview = (preview: PlanPreview): PlanPreview => ({
   files: preview.files.map(cloneFilePreview),
 })
 
+const publicFileState = (state: FileState): PublicFileState =>
+  state.exists ? { exists: true, text: state.text } : state
+
+const publicFilePreview = ({ before, after, ...file }: FilePreview): PublicFilePreview => ({
+  ...file,
+  before: publicFileState(before),
+  after: publicFileState(after),
+})
+
+const publicPreview = (preview: PlanPreview): PublicPlanPreview => ({
+  planId: preview.planId,
+  sources: preview.sources.map(publicFilePreview),
+  files: preview.files.map(publicFilePreview),
+})
+
 export const issue = (
   workspace: Workspace["Service"],
   plan: ValidatedPlan,
@@ -51,7 +80,7 @@ export const issue = (
   diagnosticDiff: DiagnosticDiff,
 ): VerifiedPlan => {
   const verified = Object.freeze({
-    preview: deepFreeze(clonePreview(preview)),
+    preview: deepFreeze(publicPreview(preview)),
     diagnosticDiff: deepFreeze(diagnosticDiff),
   }) as VerifiedPlan
   issued.set(verified, { workspace, plan, preview: clonePreview(preview) })

@@ -16,7 +16,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli"
 import { applyVerifiedPlan } from "../src/Application.ts"
 import { run, type Recipe } from "../src/Recipe.ts"
 import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
-import { type FilePreview, verify } from "../src/Verification/index.ts"
+import { type PublicFilePreview, verify } from "../src/Verification/index.ts"
 import * as Workspace from "../src/Workspace/index.ts"
 import { defaultToNamed } from "./default-to-named.ts"
 import { moveModule } from "./move-module.ts"
@@ -174,7 +174,7 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
     catch: (cause) => new GitFailure({ cwd, args, cause }),
   })
 
-const actionOf = ({ before, after }: FilePreview): string =>
+const actionOf = ({ before, after }: PublicFilePreview): string =>
   before.exists ? (after.exists ? "modify" : "delete") : "create"
 
 export const runExample = Effect.fn("runExample")(function* (
