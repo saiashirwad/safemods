@@ -8,4 +8,5 @@ export const schema = Schema.String.pipe(
 
 export type Type = typeof schema.Type
 
-export const digest = (content: string): Type => schema.make(hash("sha256", content, "hex"))
+export const digest = (content: string | Uint8Array): Type =>
+  schema.make(hash("sha256", content, "hex"))

@@ -1,6 +1,14 @@
 import { Effect, type FileSystem } from "effect"
-import { canonicalJson, type InvalidPlan, type TransformationPlan, validatePlan } from "../Plan.ts"
+import * as FileRef from "../FileRef.ts"
+import {
+  canonicalJson,
+  finalizePlan,
+  type InvalidPlan,
+  type TransformationPlan,
+  validatePlan,
+} from "../Plan.ts"
 import { encodeInput, type Recipe, type RecipeInputError } from "../Recipe.ts"
+import * as Sha256 from "../Sha256.ts"
 import type { Overlay } from "../Workspace/Overlay.ts"
 import {
   type OverlappingProjectOwnership,
@@ -11,7 +19,12 @@ import {
 } from "../Workspace/index.ts"
 import { collectDiagnostics, type DiagnosticDiff, diffDiagnostics } from "./Diagnostics.ts"
 import { PlanContextMismatch, type StalePlanError, VerificationFailure } from "./Errors.ts"
-import { type PlanPreview, previewValidated, requireWorkspaceProjects } from "./Preview.ts"
+import {
+  type PlanPreview,
+  previewCaptured,
+  previewValidated,
+  requireWorkspaceProjects,
+} from "./Preview.ts"
 import { issue, type VerifiedPlan } from "./VerifiedPlan.ts"
 
 const requireAuthoringRecipe = <Input, E, R>(
@@ -32,12 +45,23 @@ const requireAuthoringRecipe = <Input, E, R>(
     }
   })
 
-const overlayOf = (workspace: Workspace["Service"], preview: PlanPreview): Overlay => {
+const overlayOf = (
+  workspace: Workspace["Service"],
+  preview: PlanPreview,
+  after: boolean,
+): Overlay => {
   const files = new Map<string, string>()
   const deleted = new Set<string>()
-  for (const file of preview.files) {
-    if (file.after.exists) files.set(workspace.absolutePath(file), file.after.text)
+  for (const file of preview.sources) {
+    const state = after ? file.after : file.before
+    if (state.exists) files.set(workspace.absolutePath(file), state.text)
     else deleted.add(workspace.absolutePath(file))
+  }
+  if (after) {
+    for (const file of preview.files) {
+      if (file.after.exists) files.set(workspace.absolutePath(file), file.after.text)
+      else deleted.add(workspace.absolutePath(file))
+    }
   }
   return { files, deleted }
 }
@@ -90,20 +114,52 @@ export const verify = <Input, E, R>(
     yield* requireWorkspaceProjects(validated)
     yield* requireAuthoringRecipe(validated, recipe, input)
     const preview = yield* previewValidated(validated)
+    const baselineOverlay = overlayOf(workspace, preview, false)
+    const proposedOverlay = overlayOf(workspace, preview, true)
 
-    const replay =
-      validated.policies.idempotence === "required"
-        ? Effect.map(recipe.run(input), (draft) => draft.edits.length + draft.fileOperations.length)
-        : Effect.succeed(0)
-    const [baseline, [proposed, replayedChanges]] = yield* Effect.all(
-      [
-        workspace.withSnapshot(collectDiagnostics),
-        workspace.withSnapshot(
-          Effect.all([collectDiagnostics, replay]),
-          overlayOf(workspace, preview),
-        ),
-      ],
-      { concurrency: 2 },
+    const baseline = yield* workspace.withSnapshot(collectDiagnostics, baselineOverlay)
+    const [proposed, replayedChanges] = yield* workspace.withSnapshot(
+      Effect.gen(function* () {
+        const diagnostics = yield* collectDiagnostics
+        if (validated.policies.idempotence !== "required") return [diagnostics, 0] as const
+        const draft = yield* recipe.run(input)
+        const replayPlan = yield* finalizePlan({
+          recipe: validated.recipe,
+          projects: validated.projects,
+          sources: preview.sources.map(({ projectId, fileName, after }) =>
+            after.exists
+              ? { projectId, fileName, kind: "file" as const, hash: Sha256.digest(after.bytes) }
+              : { projectId, fileName, kind: "missing" as const },
+          ),
+          edits: draft.edits,
+          fileOperations: draft.fileOperations,
+          policies: validated.policies,
+        }).pipe(
+          Effect.mapError(
+            ({ detail }) =>
+              new VerificationFailure({
+                planId: validated.planId,
+                policy: "idempotence",
+                detail: `Invalid replay plan: ${detail}`,
+              }),
+          ),
+        )
+        const captured = new Map(
+          preview.sources.map((file) => [
+            FileRef.key(file),
+            file.after.exists ? file.after.bytes : undefined,
+          ]),
+        )
+        const replayPreview = yield* previewCaptured(yield* validatePlan(replayPlan), captured)
+        const changed = replayPreview.files.filter((file) => {
+          if (file.before.exists !== file.after.exists) return true
+          return file.before.exists && file.after.exists
+            ? Sha256.digest(file.before.bytes) !== Sha256.digest(file.after.bytes)
+            : false
+        }).length
+        return [diagnostics, changed] as const
+      }),
+      proposedOverlay,
     )
 
     const moves = new Map(

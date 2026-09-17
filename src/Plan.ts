@@ -149,7 +149,6 @@ const semanticError = (plan: PlanContent): string | undefined => {
       if (source?.kind !== "missing") return `Create needs an absent path: ${operation.fileName}`
     } else {
       if (source?.kind !== "file") return `Missing source ${operation.fileName}`
-      if (source.hash !== operation.initialHash) return `Fingerprint mismatch ${operation.fileName}`
     }
     if (operation.kind === "move") {
       const to = FileRef.key({ projectId: operation.projectId, fileName: operation.toFileName })

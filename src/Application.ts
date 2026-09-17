@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { Data, Effect, FileSystem, Path } from "effect"
-import type * as Sha256 from "./Sha256.ts"
+import * as Sha256 from "./Sha256.ts"
 import { type FilePreview, StalePlanError, type VerifiedPlan } from "./Verification/index.ts"
 import { isIssued } from "./Verification/VerifiedPlan.ts"
 
@@ -33,7 +33,6 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     const relative = path.relative(directory, candidate)
     return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
   }
-
   const nearestExisting = (target: string): Effect.Effect<string, ApplicationFailure> =>
     fs.exists(target).pipe(
       Effect.mapError(failed),
@@ -41,7 +40,6 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
         exists ? Effect.succeed(target) : nearestExisting(path.dirname(target)),
       ),
     )
-
   const confinedTarget = Effect.fn(function* (file: FilePreview) {
     const target = workspace.absolutePath(file)
     const realWorkspace = yield* fs.realPath(workspace.root).pipe(Effect.mapError(failed))
@@ -55,47 +53,91 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     }
     return target
   })
-
   const requireUnchanged = Effect.fn(function* (file: FilePreview, target: string) {
-    const { projectId, fileName } = file
-    const stale = new StalePlanError({ planId: plan.planId, projectId, fileName })
+    const stale = new StalePlanError({
+      planId: plan.planId,
+      projectId: file.projectId,
+      fileName: file.fileName,
+    })
     const exists = yield* fs.exists(target).pipe(Effect.mapError(failed))
     if (exists !== file.before.exists) return yield* stale
-    if (!file.before.exists) return { mode: undefined, byteOrderMark: "" }
+    if (!file.before.exists) return
     const bytes = yield* fs.readFile(target).pipe(Effect.mapError(failed))
-    if (new TextDecoder().decode(bytes) !== file.before.text) return yield* stale
-    const { mode } = yield* fs.stat(target).pipe(Effect.mapError(failed))
-    const hasByteOrderMark = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf
-    return { mode, byteOrderMark: hasByteOrderMark ? "\uFEFF" : "" }
+    if (Sha256.digest(bytes) !== Sha256.digest(file.before.bytes)) return yield* stale
   })
-
-  const write = (target: string, text: string, mode: number | undefined) => {
+  const write = (target: string, bytes: Uint8Array, mode: number | undefined) => {
     const temporary = `${target}.safemods-${randomUUID()}.tmp`
     return fs
       .makeDirectory(path.dirname(target), { recursive: true })
       .pipe(
-        Effect.andThen(fs.writeFileString(temporary, text, { flag: "wx", mode })),
+        Effect.andThen(fs.writeFile(temporary, bytes, { flag: "wx", mode })),
         Effect.andThen(fs.rename(temporary, target)),
         Effect.ensuring(Effect.ignore(fs.remove(temporary, { force: true }))),
         Effect.mapError(failed),
       )
   }
 
-  const checked = []
+  const checkedSources = []
+  for (const source of preview.sources) {
+    const target = yield* confinedTarget(source)
+    yield* requireUnchanged(source, target)
+    checkedSources.push({ file: source, target })
+  }
+  const targets: Array<{
+    file: FilePreview
+    target: string
+    mode: number | undefined
+  }> = []
   for (const file of preview.files) {
     const target = yield* confinedTarget(file)
-    checked.push({ file, target, existing: yield* requireUnchanged(file, target) })
-  }
-  for (const { file, target, existing } of checked) {
-    yield* file.after.exists
-      ? write(target, existing.byteOrderMark + file.after.text, existing.mode)
-      : fs.remove(target, { force: true }).pipe(Effect.mapError(failed))
+    const modeSource = file.movedFrom
+      ? checkedSources.find(
+          ({ file: source }) =>
+            source.projectId === file.projectId && source.fileName === file.movedFrom,
+        )?.target
+      : file.before.exists
+        ? target
+        : undefined
+    const mode = modeSource
+      ? (yield* fs.stat(modeSource).pipe(Effect.mapError(failed))).mode
+      : undefined
+    targets.push({ file, target, mode })
   }
 
-  const receipt: ApplicationReceipt = {
+  const backups: Array<{ target: string; backup: string }> = []
+  for (const { file, target } of targets) {
+    yield* requireUnchanged(file, target)
+    if (!file.before.exists) continue
+    const backup = `${target}.safemods-${randomUUID()}.backup`
+    yield* fs.rename(target, backup).pipe(Effect.mapError(failed))
+    backups.push({ target, backup })
+  }
+  const commit = Effect.gen(function* () {
+    for (const { file, target, mode } of targets) {
+      yield* requireUnchanged(
+        { ...file, before: file.before.exists ? { exists: false } : file.before },
+        target,
+      )
+      if (file.after.exists) yield* write(target, file.after.bytes, mode)
+    }
+  })
+  yield* commit.pipe(
+    Effect.catch((cause) =>
+      Effect.gen(function* () {
+        for (const { target } of targets)
+          yield* fs.remove(target, { force: true }).pipe(Effect.ignore)
+        for (const { target, backup } of backups) {
+          yield* fs.rename(backup, target).pipe(Effect.ignore)
+        }
+        return yield* cause
+      }),
+    ),
+  )
+  for (const { backup } of backups) yield* fs.remove(backup, { force: true }).pipe(Effect.ignore)
+
+  return {
     planId: plan.planId,
     written: preview.files.filter((file) => file.after.exists),
     removed: preview.files.filter((file) => !file.after.exists),
-  }
-  return receipt
+  } satisfies ApplicationReceipt
 })

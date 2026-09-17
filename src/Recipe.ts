@@ -1,4 +1,4 @@
-import { Data, Effect, FileSystem, Schema } from "effect"
+import { Data, Effect, FileSystem, type PlatformError, Schema } from "effect"
 import type { Draft } from "./Draft.ts"
 import * as FileRef from "./FileRef.ts"
 import {
@@ -62,10 +62,23 @@ export const encodeInput = <Input, E, R>(
     return yield* Schema.decodeUnknownEffect(Schema.Json)(encoded ?? null)
   }).pipe(Effect.mapError((cause) => new RecipeInputError({ recipe: recipe.name, cause })))
 
-const fingerprint = (file: FileRef.FileRef, content: string | undefined): SourceFingerprint =>
+const fingerprint = (file: FileRef.FileRef, content: Uint8Array | undefined): SourceFingerprint =>
   content === undefined
     ? { ...file, kind: "missing" }
     : { ...file, kind: "file", hash: Sha256.digest(content) }
+
+const readOptional = Effect.fn("Recipe.readOptional")(function* (path: string) {
+  const fs = yield* FileSystem.FileSystem
+  return yield* fs
+    .readFile(path)
+    .pipe(
+      Effect.catch((cause) =>
+        cause.reason._tag === "NotFound"
+          ? Effect.map(Effect.void, () => undefined)
+          : Effect.fail(cause),
+      ),
+    )
+})
 
 const fingerprintSources = (fileOperations: ReadonlyArray<FileOperation>) =>
   Effect.gen(function* () {
@@ -73,7 +86,7 @@ const fingerprintSources = (fileOperations: ReadonlyArray<FileOperation>) =>
     const workspace = yield* Workspace
     const snapshot = yield* WorkspaceSnapshot
     const sources = new Map<string, SourceFingerprint>()
-    const record = (file: FileRef.FileRef, content: string | undefined) =>
+    const record = (file: FileRef.FileRef, content: Uint8Array | undefined) =>
       sources.set(FileRef.key(file), fingerprint(file, content))
 
     for (const project of snapshot.projects) {
@@ -82,12 +95,15 @@ const fingerprintSources = (fileOperations: ReadonlyArray<FileOperation>) =>
         projectId: configured.id,
         fileName: ProjectRelativePath.schema.make(configured.config.split("/").at(-1)!),
       }
-      const configText = yield* fs
-        .readFileString(workspace.absolutePath(config))
-        .pipe(Effect.orElseSucceed(() => undefined))
+      const configText = yield* readOptional(workspace.absolutePath(config))
       record(config, configText)
       for (const file of yield* project.files) {
-        record({ projectId: configured.id, fileName: file.fileName }, file.sourceFile.text)
+        record(
+          { projectId: configured.id, fileName: file.fileName },
+          yield* fs.readFile(
+            workspace.absolutePath({ projectId: configured.id, fileName: file.fileName }),
+          ),
+        )
       }
     }
     for (const operation of fileOperations) {
@@ -96,9 +112,7 @@ const fingerprintSources = (fileOperations: ReadonlyArray<FileOperation>) =>
         fileName: operation.kind === "move" ? operation.toFileName : operation.fileName,
       }
       if (operation.kind !== "delete" && !sources.has(FileRef.key(target))) {
-        const onDisk = yield* fs
-          .readFileString(workspace.absolutePath(target))
-          .pipe(Effect.orElseSucceed(() => undefined))
+        const onDisk = yield* readOptional(workspace.absolutePath(target))
         record(target, onDisk)
       }
     }
@@ -115,7 +129,8 @@ export const run = <Input, E, R>(
   | InvalidPlan
   | ProjectSnapshotError
   | ProjectNotInSnapshot
-  | OverlappingProjectOwnership,
+  | OverlappingProjectOwnership
+  | PlatformError.PlatformError,
   Workspace | FileSystem.FileSystem | Exclude<R, WorkspaceSnapshot>
 > =>
   Effect.gen(function* () {

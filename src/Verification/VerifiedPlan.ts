@@ -17,6 +17,7 @@ export interface VerifiedPlan {
 const issued = new WeakSet<object>()
 
 const deepFreeze = <A>(value: A): A => {
+  if (ArrayBuffer.isView(value)) return value
   if (Array.isArray(value) || Predicate.isObject(value)) {
     Object.values(value).forEach(deepFreeze)
     Object.freeze(value)
