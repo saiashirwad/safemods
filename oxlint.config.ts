@@ -28,6 +28,12 @@ export default defineConfig({
   },
   overrides: [
     {
+      files: ["examples/**/*.ts", "test/**/*.ts"],
+      rules: {
+        "import/namespace": "off",
+      },
+    },
+    {
       files: ["test/**/*.ts"],
       rules: {
         "no-restricted-imports": "off",

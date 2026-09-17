@@ -12,6 +12,7 @@ import {
   isIdentifier,
   isObjectBindingPattern,
   isPropertyAccessExpression,
+  isSourceFile,
   isStringLiteral,
   isVariableStatement,
 } from "typescript/unstable/ast/is"
@@ -41,7 +42,7 @@ const requireIsGlobal = (node: Node): boolean => {
   for (;;) {
     const locals = (scope as Node & { readonly locals?: Map<string, unknown> }).locals
     if (locals?.has("require")) return false
-    if (scope.parent === undefined) return true
+    if (isSourceFile(scope)) return true
     scope = scope.parent
   }
 }
