@@ -18,9 +18,12 @@ import { run, type Recipe } from "../src/Recipe.ts"
 import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
 import { type PublicFilePreview, verify } from "../src/Verification/index.ts"
 import * as Workspace from "../src/Workspace/index.ts"
+import { commonJsToEsm } from "./commonjs-to-esm.ts"
 import { defaultToNamed } from "./default-to-named.ts"
 import { enumToConstObject } from "./enum-to-const-object.ts"
+import { jsxButtonProps } from "./jsx-button-props.ts"
 import { moveModule } from "./move-module.ts"
+import { packageEntryPointSplit } from "./package-entry-point-split.ts"
 import { positionalToOptions } from "./positional-to-options.ts"
 import { relativeJsExtensions } from "./relative-js-extensions.ts"
 import { renamePackageImport } from "./rename-package-import.ts"
@@ -79,10 +82,22 @@ const examples = [
     input: () => undefined,
   }),
   defineExample({
+    id: "package-entry-point-split",
+    fixture: "fixtures/migrations/package-entry-point-split",
+    recipe: packageEntryPointSplit,
+    input: () => undefined,
+  }),
+  defineExample({
     id: "positional-to-options",
     fixture: "fixtures/migrations/positional-to-options",
     recipe: positionalToOptions,
     input: (project) => ({ project }),
+  }),
+  defineExample({
+    id: "jsx-button-props",
+    fixture: "fixtures/migrations/jsx-button-props",
+    recipe: jsxButtonProps,
+    input: () => undefined,
   }),
   defineExample({
     id: "rename-through-barrel",
