@@ -1,5 +1,5 @@
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Exit, Predicate } from "effect"
+import { Effect, Predicate } from "effect"
 import { and, refineKey } from "is-kit"
 import { SyntaxKind, type Expression, type Identifier } from "typescript/unstable/ast"
 import {
@@ -120,7 +120,7 @@ describe("queries", () => {
   )
 
   effect(
-    "where dies when a criterion answers for the wrong number of selections",
+    "where reports malformed criterion output as a typed error",
     () =>
       withProject({}, (project) =>
         Effect.gen(function* () {
@@ -128,12 +128,17 @@ describe("queries", () => {
             id: "misaligned",
             select: () => Effect.succeed([]),
           }
-          const exit = yield* Query.identifiers(project).pipe(
+          const failure = yield* Query.identifiers(project).pipe(
             Query.where(misaligned),
             Query.collect,
-            Effect.exit,
+            Effect.flip,
           )
-          expect(Exit.hasDies(exit)).toBe(true)
+          expect(failure).toMatchObject({
+            _tag: "CriterionOutputError",
+            criterionId: "misaligned",
+            expected: expect.any(Number),
+            actual: 0,
+          })
         }),
       ),
     60_000,

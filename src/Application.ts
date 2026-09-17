@@ -1,13 +1,21 @@
 import { randomUUID } from "node:crypto"
-import { Data, Effect, FileSystem, Path } from "effect"
+import { Data, Effect, FileSystem, Path, type PlatformError } from "effect"
 import * as Sha256 from "./Sha256.ts"
 import { type FilePreview, StalePlanError, type VerifiedPlan } from "./Verification/index.ts"
 import { isIssued } from "./Verification/VerifiedPlan.ts"
 
+export interface ApplicationOperationFailure {
+  readonly phase: "commit" | "rollback" | "cleanup"
+  readonly operation: "write" | "remove" | "restore" | "cleanup-temporary" | "cleanup-backup"
+  readonly path: string
+  readonly cause: unknown
+}
+
 export class ApplicationFailure extends Data.TaggedError("ApplicationFailure")<{
   readonly planId: string
-  readonly reason: "unissued" | "path-escape" | "filesystem"
+  readonly reason: "unissued" | "path-escape" | "filesystem" | "recovery"
   readonly cause?: unknown
+  readonly failures?: ReadonlyArray<ApplicationOperationFailure>
 }> {}
 
 export interface ApplicationReceipt {
@@ -31,7 +39,10 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
 
   const isWithin = (directory: string, candidate: string): boolean => {
     const relative = path.relative(directory, candidate)
-    return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+    return (
+      relative === "" ||
+      (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
+    )
   }
   const nearestExisting = (target: string): Effect.Effect<string, ApplicationFailure> =>
     fs.exists(target).pipe(
@@ -65,17 +76,6 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     const bytes = yield* fs.readFile(target).pipe(Effect.mapError(failed))
     if (Sha256.digest(bytes) !== Sha256.digest(file.before.bytes)) return yield* stale
   })
-  const write = (target: string, bytes: Uint8Array, mode: number | undefined) => {
-    const temporary = `${target}.safemods-${randomUUID()}.tmp`
-    return fs
-      .makeDirectory(path.dirname(target), { recursive: true })
-      .pipe(
-        Effect.andThen(fs.writeFile(temporary, bytes, { flag: "wx", mode })),
-        Effect.andThen(fs.rename(temporary, target)),
-        Effect.ensuring(Effect.ignore(fs.remove(temporary, { force: true }))),
-        Effect.mapError(failed),
-      )
-  }
 
   const checkedSources = []
   for (const source of preview.sources) {
@@ -105,14 +105,82 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
   }
 
   const backups: Array<{ target: string; backup: string }> = []
-  const rollback = Effect.gen(function* () {
-    for (const { target } of targets) yield* fs.remove(target, { force: true }).pipe(Effect.ignore)
-    for (const { target, backup } of backups) {
-      yield* fs.rename(backup, target).pipe(Effect.ignore)
+  const written = new Set<string>()
+  const temporaries = new Set<string>()
+  const attempt = Effect.fn(function* (
+    phase: ApplicationOperationFailure["phase"],
+    operation: ApplicationOperationFailure["operation"],
+    target: string,
+    action: Effect.Effect<void, PlatformError.PlatformError>,
+  ) {
+    return yield* action.pipe(
+      Effect.as(undefined),
+      Effect.catch((cause) =>
+        Effect.succeed({
+          phase,
+          operation,
+          path: target,
+          cause,
+        } satisfies ApplicationOperationFailure),
+      ),
+    )
+  })
+  const rollback = Effect.fn(function* (
+    cause: ApplicationFailure | StalePlanError,
+  ): Effect.fn.Return<never, ApplicationFailure | StalePlanError> {
+    const failures: Array<ApplicationOperationFailure> = []
+    for (const target of written) {
+      const failure = yield* attempt(
+        "rollback",
+        "remove",
+        target,
+        fs.remove(target, { force: true }),
+      )
+      if (failure !== undefined) failures.push(failure)
     }
+    for (const { target, backup } of backups.toReversed()) {
+      const failure = yield* attempt("rollback", "restore", target, fs.rename(backup, target))
+      if (failure !== undefined) failures.push(failure)
+    }
+    for (const temporary of temporaries) {
+      const failure = yield* attempt(
+        "rollback",
+        "cleanup-temporary",
+        temporary,
+        fs.remove(temporary, { force: true }),
+      )
+      if (failure !== undefined) failures.push(failure)
+    }
+    if (failures.length > 0) {
+      return yield* new ApplicationFailure({
+        planId: plan.planId,
+        reason: "recovery",
+        cause,
+        failures,
+      })
+    }
+    return yield* Effect.fail(cause)
+  })
+  const write = Effect.fn(function* (
+    file: FilePreview,
+    target: string,
+    bytes: Uint8Array,
+    mode: number | undefined,
+  ) {
+    yield* confinedTarget(file)
+    yield* fs.makeDirectory(path.dirname(target), { recursive: true }).pipe(Effect.mapError(failed))
+    yield* confinedTarget(file)
+    const temporary = `${target}.safemods-${randomUUID()}.tmp`
+    temporaries.add(temporary)
+    yield* fs.writeFile(temporary, bytes, { flag: "wx", mode }).pipe(Effect.mapError(failed))
+    yield* confinedTarget(file)
+    yield* fs.rename(temporary, target).pipe(Effect.mapError(failed))
+    temporaries.delete(temporary)
+    written.add(target)
   })
   const commit = Effect.gen(function* () {
     for (const { file, target } of targets) {
+      yield* confinedTarget(file)
       yield* requireUnchanged(file, target)
       if (!file.before.exists) continue
       const backup = `${target}.safemods-${randomUUID()}.backup`
@@ -120,15 +188,33 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       backups.push({ target, backup })
     }
     for (const { file, target, mode } of targets) {
+      yield* confinedTarget(file)
       yield* requireUnchanged(
         { ...file, before: file.before.exists ? { exists: false } : file.before },
         target,
       )
-      if (file.after.exists) yield* write(target, file.after.bytes, mode)
+      if (file.after.exists) yield* write(file, target, file.after.bytes, mode)
     }
   })
-  yield* commit.pipe(Effect.catch((cause) => Effect.andThen(rollback, Effect.fail(cause))))
-  for (const { backup } of backups) yield* fs.remove(backup, { force: true }).pipe(Effect.ignore)
+  yield* commit.pipe(Effect.catch(rollback))
+
+  const cleanupFailures: Array<ApplicationOperationFailure> = []
+  for (const { backup } of backups) {
+    const failure = yield* attempt(
+      "cleanup",
+      "cleanup-backup",
+      backup,
+      fs.remove(backup, { force: true }),
+    )
+    if (failure !== undefined) cleanupFailures.push(failure)
+  }
+  if (cleanupFailures.length > 0) {
+    return yield* new ApplicationFailure({
+      planId: plan.planId,
+      reason: "recovery",
+      failures: cleanupFailures,
+    })
+  }
 
   return {
     planId: plan.planId,

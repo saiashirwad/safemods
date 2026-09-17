@@ -1,5 +1,5 @@
 import * as Path from "node:path"
-import { Context, Data, Effect, Layer } from "effect"
+import { Context, Data, Effect, FileSystem, Layer, type PlatformError } from "effect"
 import { API } from "typescript/unstable/async"
 import type * as FileRef from "../FileRef.ts"
 import type * as ProjectId from "../ProjectId.ts"
@@ -45,6 +45,11 @@ export class Workspace extends Context.Service<
       | OverlappingProjectOwnership,
       Exclude<R, WorkspaceSnapshot>
     >
+    readonly captureSnapshot: Effect.Effect<
+      ReadonlyMap<string, Uint8Array | undefined>,
+      ProjectSnapshot.ProjectSnapshotError | PlatformError.PlatformError,
+      FileSystem.FileSystem | WorkspaceSnapshot
+    >
   }
 >()("safemods/Workspace/Workspace") {}
 
@@ -64,6 +69,23 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
     root,
     projectRoot,
     absolutePath: (file) => Path.join(projectRoot(file.projectId), file.fileName),
+    captureSnapshot: Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const snapshot = yield* WorkspaceSnapshot
+      const captured = new Map<string, Uint8Array | undefined>()
+      for (const project of snapshot.projects) {
+        const configured = project.project
+        const configFile = configFiles.get(configured.id)!
+        captured.set(`${configured.id}\0${configured.config}`, yield* fs.readFile(configFile))
+        for (const file of yield* project.files) {
+          captured.set(
+            `${configured.id}\0${file.fileName}`,
+            yield* fs.readFile(Path.join(projectRoot(configured.id), file.fileName)),
+          )
+        }
+      }
+      return captured
+    }),
     withSnapshot: (program, overlay) =>
       Effect.gen(function* () {
         const api = yield* Effect.acquireRelease(

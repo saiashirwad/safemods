@@ -73,6 +73,8 @@ Each module depends only on the ones above it.
 | `Verification`                               | preview exact bytes, diff diagnostics, replay, issue a verified plan |
 | `Application`                                | write a verified plan, refusing stale files and symlink escapes      |
 
+Application checks real paths immediately before each mutation. The portable filesystem API does not offer directory handles or atomic no-follow operations, so this confines normal symlink layouts but cannot guarantee safety against a hostile process swapping symlinks between a check and mutation.
+
 ## Examples
 
 Each recipe in `examples/` has a fixture under `fixtures/migrations/`. The runner copies the fixture, applies the recipe to the copy, and prints `git diff HEAD`. The original fixture is not written.

@@ -1,5 +1,5 @@
 import { matchesGlob } from "node:path"
-import { Effect, Order, Predicate, Stream } from "effect"
+import { Data, Effect, Order, Predicate, Stream } from "effect"
 import type { CallExpression, Identifier, ImportDeclaration, Node } from "typescript/unstable/ast"
 import { isCallExpression, isIdentifier, isImportDeclaration } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol, Type as NativeType } from "typescript/unstable/async"
@@ -30,6 +30,21 @@ export interface Criterion<A, E = never, R = never> {
     selections: ReadonlyArray<Selection<A>>,
   ) => Effect.Effect<ReadonlyArray<boolean>, E, R>
 }
+
+export class CriterionOutputError extends Data.TaggedError("CriterionOutputError")<{
+  readonly criterionId: string
+  readonly expected: number
+  readonly actual: number
+}> {}
+
+const validateAnswers = (
+  criterionId: string,
+  expected: number,
+  answers: ReadonlyArray<boolean>,
+): Effect.Effect<ReadonlyArray<boolean>, CriterionOutputError> =>
+  answers.length === expected
+    ? Effect.succeed(answers)
+    : Effect.fail(new CriterionOutputError({ criterionId, expected, actual: answers.length }))
 
 const isFiles = (scope: Scope): scope is ReadonlyArray<ProjectFile> => Array.isArray(scope)
 
@@ -100,16 +115,13 @@ export const within =
 
 export const where =
   <A, E2, R2>(criterion: Criterion<A, E2, R2>) =>
-  <E, R>(self: Query<A, E, R>): Query<A, E | E2, R | R2> =>
+  <E, R>(self: Query<A, E, R>): Query<A, E | E2 | CriterionOutputError, R | R2> =>
     self.pipe(
       Stream.grouped(128),
       Stream.mapEffect((batch) =>
-        Effect.map(criterion.select(batch), (matches) => {
-          if (matches.length !== batch.length) {
-            throw new Error(
-              `Criterion ${criterion.id} answered ${matches.length} of ${batch.length}`,
-            )
-          }
+        Effect.gen(function* () {
+          const matches = yield* criterion.select(batch)
+          yield* validateAnswers(criterion.id, batch.length, matches)
           return batch.filter((_, index) => matches[index])
         }),
       ),
@@ -131,12 +143,13 @@ export const collect = <A, E, R>(
 
 const perFile =
   <A extends Node, E>(
+    criterionId: string,
     selectFile: (
       project: ProjectSnapshot,
       fileName: ProjectRelativePath.Type,
       values: ReadonlyArray<A>,
     ) => Effect.Effect<ReadonlyArray<boolean>, E>,
-  ): Criterion<A, E>["select"] =>
+  ): Criterion<A, E | CriterionOutputError>["select"] =>
   (selections) =>
     Effect.gen(function* () {
       const matches = new Map<Selection<A>, boolean>()
@@ -148,10 +161,11 @@ const perFile =
             fileName,
             group.map((selection) => selection.value),
           )
-          group.forEach((selection, index) => matches.set(selection, answers[index] ?? false))
+          yield* validateAnswers(criterionId, group.length, answers)
+          group.forEach((selection, index) => matches.set(selection, answers[index]!))
         }
       }
-      return selections.map((selection) => matches.get(selection) ?? false)
+      return selections.map((selection) => matches.get(selection)!)
     })
 
 const startOf = (node: Node): number => node.getStart(node.getSourceFile())
@@ -159,9 +173,9 @@ const startOf = (node: Node): number => node.getStart(node.getSourceFile())
 export const resolvesTo = <A extends Node>(
   symbol: NativeSymbol,
   options?: { readonly location?: (candidate: A) => Node },
-): Criterion<A, ProjectSnapshotError> => ({
+): Criterion<A, ProjectSnapshotError | CriterionOutputError> => ({
   id: "resolves-to-symbol",
-  select: perFile((project, fileName, values) =>
+  select: perFile("resolves-to-symbol", (project, fileName, values) =>
     Effect.gen(function* () {
       const located = values.map((value) => options?.location?.(value) ?? value)
       const symbols = yield* project.symbolsAt(fileName, located.map(startOf))
@@ -180,11 +194,11 @@ export const resolvesTo = <A extends Node>(
 
 export const typeAssignableTo = <A extends Node>(
   target: NativeType | IntrinsicTypeName,
-): Criterion<A, ProjectSnapshotError> => {
+): Criterion<A, ProjectSnapshotError | CriterionOutputError> => {
   const label = Predicate.isString(target) ? target : "custom-type"
   return {
     id: `type-assignable-to:${label}`,
-    select: perFile((project, fileName, values) =>
+    select: perFile(`type-assignable-to:${label}`, (project, fileName, values) =>
       Effect.gen(function* () {
         const expected = Predicate.isString(target) ? yield* project.intrinsicType(target) : target
         const types = yield* project.typesAt(fileName, values.map(startOf))

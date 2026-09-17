@@ -80,31 +80,20 @@ const readOptional = Effect.fn("Recipe.readOptional")(function* (path: string) {
     )
 })
 
-const fingerprintSources = (fileOperations: ReadonlyArray<FileOperation>) =>
+const fingerprintSources = (
+  captured: ReadonlyMap<string, Uint8Array | undefined>,
+  fileOperations: ReadonlyArray<FileOperation>,
+) =>
   Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
     const workspace = yield* Workspace
-    const snapshot = yield* WorkspaceSnapshot
     const sources = new Map<string, SourceFingerprint>()
-    const record = (file: FileRef.FileRef, content: Uint8Array | undefined) =>
-      sources.set(FileRef.key(file), fingerprint(file, content))
-
-    for (const project of snapshot.projects) {
-      const configured = project.project
-      const config = {
-        projectId: configured.id,
-        fileName: ProjectRelativePath.schema.make(configured.config.split("/").at(-1)!),
+    for (const [key, content] of captured) {
+      const separator = key.indexOf("\0")
+      const file = {
+        projectId: key.slice(0, separator) as FileRef.FileRef["projectId"],
+        fileName: ProjectRelativePath.schema.make(key.slice(separator + 1)),
       }
-      const configText = yield* readOptional(workspace.absolutePath(config))
-      record(config, configText)
-      for (const file of yield* project.files) {
-        record(
-          { projectId: configured.id, fileName: file.fileName },
-          yield* fs.readFile(
-            workspace.absolutePath({ projectId: configured.id, fileName: file.fileName }),
-          ),
-        )
-      }
+      sources.set(key, fingerprint(file, content))
     }
     for (const operation of fileOperations) {
       const target = {
@@ -113,7 +102,7 @@ const fingerprintSources = (fileOperations: ReadonlyArray<FileOperation>) =>
       }
       if (operation.kind !== "delete" && !sources.has(FileRef.key(target))) {
         const onDisk = yield* readOptional(workspace.absolutePath(target))
-        record(target, onDisk)
+        sources.set(FileRef.key(target), fingerprint(target, onDisk))
       }
     }
     return [...sources.values()]
@@ -139,6 +128,7 @@ export const run = <Input, E, R>(
     return yield* workspace.withSnapshot(
       Effect.gen(function* () {
         const snapshot = yield* WorkspaceSnapshot
+        const captured = yield* workspace.captureSnapshot
         const draft = yield* recipe.run(input)
         return yield* finalizePlan({
           recipe: { name: recipe.name, version: recipe.version, options },
@@ -146,7 +136,7 @@ export const run = <Input, E, R>(
             id,
             configFileName: config,
           })),
-          sources: yield* fingerprintSources(draft.fileOperations),
+          sources: yield* fingerprintSources(captured, draft.fileOperations),
           edits: draft.edits,
           fileOperations: draft.fileOperations,
           policies: recipe.policies,

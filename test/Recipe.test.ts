@@ -3,7 +3,8 @@ import { Effect, Schema } from "effect"
 import * as Draft from "../src/Draft.ts"
 import { InvalidPlan } from "../src/Plan.ts"
 import * as Recipe from "../src/Recipe.ts"
-import { withFixture } from "./utils/fixture.ts"
+import * as Verification from "../src/Verification/index.ts"
+import { read, withFixture, write } from "./utils/fixture.ts"
 
 describe("recipe planning", () => {
   effect(
@@ -28,6 +29,31 @@ describe("recipe planning", () => {
 
           const failure = yield* Effect.flip(Recipe.run(recipe, { name: "", count: 42 }))
           expect(failure).toBeInstanceOf(Recipe.RecipeInputError)
+        }),
+      ),
+    60_000,
+  )
+
+  effect(
+    "fingerprints the same byte capture used by the compiler snapshot",
+    () =>
+      withFixture((root) =>
+        Effect.gen(function* () {
+          const recipe = Recipe.define("captured-input", {
+            version: "1.0.0",
+            run: () =>
+              Effect.gen(function* () {
+                yield* write(root, "src/library.ts", "mutated during recipe\n")
+                return Draft.empty
+              }),
+          })
+
+          const plan = yield* Recipe.run(recipe, undefined)
+          const source = plan.sources.find((item) => item.fileName === "src/library.ts")!
+          expect(source.kind).toBe("file")
+          expect(yield* read(root, "src/library.ts")).toBe("mutated during recipe\n")
+          const stale = yield* Effect.flip(Verification.preview(plan))
+          expect(stale).toMatchObject({ _tag: "StalePlanError", fileName: "src/library.ts" })
         }),
       ),
     60_000,
