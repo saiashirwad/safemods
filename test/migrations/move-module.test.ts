@@ -23,7 +23,7 @@ describe("move-module", () => {
 
           const { plan, verified } = yield* executeRecipe(moveModule, input)
 
-          expect(plan.edits).toHaveLength(4)
+          expect(plan.edits).toHaveLength(6)
           expect(plan.fileOperations).toHaveLength(1)
           expect(plan.fileOperations[0]).toMatchObject({
             kind: "move",
@@ -66,6 +66,13 @@ describe("move-module", () => {
           expect(handlers).toContain("createAccount as provisionAccount")
           expect(handlers).toContain("export const register  =")
           expect(handlers).toContain('from "../identity/account.js"')
+
+          const lazyAccount = yield* Effect.tryPromise(() =>
+            Fs.readFile(Path.join(root, "src/http/lazy-account.ts"), "utf8"),
+          )
+          expect(lazyAccount).toContain('typeof import("../identity/account.js")')
+          expect(lazyAccount).toContain('import("../identity/account.js")')
+          expect(lazyAccount).not.toContain("../users/account")
 
           const billingAccount = yield* Effect.tryPromise(() =>
             Fs.readFile(Path.join(root, "src/billing/account.ts"), "utf8"),
