@@ -26,7 +26,9 @@ export const withFixture = <A, E, R>(
   Effect.acquireUseRelease(
     Effect.tryPromise(async () => {
       const root = await Fs.mkdtemp(Path.join(Os.tmpdir(), "safemods-test-"))
-      await Fs.cp(fixturePath(options.fixture ?? "recipe"), root, { recursive: true })
+      if (options.fixture !== "empty") {
+        await Fs.cp(fixturePath(options.fixture ?? "recipe"), root, { recursive: true })
+      }
       await Promise.all(
         Object.entries(options.files ?? {}).map(async ([fileName, content]) => {
           await Fs.mkdir(Path.dirname(Path.join(root, fileName)), { recursive: true })
