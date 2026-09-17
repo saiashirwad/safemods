@@ -27,6 +27,7 @@ import { overloadedMethod } from "./overloaded-method.ts"
 import { packageEntryPointSplit } from "./package-entry-point-split.ts"
 import { positionalToOptions } from "./positional-to-options.ts"
 import { relativeJsExtensions } from "./relative-js-extensions.ts"
+import { renameInterfaceProperty } from "./rename-interface-property.ts"
 import { renamePackageImport } from "./rename-package-import.ts"
 import { renameThroughBarrel } from "./rename-through-barrel.ts"
 import { splitModule } from "./split-module.ts"
@@ -110,6 +111,12 @@ const examples = [
     id: "jsx-button-props",
     fixture: "fixtures/migrations/jsx-button-props",
     recipe: jsxButtonProps,
+    input: () => undefined,
+  }),
+  defineExample({
+    id: "rename-interface-property",
+    fixture: "fixtures/migrations/rename-interface-property",
+    recipe: renameInterfaceProperty,
     input: () => undefined,
   }),
   defineExample({

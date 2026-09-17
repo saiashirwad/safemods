@@ -94,6 +94,7 @@ pnpm example --help
 | `overloaded-method`         | callback overload → promise/options, with findings        |
 | `jsx-button-props`          | migrate `Button` props through aliases and namespaces     |
 | `rename-through-barrel`     | `loadAccount` → `findAccount` through barrels and aliases |
+| `rename-interface-property` | safely rename a typed interface property and references   |
 | `move-module`               | move a module and rewrite relative importers              |
 | `split-module`              | split model/service/index and coordinate consumers        |
 | `default-to-named`          | default export → named export                             |
