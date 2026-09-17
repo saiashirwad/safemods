@@ -105,14 +105,20 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
   }
 
   const backups: Array<{ target: string; backup: string }> = []
-  for (const { file, target } of targets) {
-    yield* requireUnchanged(file, target)
-    if (!file.before.exists) continue
-    const backup = `${target}.safemods-${randomUUID()}.backup`
-    yield* fs.rename(target, backup).pipe(Effect.mapError(failed))
-    backups.push({ target, backup })
-  }
+  const rollback = Effect.gen(function* () {
+    for (const { target } of targets) yield* fs.remove(target, { force: true }).pipe(Effect.ignore)
+    for (const { target, backup } of backups) {
+      yield* fs.rename(backup, target).pipe(Effect.ignore)
+    }
+  })
   const commit = Effect.gen(function* () {
+    for (const { file, target } of targets) {
+      yield* requireUnchanged(file, target)
+      if (!file.before.exists) continue
+      const backup = `${target}.safemods-${randomUUID()}.backup`
+      yield* fs.rename(target, backup).pipe(Effect.mapError(failed))
+      backups.push({ target, backup })
+    }
     for (const { file, target, mode } of targets) {
       yield* requireUnchanged(
         { ...file, before: file.before.exists ? { exists: false } : file.before },
@@ -121,18 +127,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       if (file.after.exists) yield* write(target, file.after.bytes, mode)
     }
   })
-  yield* commit.pipe(
-    Effect.catch((cause) =>
-      Effect.gen(function* () {
-        for (const { target } of targets)
-          yield* fs.remove(target, { force: true }).pipe(Effect.ignore)
-        for (const { target, backup } of backups) {
-          yield* fs.rename(backup, target).pipe(Effect.ignore)
-        }
-        return yield* cause
-      }),
-    ),
-  )
+  yield* commit.pipe(Effect.catch((cause) => Effect.andThen(rollback, Effect.fail(cause))))
   for (const { backup } of backups) yield* fs.remove(backup, { force: true }).pipe(Effect.ignore)
 
   return {

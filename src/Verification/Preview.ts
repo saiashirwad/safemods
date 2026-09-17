@@ -31,8 +31,17 @@ export interface PlanPreview {
 
 const decoder = new TextDecoder("utf-8", { fatal: true })
 const encoder = new TextEncoder()
-const stateOf = (bytes: Uint8Array | undefined): FileState =>
-  bytes === undefined ? { exists: false } : { exists: true, text: decoder.decode(bytes), bytes }
+const stateOf = (bytes: Uint8Array | undefined): FileState => {
+  if (bytes === undefined) return { exists: false }
+  const snapshot = Uint8Array.from(bytes)
+  return {
+    exists: true,
+    text: decoder.decode(snapshot),
+    get bytes() {
+      return Uint8Array.from(snapshot)
+    },
+  }
+}
 
 export const requireWorkspaceProjects = (
   plan: TransformationPlan,
@@ -69,7 +78,12 @@ export const previewCaptured = (
   captured: ReadonlyMap<string, Uint8Array | undefined>,
 ): Effect.Effect<PlanPreview, VerificationFailure> =>
   Effect.gen(function* () {
-    const before = new Map(captured)
+    const before = new Map(
+      [...captured].map(([key, bytes]) => [
+        key,
+        bytes === undefined ? undefined : Uint8Array.from(bytes),
+      ]),
+    )
     const after = new Map(before)
     for (const [key, edits] of Map.groupBy(plan.edits, FileRef.key)) {
       const original = before.get(key)

@@ -123,14 +123,28 @@ export const verify = <Input, E, R>(
         const diagnostics = yield* collectDiagnostics
         if (validated.policies.idempotence !== "required") return [diagnostics, 0] as const
         const draft = yield* recipe.run(input)
+        const captured = new Map(
+          preview.sources.map((file) => [
+            FileRef.key(file),
+            file.after.exists ? file.after.bytes : undefined,
+          ]),
+        )
+        for (const file of preview.files) {
+          captured.set(FileRef.key(file), file.after.exists ? file.after.bytes : undefined)
+        }
         const replayPlan = yield* finalizePlan({
           recipe: validated.recipe,
           projects: validated.projects,
-          sources: preview.sources.map(({ projectId, fileName, after }) =>
-            after.exists
-              ? { projectId, fileName, kind: "file" as const, hash: Sha256.digest(after.bytes) }
-              : { projectId, fileName, kind: "missing" as const },
-          ),
+          sources: [...captured].map(([key, bytes]) => {
+            const separator = key.indexOf("\0")
+            const projectId = key.slice(0, separator) as (typeof validated.projects)[number]["id"]
+            const fileName = key.slice(
+              separator + 1,
+            ) as (typeof preview.sources)[number]["fileName"]
+            return bytes === undefined
+              ? { projectId, fileName, kind: "missing" as const }
+              : { projectId, fileName, kind: "file" as const, hash: Sha256.digest(bytes) }
+          }),
           edits: draft.edits,
           fileOperations: draft.fileOperations,
           policies: validated.policies,
@@ -143,12 +157,6 @@ export const verify = <Input, E, R>(
                 detail: `Invalid replay plan: ${detail}`,
               }),
           ),
-        )
-        const captured = new Map(
-          preview.sources.map((file) => [
-            FileRef.key(file),
-            file.after.exists ? file.after.bytes : undefined,
-          ]),
         )
         const replayPreview = yield* previewCaptured(yield* validatePlan(replayPlan), captured)
         const changed = replayPreview.files.filter((file) => {
