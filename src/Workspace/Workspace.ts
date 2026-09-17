@@ -29,7 +29,7 @@ export class WorkspaceSnapshot extends Context.Service<
       projectId: ProjectId.Type,
     ) => Effect.Effect<ProjectSnapshot.ProjectSnapshot, ProjectNotInSnapshot>
     readonly capture: Effect.Effect<
-      ReadonlyMap<string, Uint8Array | undefined>,
+      FileRef.ReadonlyMap<Uint8Array | undefined>,
       ProjectSnapshot.ProjectSnapshotError | PlatformError.PlatformError,
       FileSystem.FileSystem
     >
@@ -153,14 +153,19 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
           },
           capture: Effect.gen(function* () {
             const fs = yield* FileSystem.FileSystem
-            const captured = new Map<string, Uint8Array | undefined>()
+            const captured: FileRef.Map<Uint8Array | undefined> = new Map()
             for (const project of projects.values()) {
               const configured = project.project
               const configFile = configFiles.get(configured.id)!
-              captured.set(`${configured.id}\0${configured.config}`, yield* fs.readFile(configFile))
+              FileRef.set(
+                captured,
+                { projectId: configured.id, fileName: configured.config },
+                yield* fs.readFile(configFile),
+              )
               for (const file of yield* project.files) {
-                captured.set(
-                  `${configured.id}\0${file.fileName}`,
+                FileRef.set(
+                  captured,
+                  { projectId: configured.id, fileName: file.fileName },
                   yield* fs.readFile(Path.join(Path.dirname(configFile), file.fileName)),
                 )
               }
