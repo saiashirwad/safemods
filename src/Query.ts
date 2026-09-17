@@ -106,7 +106,9 @@ export const where =
       Stream.mapEffect((batch) =>
         Effect.map(criterion.select(batch), (matches) => {
           if (matches.length !== batch.length) {
-            throw new Error(`Criterion ${criterion.id} answered ${matches.length} of ${batch.length}`)
+            throw new Error(
+              `Criterion ${criterion.id} answered ${matches.length} of ${batch.length}`,
+            )
           }
           return batch.filter((_, index) => matches[index])
         }),

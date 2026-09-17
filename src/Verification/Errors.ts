@@ -9,13 +9,9 @@ export class StalePlanError extends Data.TaggedError("StalePlanError")<{
   readonly fileName: ProjectRelativePath.Type
 }> {}
 
-export class ProjectIdentityMismatch extends Data.TaggedError("ProjectIdentityMismatch")<{
+export class PlanContextMismatch extends Data.TaggedError("PlanContextMismatch")<{
   readonly planId: string
-}> {}
-
-export class RecipeMismatch extends Data.TaggedError("RecipeMismatch")<{
-  readonly planId: string
-  readonly field: "name" | "version" | "input" | "policies"
+  readonly field: "workspace" | "name" | "version" | "input" | "policies"
 }> {}
 
 export class VerificationFailure extends Data.TaggedError("VerificationFailure")<{

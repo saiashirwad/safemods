@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import * as Draft from "../src/Draft.ts"
-import { PlanBuildError } from "../src/Plan.ts"
+import { InvalidPlan } from "../src/Plan.ts"
 import * as Recipe from "../src/Recipe.ts"
 import { withFixture } from "./utils/fixture.ts"
 
@@ -44,7 +44,7 @@ describe("recipe planning", () => {
               policies,
               run: () => Effect.succeed(Draft.empty),
             })
-            expect(yield* Effect.flip(Recipe.run(recipe, undefined))).toBeInstanceOf(PlanBuildError)
+            expect(yield* Effect.flip(Recipe.run(recipe, undefined))).toBeInstanceOf(InvalidPlan)
           }
         }),
       ),

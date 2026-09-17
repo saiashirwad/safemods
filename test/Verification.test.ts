@@ -196,7 +196,7 @@ describe("Verification.verify", () => {
           expect(yield* mismatch(author, 2)).toMatchObject({ field: "input" })
           expect(
             yield* mismatch(define("author", "1.0.0", { idempotence: "required" }), 1),
-          ).toMatchObject({ _tag: "RecipeMismatch", field: "policies" })
+          ).toMatchObject({ _tag: "PlanContextMismatch", field: "policies" })
         }),
       ),
     60_000,
@@ -224,8 +224,8 @@ describe("Verification.verify", () => {
           })
 
           for (const [candidate, tag] of [
-            [dotted, "PlanDecodeError"],
-            [otherProject, "ProjectIdentityMismatch"],
+            [dotted, "InvalidPlan"],
+            [otherProject, "PlanContextMismatch"],
           ] as const) {
             expect(
               yield* Effect.flip(Verification.verify(candidate, recipe, undefined)),
