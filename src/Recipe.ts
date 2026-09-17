@@ -5,6 +5,7 @@ import {
   finalizePlan,
   type PlanBuildError,
   type PlanPolicies,
+  type PlannedFileOperation,
   type SourceFingerprint,
   type TransformationPlan,
 } from "./Plan.ts"
@@ -23,6 +24,7 @@ import {
 } from "./Evidence.ts"
 import * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import * as Sha256 from "./Sha256.ts"
+import { virtualFileKey } from "./VirtualFs.ts"
 
 /**
  * A reusable transformation. The recipe body runs in a Workspace Snapshot
@@ -96,6 +98,7 @@ export const define = <Input = undefined, E = never, R = never>(
 const fingerprintWorkspace = (
   workspaceRoot: string,
   snapshot: WorkspaceSnapshot["Service"],
+  fileOperations: ReadonlyArray<PlannedFileOperation>,
 ): Effect.Effect<
   ReadonlyArray<SourceFingerprint>,
   WorkspaceCompilerError | ProjectNotInSnapshot | SnapshotExpired,
@@ -122,19 +125,24 @@ const fingerprintWorkspace = (
               hash: Sha256.digest(configContent),
               kind: "file",
             }
-      sources.set(
-        `${configured.id}\0${configFingerprint.kind}\0${configFileName}`,
-        configFingerprint,
-      )
+      sources.set(virtualFileKey(configured.id, configFileName), configFingerprint)
 
       for (const file of yield* project.files) {
         const content = yield* file.sourceText
-        sources.set(`${configured.id}\0file\0${file.path}`, {
+        sources.set(virtualFileKey(configured.id, file.path), {
           projectId: configured.id,
           fileName: file.path,
           hash: Sha256.digest(content),
           kind: "file",
         })
+      }
+    }
+    for (const operation of fileOperations) {
+      if (operation.kind === "delete") continue
+      const fileName = operation.kind === "move" ? operation.toPath : operation.path
+      const key = virtualFileKey(operation.projectId, fileName)
+      if (!sources.has(key)) {
+        sources.set(key, { projectId: operation.projectId, fileName, kind: "missing" })
       }
     }
     return [...sources.values()]
@@ -173,7 +181,8 @@ export const run = <Input, E, R>(
         const snapshot = yield* WorkspaceSnapshot
         const draft = yield* recipe.run(validatedInput.value)
         const completeDraft = yield* finalizeDraftEvidence(draft)
-        const sources = yield* fingerprintWorkspace(workspace.root, snapshot)
+        const fileOperations = completeDraft.fileOperations ?? []
+        const sources = yield* fingerprintWorkspace(workspace.root, snapshot, fileOperations)
 
         const planInput = {
           recipe: {
@@ -188,7 +197,7 @@ export const run = <Input, E, R>(
           })),
           sources,
           edits: completeDraft.edits,
-          fileOperations: completeDraft.fileOperations ?? [],
+          fileOperations,
           evidence: completeDraft.evidence,
           policies: recipe.policies,
           measurements: { matches: completeDraft.matches },

@@ -19,6 +19,16 @@ export const richInput: PlanInput = {
   sources: [
     {
       projectId: projectId("app"),
+      fileName: projectPath("src/created.ts"),
+      kind: "missing",
+    },
+    {
+      projectId: projectId("app"),
+      fileName: projectPath("src/moved.ts"),
+      kind: "missing",
+    },
+    {
+      projectId: projectId("app"),
       fileName: projectPath("src/index.ts"),
       hash: Sha256.digest("source"),
       kind: "file",
@@ -42,7 +52,7 @@ export const richInput: PlanInput = {
       fileName: projectPath("src/index.ts"),
       start: 0,
       end: 0,
-      expectedTextHash: Sha256.digest("empty"),
+      expectedTextHash: Sha256.digest(""),
       newText: "x",
       evidenceIds: ["edit"],
     },
@@ -103,6 +113,84 @@ export const semanticMutations: ReadonlyArray<{
   readonly name: string
   readonly mutate: (input: PlanInput) => PlanInput
 }> = [
+  {
+    name: "no projects",
+    mutate: (value) => ({ ...value, projects: [], sources: [], edits: [], fileOperations: [] }),
+  },
+  {
+    name: "two project IDs for the same config path",
+    mutate: (value) => ({
+      ...value,
+      projects: [...value.projects, { ...value.projects[0]!, id: projectId("other") }],
+    }),
+  },
+  {
+    name: "one project ID for two config paths",
+    mutate: (value) => ({
+      ...value,
+      projects: [...value.projects, { ...value.projects[0]!, configFileName: "other.json" }],
+    }),
+  },
+  {
+    name: "one source is both a file and missing",
+    mutate: (value) => ({
+      ...value,
+      sources: [...value.sources, { projectId: "app", fileName: "src/index.ts", kind: "missing" }],
+    }),
+  },
+  ...["src/created.ts", "src/moved.ts"].map((fileName) => ({
+    name: `no absence fingerprint for ${fileName}`,
+    mutate: (value: PlanInput): PlanInput => ({
+      ...value,
+      sources: value.sources.filter((source) => source.fileName !== fileName),
+    }),
+  })),
+  ...["src/delete.ts", "src/move.ts"].map((fileName) => ({
+    name: `edit conflicts with operation on ${fileName}`,
+    mutate: (value: PlanInput): PlanInput => ({
+      ...value,
+      edits: [{ ...value.edits[0]!, fileName }],
+    }),
+  })),
+  {
+    name: "overlapping edits",
+    mutate: (value) => ({ ...value, edits: [...value.edits, value.edits[0]!] }),
+  },
+  ...[0, 1, 2].map((index) => ({
+    name: `repeated ${richInput.fileOperations[index]!.kind}`,
+    mutate: (value: PlanInput): PlanInput => ({
+      ...value,
+      fileOperations: [...value.fileOperations, value.fileOperations[index]!],
+    }),
+  })),
+  {
+    name: "create and move to the same target",
+    mutate: (value) =>
+      withOperation(value, 0, (operation) => ({ ...operation, path: "src/moved.ts" })),
+  },
+  {
+    name: "delete and move the same source",
+    mutate: (value) =>
+      withOperation(value, 1, (operation) => ({
+        ...operation,
+        path: "src/move.ts",
+        initialHash: Sha256.digest("move"),
+      })),
+  },
+  {
+    name: "move to an existing source",
+    mutate: (value) =>
+      withOperation(value, 2, (operation) =>
+        operation.kind === "move" ? { ...operation, toPath: "src/index.ts" } : operation,
+      ),
+  },
+  {
+    name: "move to the same path",
+    mutate: (value) =>
+      withOperation(value, 2, (operation) =>
+        operation.kind === "move" ? { ...operation, toPath: operation.path } : operation,
+      ),
+  },
   {
     name: "unsafe project path",
     mutate: (value) => ({

@@ -157,14 +157,14 @@ const canonicalize = (input: DecodedPlanInput): DecodedPlanInput => ({
   edits: input.edits
     .map((edit) => ({
       ...edit,
-      evidenceIds: [...edit.evidenceIds].sort(Order.String),
+      evidenceIds: [...new Set(edit.evidenceIds)].sort(Order.String),
     }))
     .sort(compareEdits),
   evidence: [...input.evidence].sort(Order.Struct({ id: Order.String })),
   fileOperations: input.fileOperations
     .map((operation) => ({
       ...operation,
-      evidenceIds: [...operation.evidenceIds].sort(Order.String),
+      evidenceIds: [...new Set(operation.evidenceIds)].sort(Order.String),
     }))
     .sort(Order.Struct({ projectId: Order.String, path: Order.String, kind: Order.String })),
 })
@@ -173,26 +173,27 @@ const canonicalize = (input: DecodedPlanInput): DecodedPlanInput => ({
 // Semantic checks (run on canonical input)
 
 const checkSemantics = (input: DecodedPlanInput): PlanBuildError | undefined => {
+  if (input.projects.length === 0) {
+    return new PlanBuildError({ detail: "A plan must contain at least one project" })
+  }
   const projectIds = new Set<string>()
+  const configFileNames = new Set<string>()
   for (const project of input.projects) {
-    if (project.id.length === 0 || projectIds.has(project.id)) {
+    if (projectIds.has(project.id) || configFileNames.has(project.configFileName)) {
       return new PlanBuildError({ detail: `Invalid project ${project.id}` })
     }
     projectIds.add(project.id)
+    configFileNames.add(project.configFileName)
   }
 
-  const sourceHashes = new Map<string, Sha256.Type>()
-  const seenSources = new Set<string>()
+  const sources = new Map<string, SourceFingerprint>()
   for (const source of input.sources) {
     if (!projectIds.has(source.projectId))
       return new PlanBuildError({ detail: `Unknown project ${source.projectId}` })
-    const identity = `${source.projectId}\0${source.kind}\0${source.fileName}`
-    if (seenSources.has(identity))
+    const identity = virtualFileKey(source.projectId, source.fileName)
+    if (sources.has(identity))
       return new PlanBuildError({ detail: `Duplicate source ${source.fileName}` })
-    seenSources.add(identity)
-    if (source.kind === "file") {
-      sourceHashes.set(virtualFileKey(source.projectId, source.fileName), source.hash)
-    }
+    sources.set(identity, source)
   }
 
   const evidenceIds = new Set<string>()
@@ -208,15 +209,17 @@ const checkSemantics = (input: DecodedPlanInput): PlanBuildError | undefined => 
       return new PlanBuildError({ detail: "Overlapping edits" })
     }
   }
+  const occupied = new Set<string>()
   for (const edit of input.edits) {
-    if (!sourceHashes.has(virtualFileKey(edit.projectId, edit.fileName))) {
+    const key = virtualFileKey(edit.projectId, edit.fileName)
+    if (sources.get(key)?.kind !== "file") {
       return new PlanBuildError({ detail: `Missing source ${edit.fileName}` })
     }
+    occupied.add(key)
     const missing = edit.evidenceIds.find((id) => !evidenceIds.has(id))
     if (missing !== undefined) return new PlanBuildError({ detail: `Unknown evidence ${missing}` })
   }
 
-  const occupied = new Set<string>()
   for (const operation of input.fileOperations) {
     if (!projectIds.has(operation.projectId)) {
       return new PlanBuildError({ detail: `Unknown project ${operation.projectId}` })
@@ -224,15 +227,17 @@ const checkSemantics = (input: DecodedPlanInput): PlanBuildError | undefined => 
     const missing = operation.evidenceIds.find((id) => !evidenceIds.has(id))
     if (missing !== undefined) return new PlanBuildError({ detail: `Unknown evidence ${missing}` })
     const key = virtualFileKey(operation.projectId, operation.path)
-    const sourceHash = sourceHashes.get(key)
+    const source = sources.get(key)
     const keys = [key]
     if (operation.kind === "create") {
-      if (sourceHash !== undefined)
+      if (source?.kind === "file")
         return new PlanBuildError({ detail: `Create path already exists: ${operation.path}` })
+      if (source?.kind !== "missing")
+        return new PlanBuildError({ detail: `Missing absence fingerprint ${operation.path}` })
     } else {
-      if (sourceHash === undefined)
+      if (source?.kind !== "file")
         return new PlanBuildError({ detail: `Missing source ${operation.path}` })
-      if (operation.initialHash !== sourceHash) {
+      if (operation.initialHash !== source.hash) {
         return new PlanBuildError({ detail: `Fingerprint mismatch ${operation.path}` })
       }
       if (operation.kind === "move") {
@@ -240,8 +245,10 @@ const checkSemantics = (input: DecodedPlanInput): PlanBuildError | undefined => 
           return new PlanBuildError({ detail: "Move source and target must differ" })
         }
         const target = virtualFileKey(operation.projectId, operation.toPath)
-        if (sourceHashes.has(target))
+        if (sources.get(target)?.kind === "file")
           return new PlanBuildError({ detail: `Move target exists: ${operation.toPath}` })
+        if (sources.get(target)?.kind !== "missing")
+          return new PlanBuildError({ detail: `Missing absence fingerprint ${operation.toPath}` })
         keys.push(target)
       }
     }

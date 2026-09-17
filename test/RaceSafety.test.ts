@@ -21,6 +21,40 @@ const exists = (fileName: string): Effect.Effect<boolean> =>
   )
 
 describe("Node application race and filesystem safety", () => {
+  effect("rejects create and move targets that appear between planning and preview", () =>
+    Effect.gen(function* () {
+      for (const kind of ["create", "move"] as const) {
+        yield* withFixture((root, app) =>
+          Effect.gen(function* () {
+            const targetPath = projectPath("src/raced.ts")
+            const recipe = Recipe.define(`${kind}-preview-race`, {
+              version: "1.0.0",
+              run: () =>
+                Effect.gen(function* () {
+                  const project = yield* fixtureProject(app)
+                  const draft =
+                    kind === "create"
+                      ? Draft.files.create(project, targetPath, "")
+                      : Draft.files.move(project, projectPath("src/library.ts"), targetPath)
+                  return yield* draft
+                }),
+            })
+            const plan = yield* Recipe.run(recipe, undefined)
+            yield* Verification.preview(plan)
+            const target = Path.join(root, targetPath)
+            yield* Effect.promise(() => Fs.writeFile(target, "created by another process\n"))
+
+            const failure = yield* Verification.preview(plan).pipe(Effect.flip)
+            expect(failure._tag).toBe("StalePlanError")
+            expect(yield* Effect.promise(() => Fs.readFile(target, "utf8"))).toBe(
+              "created by another process\n",
+            )
+          }),
+        )
+      }
+    }),
+  )
+
   effect("rejects a create-target race without overwriting the raced file", () =>
     withFixture((root, app) =>
       Effect.gen(function* () {
