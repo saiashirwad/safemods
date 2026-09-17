@@ -19,11 +19,11 @@ import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
 import { type PublicFilePreview, verify } from "../src/Verification/index.ts"
 import * as Workspace from "../src/Workspace/index.ts"
 import { asAssertionToSatisfies } from "./as-assertion-to-satisfies.ts"
-import { commonJsToEsm } from "./commonjs-to-esm.ts"
 import { defaultToNamed } from "./default-to-named.ts"
 import { enumToConstObject } from "./enum-to-const-object.ts"
 import { jsxButtonProps } from "./jsx-button-props.ts"
 import { moveModule } from "./move-module.ts"
+import { overloadedMethod } from "./overloaded-method.ts"
 import { packageEntryPointSplit } from "./package-entry-point-split.ts"
 import { positionalToOptions } from "./positional-to-options.ts"
 import { relativeJsExtensions } from "./relative-js-extensions.ts"
@@ -98,6 +98,12 @@ const examples = [
     id: "positional-to-options",
     fixture: "fixtures/migrations/positional-to-options",
     recipe: positionalToOptions,
+    input: (project) => ({ project }),
+  }),
+  defineExample({
+    id: "overloaded-method",
+    fixture: "fixtures/migrations/overloaded-method",
+    recipe: overloadedMethod,
     input: (project) => ({ project }),
   }),
   defineExample({

@@ -91,6 +91,7 @@ pnpm example --help
 | `rename-package-import`     | `@acme/legacy-client` → `@acme/client`                    |
 | `package-entry-point-split` | root package imports → auth and billing entry points      |
 | `positional-to-options`     | `createSession(userId, ttl)` → options object             |
+| `overloaded-method`         | callback overload → promise/options, with findings        |
 | `jsx-button-props`          | migrate `Button` props through aliases and namespaces     |
 | `rename-through-barrel`     | `loadAccount` → `findAccount` through barrels and aliases |
 | `move-module`               | move a module and rewrite relative importers              |
