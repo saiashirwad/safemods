@@ -1,13 +1,6 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import {
-  finalizePlan,
-  parsePlan,
-  planIdOf,
-  serializePlan,
-  type TransformationPlan,
-  validatePlan,
-} from "../src/Plan.ts"
+import { finalizePlan, parsePlan, type TransformationPlan, validatePlan } from "../src/Plan.ts"
 import { richInput, semanticMutations } from "./utils/plan-schema.ts"
 import type * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
 import * as Sha256 from "../src/Sha256.ts"
@@ -18,7 +11,10 @@ const uncheckedHash = (value: string) => value as Sha256.Type
 const rejects = (plan: TransformationPlan) =>
   Effect.gen(function* () {
     const validated = yield* validatePlan(plan).pipe(Effect.result)
-    const parsed = yield* parsePlan(serializePlan(plan)).pipe(Effect.result)
+    const parsed = yield* Effect.try(() => JSON.stringify(plan)).pipe(
+      Effect.flatMap(parsePlan),
+      Effect.result,
+    )
     return validated._tag === "Failure" && parsed._tag === "Failure"
   })
 
@@ -100,7 +96,7 @@ describe("plan validation", () => {
       const plan = yield* finalizePlan(richInput)
       const rehash = ({ planId: _, ...content }: TransformationPlan): TransformationPlan => ({
         ...content,
-        planId: planIdOf(content),
+        planId: Sha256.digest(JSON.stringify(content)),
       })
       const tampered: ReadonlyArray<TransformationPlan> = [
         { ...plan, planId: uncheckedHash("0".repeat(64)) },

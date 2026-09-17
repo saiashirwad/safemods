@@ -55,6 +55,12 @@ export const PlanInput = Schema.Struct(contentFields)
 export type PlanInput = typeof PlanInput.Encoded
 type PlanContent = typeof PlanInput.Type
 
+const UnsignedPlan = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  ...contentFields,
+})
+type UnsignedPlan = typeof UnsignedPlan.Type
+
 export const TransformationPlan = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   planId: Sha256.schema,
@@ -70,26 +76,59 @@ export class InvalidPlan extends Data.TaggedError("InvalidPlan")<{
   readonly detail: string
 }> {}
 
+const canonicalReplacer = (_: string, nested: Schema.Json): Schema.Json => {
+  if (!Predicate.isObject(nested)) return nested
+  const sorted: Record<string, Schema.Json> = {}
+  for (const key of Object.keys(nested).sort(Order.String)) {
+    const value = nested[key]
+    if (value !== undefined) sorted[key] = value as Schema.Json
+  }
+  return sorted
+}
+
 export const canonicalJson = (value: Schema.Json): string =>
-  JSON.stringify(value, (_, nested: Schema.Json) =>
-    Predicate.isObject(nested)
-      ? Object.fromEntries(Object.entries(nested).sort(([a], [b]) => Order.String(a, b)))
-      : nested,
-  )
+  JSON.stringify(value, canonicalReplacer)
 
-export const serializePlan = (plan: TransformationPlan): string => canonicalJson(plan)
+const strict = { onExcessProperty: "error" } as const
+const PlanJson = Schema.fromJsonString(TransformationPlan, { replacer: canonicalReplacer })
 
-export const planIdOf = (plan: Omit<TransformationPlan, "planId">): Sha256.Type =>
-  Sha256.digest(canonicalJson(plan))
+const encodePlan = Schema.encodeSync(PlanJson, strict)
+export const serializePlan = (plan: TransformationPlan): string => encodePlan(plan)
+
+const encodeUnsignedPlan = Schema.encodeSync(UnsignedPlan, strict)
+
+export const planIdOf = (plan: UnsignedPlan): Sha256.Type =>
+  Sha256.digest(canonicalJson(encodeUnsignedPlan(plan)))
 
 const byFile = Order.Struct({ projectId: Order.String, fileName: Order.String })
+const byProject = Order.Struct({ id: Order.String, configFileName: Order.String })
+const bySource = Order.combine(
+  byFile,
+  Order.make((left: SourceFingerprint, right: SourceFingerprint) =>
+    Order.String(canonicalJson(left), canonicalJson(right)),
+  ),
+)
+const byOperation = Order.combine(
+  byFile,
+  Order.make((left: FileOperation, right: FileOperation) =>
+    Order.String(canonicalJson(left), canonicalJson(right)),
+  ),
+)
+const byEdit = Order.make((left: TextEdit, right: TextEdit) => {
+  const compared = compareEdits(left, right)
+  return compared < 0
+    ? -1
+    : compared > 0
+      ? 1
+      : Order.String(left.expectedTextHash, right.expectedTextHash)
+})
 
 const canonicalize = (input: PlanContent): PlanContent => ({
   ...input,
-  projects: [...input.projects].sort(Order.Struct({ id: Order.String })),
-  sources: [...input.sources].sort(byFile),
-  edits: [...input.edits].sort(compareEdits),
-  fileOperations: [...input.fileOperations].sort(byFile),
+  projects: [...input.projects].sort(byProject),
+  sources: [...input.sources].sort(bySource),
+  edits: [...input.edits].sort(byEdit),
+  fileOperations: [...input.fileOperations].sort(byOperation),
 })
 
 const duplicate = (values: ReadonlyArray<string>): string | undefined => {
@@ -165,8 +204,6 @@ const semanticError = (plan: PlanContent): string | undefined => {
   return undefined
 }
 
-const strict = { onExcessProperty: "error" } as const
-
 export const finalizePlan = (input: PlanInput): Effect.Effect<TransformationPlan, InvalidPlan> =>
   Effect.gen(function* () {
     const decoded = yield* Schema.decodeEffect(
@@ -184,17 +221,17 @@ export const finalizePlan = (input: PlanInput): Effect.Effect<TransformationPlan
 
 export const validatePlan = (plan: TransformationPlan): Effect.Effect<ValidatedPlan, InvalidPlan> =>
   Effect.gen(function* () {
-    yield* Schema.decodeEffect(
+    const decoded = yield* Schema.decodeEffect(
       TransformationPlan,
       strict,
     )(plan).pipe(
       Effect.mapError(() => new InvalidPlan({ phase: "decode", detail: "Plan shape is invalid" })),
     )
-    const { schemaVersion: _, planId: __, ...content } = plan
+    const { schemaVersion: _, planId: __, ...content } = decoded
     const rebuilt = yield* finalizePlan(content).pipe(
       Effect.mapError((error) => new InvalidPlan({ phase: "decode", detail: error.detail })),
     )
-    if (serializePlan(rebuilt) !== serializePlan(plan)) {
+    if (serializePlan(rebuilt) !== canonicalJson(plan)) {
       return yield* new InvalidPlan({
         phase: "decode",
         detail: "Plan is not canonical or its hash is wrong",
@@ -205,12 +242,15 @@ export const validatePlan = (plan: TransformationPlan): Effect.Effect<ValidatedP
 
 export const parsePlan = (text: string): Effect.Effect<ValidatedPlan, InvalidPlan> =>
   Effect.gen(function* () {
-    const json = yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Json))(text).pipe(
+    const plan = yield* Schema.decodeEffect(
+      PlanJson,
+      strict,
+    )(text).pipe(
       Effect.mapError(() => new InvalidPlan({ phase: "decode", detail: "Plan is not valid JSON" })),
     )
-    const plan = yield* validatePlan(json as TransformationPlan)
-    if (text !== serializePlan(plan)) {
+    const validated = yield* validatePlan(plan)
+    if (text !== serializePlan(validated)) {
       return yield* new InvalidPlan({ phase: "decode", detail: "Plan text is not canonical JSON" })
     }
-    return plan
+    return validated
   })
