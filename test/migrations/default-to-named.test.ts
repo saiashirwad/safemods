@@ -12,69 +12,66 @@ const fixture = "migrations/default-to-named"
 const fixturePath = fixtureDirectory(fixture)
 
 describe("default-to-named", () => {
-  effect(
-    "converts authenticate from a default export to a named export",
-    () =>
-      withFixture(
-        (root, app) =>
-          Effect.gen(function* () {
-            const input: DefaultToNamedInput = {
-              project: app,
-              declarationFile: projectPath("src/auth/authenticate.ts"),
-              exportName: "authenticate",
-            }
+  effect("converts authenticate from a default export to a named export", () =>
+    withFixture(
+      (root, app) =>
+        Effect.gen(function* () {
+          const input: DefaultToNamedInput = {
+            project: app,
+            declarationFile: projectPath("src/auth/authenticate.ts"),
+            exportName: "authenticate",
+          }
 
-            const { plan, verified } = yield* executeRecipe(defaultToNamed, input)
+          const { plan, verified } = yield* executeRecipe(defaultToNamed, input)
 
-            expect(plan.edits).toHaveLength(4)
-            expect(verified.diagnosticDiff.introduced).toHaveLength(0)
+          expect(plan.edits).toHaveLength(4)
+          expect(verified.diagnosticDiff.introduced).toHaveLength(0)
 
-            const read = (relative: string) =>
-              Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
-            const original = (relative: string) =>
-              Effect.tryPromise(() => Fs.readFile(Path.join(fixturePath, relative), "utf8"))
+          const read = (relative: string) =>
+            Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
+          const original = (relative: string) =>
+            Effect.tryPromise(() => Fs.readFile(Path.join(fixturePath, relative), "utf8"))
 
-            const authenticate = yield* read("src/auth/authenticate.ts")
-            expect(authenticate).toContain("export function authenticate")
-            expect(authenticate).not.toContain("export default function authenticate")
-            expect(authenticate).toContain("Keep this JSDoc attached to the export.")
+          const authenticate = yield* read("src/auth/authenticate.ts")
+          expect(authenticate).toContain("export function authenticate")
+          expect(authenticate).not.toContain("export default function authenticate")
+          expect(authenticate).toContain("Keep this JSDoc attached to the export.")
 
-            const barrel = yield* read("src/auth/index.ts")
-            expect(barrel).toContain('export { authenticate } from "./authenticate.js"')
-            expect(barrel).not.toContain("default as authenticate")
+          const barrel = yield* read("src/auth/index.ts")
+          expect(barrel).toContain('export { authenticate } from "./authenticate.js"')
+          expect(barrel).not.toContain("default as authenticate")
 
-            const account = yield* read("src/users/account.ts")
-            expect(account).toContain(
-              'import { authenticate, AUTH_SCHEME } from "../auth/authenticate.js"',
-            )
-            expect(account).not.toContain("import authenticate,")
+          const account = yield* read("src/users/account.ts")
+          expect(account).toContain(
+            'import { authenticate, AUTH_SCHEME } from "../auth/authenticate.js"',
+          )
+          expect(account).not.toContain("import authenticate,")
 
-            const router = yield* read("src/http/router.ts")
-            expect(router).toContain(
-              "import /* keep this comment */ { authenticate as signIn } from '../auth/authenticate.js'",
-            )
-            expect(router).toContain(
-              'import renderInvoice, { type Invoice } from "../billing/invoice.js"',
-            )
-            expect(router).toContain("const session  = signIn(credentials)")
+          const router = yield* read("src/http/router.ts")
+          expect(router).toContain(
+            "import /* keep this comment */ { authenticate as signIn } from '../auth/authenticate.js'",
+          )
+          expect(router).toContain(
+            'import renderInvoice, { type Invoice } from "../billing/invoice.js"',
+          )
+          expect(router).toContain("const session  = signIn(credentials)")
 
-            expect(yield* read("src/auth/session.ts")).toBe(yield* original("src/auth/session.ts"))
-            expect(yield* read("src/billing/invoice.ts")).toBe(
-              yield* original("src/billing/invoice.ts"),
-            )
-            expect(yield* read("src/http/middleware.ts")).toBe(
-              yield* original("src/http/middleware.ts"),
-            )
-            expect(yield* read("src/config.ts")).toBe(yield* original("src/config.ts"))
-            expect(yield* read("src/diagnostics.ts")).toBe(yield* original("src/diagnostics.ts"))
-            expect(yield* read("src/diagnostics.ts")).toContain(
-              "export const servicePort: string = 8080",
-            )
-            const second = yield* Recipe.run(defaultToNamed, input)
-            expect(second.edits).toHaveLength(0)
-          }),
-        { fixture },
-      ),
-    60_000,
+          expect(yield* read("src/auth/session.ts")).toBe(yield* original("src/auth/session.ts"))
+          expect(yield* read("src/billing/invoice.ts")).toBe(
+            yield* original("src/billing/invoice.ts"),
+          )
+          expect(yield* read("src/http/middleware.ts")).toBe(
+            yield* original("src/http/middleware.ts"),
+          )
+          expect(yield* read("src/config.ts")).toBe(yield* original("src/config.ts"))
+          expect(yield* read("src/diagnostics.ts")).toBe(yield* original("src/diagnostics.ts"))
+          expect(yield* read("src/diagnostics.ts")).toContain(
+            "export const servicePort: string = 8080",
+          )
+          const second = yield* Recipe.run(defaultToNamed, input)
+          expect(second.edits).toHaveLength(0)
+        }),
+      { fixture },
+    ),
   )
 })

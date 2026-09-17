@@ -4,7 +4,6 @@ import * as Sha256 from "../../src/Sha256.ts"
 import { projectId, projectPath } from "./domain.ts"
 
 const uncheckedPath = (value: string) => value as ProjectRelativePath.Type
-const uncheckedHash = (value: string) => value as Sha256.Type
 
 export const richInput: PlanInput = {
   recipe: {
@@ -64,14 +63,12 @@ export const richInput: PlanInput = {
       kind: "delete",
       projectId: projectId("app"),
       fileName: projectPath("src/delete.ts"),
-      initialHash: Sha256.digest("delete"),
     },
     {
       kind: "move",
       projectId: projectId("app"),
       fileName: projectPath("src/move.ts"),
       toFileName: projectPath("src/moved.ts"),
-      initialHash: Sha256.digest("move"),
     },
   ],
   policies: {
@@ -163,7 +160,6 @@ export const semanticMutations: ReadonlyArray<{
       withOperation(value, 1, (operation) => ({
         ...operation,
         fileName: "src/move.ts",
-        initialHash: Sha256.digest("move"),
       })),
   },
   {
@@ -238,15 +234,6 @@ export const semanticMutations: ReadonlyArray<{
         ...operation,
         fileName: projectPath("src/index.ts"),
       })),
-  },
-  {
-    name: "delete with a stale fingerprint",
-    mutate: (value) =>
-      withOperation(value, 1, (operation) =>
-        operation.kind === "delete"
-          ? { ...operation, initialHash: uncheckedHash("stale") }
-          : operation,
-      ),
   },
   {
     name: "two operations on one path",

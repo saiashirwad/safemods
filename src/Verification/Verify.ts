@@ -158,7 +158,19 @@ export const verify = <Input, E, R>(
               }),
           ),
         )
-        const replayPreview = yield* previewCaptured(yield* validatePlan(replayPlan), captured)
+        const replayPreview = yield* previewCaptured(
+          yield* validatePlan(replayPlan),
+          captured,
+        ).pipe(
+          Effect.mapError(
+            ({ detail }) =>
+              new VerificationFailure({
+                planId: validated.planId,
+                policy: "idempotence",
+                detail: `Invalid replay plan: ${detail}`,
+              }),
+          ),
+        )
         const changed = replayPreview.files.filter((file) => {
           if (file.before.exists !== file.after.exists) return true
           return file.before.exists && file.after.exists

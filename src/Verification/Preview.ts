@@ -2,7 +2,7 @@ import { Effect, FileSystem, Order } from "effect"
 import { applyFileEdits } from "../Edit.ts"
 import * as FileRef from "../FileRef.ts"
 import {
-  type InvalidPlan,
+  InvalidPlan,
   type SourceFingerprint,
   type TransformationPlan,
   type ValidatedPlan,
@@ -11,7 +11,7 @@ import {
 import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
 import * as Sha256 from "../Sha256.ts"
 import { Workspace } from "../Workspace/index.ts"
-import { PlanContextMismatch, StalePlanError, VerificationFailure } from "./Errors.ts"
+import { PlanContextMismatch, StalePlanError } from "./Errors.ts"
 
 export type FileState =
   | { readonly exists: false }
@@ -70,13 +70,12 @@ const readSource = (plan: ValidatedPlan, source: SourceFingerprint) =>
     return Sha256.digest(bytes) === source.hash ? bytes : yield* stale
   })
 
-const verificationFailure = (planId: Sha256.Type, detail: string) =>
-  new VerificationFailure({ planId, policy: "edits", detail })
+const invalidReplayPlan = (detail: string) => new InvalidPlan({ phase: "build", detail })
 
 export const previewCaptured = (
   plan: ValidatedPlan,
   captured: ReadonlyMap<string, Uint8Array | undefined>,
-): Effect.Effect<PlanPreview, VerificationFailure> =>
+): Effect.Effect<PlanPreview, InvalidPlan> =>
   Effect.gen(function* () {
     const before = new Map(
       [...captured].map(([key, bytes]) => [
@@ -88,17 +87,13 @@ export const previewCaptured = (
     for (const [key, edits] of Map.groupBy(plan.edits, FileRef.key)) {
       const original = before.get(key)
       if (original === undefined) {
-        return yield* verificationFailure(plan.planId, `Missing source in ${edits[0]!.fileName}`)
+        return yield* invalidReplayPlan(`Missing source in ${edits[0]!.fileName}`)
       }
       const text = yield* Effect.try(() => decoder.decode(original)).pipe(
-        Effect.mapError(() =>
-          verificationFailure(plan.planId, `Invalid UTF-8 in ${edits[0]!.fileName}`),
-        ),
+        Effect.mapError(() => invalidReplayPlan(`Invalid UTF-8 in ${edits[0]!.fileName}`)),
       )
       const edited = yield* applyFileEdits(text, edits).pipe(
-        Effect.mapError(({ _tag }) =>
-          verificationFailure(plan.planId, `${_tag} in ${edits[0]!.fileName}`),
-        ),
+        Effect.mapError(({ _tag }) => invalidReplayPlan(`${_tag} in ${edits[0]!.fileName}`)),
       )
       const hasByteOrderMark = original[0] === 0xef && original[1] === 0xbb && original[2] === 0xbf
       after.set(key, encoder.encode((hasByteOrderMark ? "\uFEFF" : "") + edited))
@@ -142,11 +137,7 @@ export const previewCaptured = (
 
 export const previewValidated = (
   plan: ValidatedPlan,
-): Effect.Effect<
-  PlanPreview,
-  StalePlanError | VerificationFailure,
-  Workspace | FileSystem.FileSystem
-> =>
+): Effect.Effect<PlanPreview, InvalidPlan | StalePlanError, Workspace | FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const captured = new Map<string, Uint8Array | undefined>()
     for (const source of plan.sources) {
@@ -159,7 +150,7 @@ export const preview = (
   plan: TransformationPlan,
 ): Effect.Effect<
   PlanPreview,
-  InvalidPlan | PlanContextMismatch | StalePlanError | VerificationFailure,
+  InvalidPlan | PlanContextMismatch | StalePlanError,
   Workspace | FileSystem.FileSystem
 > =>
   Effect.gen(function* () {

@@ -3,7 +3,6 @@ import { Effect } from "effect"
 import * as Draft from "../src/Draft.ts"
 import { applyFileEdits } from "../src/Edit.ts"
 import * as Query from "../src/Query.ts"
-import * as Sha256 from "../src/Sha256.ts"
 import { projectPath } from "./utils/domain.ts"
 import { withProject } from "./utils/fixture.ts"
 
@@ -14,83 +13,71 @@ const ARGUMENTS_SOURCE = [
 ].join("\n")
 
 describe("drafts", () => {
-  effect(
-    "replace, insert, and remove produce hash-guarded edits at the node's range",
-    () =>
-      withProject({ "src/arguments.ts": ARGUMENTS_SOURCE }, (project) =>
-        Effect.gen(function* () {
-          const [call] = yield* Query.calls(project).pipe(
-            Query.within("src/arguments.ts"),
-            Query.collect,
-          )
-          const [first, second, third] = call!.value.arguments
-          const draft = Draft.concat(
-            Draft.replace(project, first!, "10"),
-            Draft.insertBefore(project, second!, "/* before */ "),
-            Draft.insertAfter(project, second!, " /* after */"),
-            Draft.remove(project, third!),
-          )
-          expect(yield* applyFileEdits(ARGUMENTS_SOURCE, draft.edits)).toContain(
-            "run(10, /* before */ 2 /* after */, )",
-          )
-        }),
-      ),
-    60_000,
+  effect("replace, insert, and remove produce hash-guarded edits at the node's range", () =>
+    withProject({ "src/arguments.ts": ARGUMENTS_SOURCE }, (project) =>
+      Effect.gen(function* () {
+        const [call] = yield* Query.calls(project).pipe(
+          Query.within("src/arguments.ts"),
+          Query.collect,
+        )
+        const [first, second, third] = call!.value.arguments
+        const draft = Draft.concat(
+          Draft.replace(project, first!, "10"),
+          Draft.insertBefore(project, second!, "/* before */ "),
+          Draft.insertAfter(project, second!, " /* after */"),
+          Draft.remove(project, third!),
+        )
+        expect(yield* applyFileEdits(ARGUMENTS_SOURCE, draft.edits)).toContain(
+          "run(10, /* before */ 2 /* after */, )",
+        )
+      }),
+    ),
   )
 
-  effect(
-    "replaceEach replaces every selected node",
-    () =>
-      withProject({ "src/arguments.ts": ARGUMENTS_SOURCE }, (project) =>
-        Effect.gen(function* () {
-          const calls = yield* Query.calls(project).pipe(
-            Query.within("src/arguments.ts"),
-            Query.collect,
-          )
-          const draft = Draft.replaceEach(calls, () => "run()")
-          expect(draft.edits).toHaveLength(1)
-          expect(yield* applyFileEdits(ARGUMENTS_SOURCE, draft.edits)).toContain("result = run()")
-        }),
-      ),
-    60_000,
+  effect("replaceEach replaces every selected node", () =>
+    withProject({ "src/arguments.ts": ARGUMENTS_SOURCE }, (project) =>
+      Effect.gen(function* () {
+        const calls = yield* Query.calls(project).pipe(
+          Query.within("src/arguments.ts"),
+          Query.collect,
+        )
+        const draft = Draft.replaceEach(calls, () => "run()")
+        expect(draft.edits).toHaveLength(1)
+        expect(yield* applyFileEdits(ARGUMENTS_SOURCE, draft.edits)).toContain("result = run()")
+      }),
+    ),
   )
 
-  effect(
-    "file operations guard existing files by content hash",
-    () =>
-      withProject({}, (project) =>
-        Effect.gen(function* () {
-          const library = (yield* project.file(projectPath("src/library.ts")))!
-          const initialHash = Sha256.digest(library.sourceFile.text)
-          const target = projectPath("src/nested/library.ts")
+  effect("creates file operations from project files", () =>
+    withProject({}, (project) =>
+      Effect.gen(function* () {
+        const library = (yield* project.file(projectPath("src/library.ts")))!
+        const target = projectPath("src/nested/library.ts")
 
-          expect(Draft.deleteFile(library).fileOperations).toEqual([
-            {
-              kind: "delete",
-              projectId: "app",
-              fileName: "src/library.ts",
-              initialHash,
-            },
-          ])
-          expect(Draft.moveFile(library, target).fileOperations).toEqual([
-            {
-              kind: "move",
-              projectId: "app",
-              fileName: "src/library.ts",
-              toFileName: target,
-              initialHash,
-            },
-          ])
-          expect(Draft.createFile(project, target, "export {}\n").fileOperations).toEqual([
-            {
-              kind: "create",
-              projectId: "app",
-              fileName: target,
-              content: "export {}\n",
-            },
-          ])
-        }),
-      ),
-    60_000,
+        expect(Draft.deleteFile(library).fileOperations).toEqual([
+          {
+            kind: "delete",
+            projectId: "app",
+            fileName: "src/library.ts",
+          },
+        ])
+        expect(Draft.moveFile(library, target).fileOperations).toEqual([
+          {
+            kind: "move",
+            projectId: "app",
+            fileName: "src/library.ts",
+            toFileName: target,
+          },
+        ])
+        expect(Draft.createFile(project, target, "export {}\n").fileOperations).toEqual([
+          {
+            kind: "create",
+            projectId: "app",
+            fileName: target,
+            content: "export {}\n",
+          },
+        ])
+      }),
+    ),
   )
 })

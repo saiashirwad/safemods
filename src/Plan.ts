@@ -24,13 +24,11 @@ export const FileOperation = Schema.Union([
   Schema.Struct({
     ...fileRef,
     kind: Schema.Literal("delete"),
-    initialHash: Sha256.schema,
   }),
   Schema.Struct({
     ...fileRef,
     kind: Schema.Literal("move"),
     toFileName: ProjectRelativePath.schema,
-    initialHash: Sha256.schema,
   }),
 ])
 export type FileOperation = typeof FileOperation.Type

@@ -38,36 +38,30 @@ describe("workspace snapshots", () => {
     }),
   )
 
-  effect(
-    "rejects overlapping physical source ownership",
-    () =>
-      Effect.gen(function* () {
-        const definition = yield* WorkspaceDefinition.make({
-          projects: [
-            { id: "root", config: "tsconfig.json" },
-            { id: "nested", config: "nested/tsconfig.json" },
-          ],
-        })
-        const result = yield* Workspace.use((workspace) =>
-          workspace.withSnapshot(WorkspaceSnapshot).pipe(Effect.result),
-        ).pipe(
-          Effect.provide(
-            Layer.merge(
-              workspaceLayer(definition, fixturePath("multi-overlap")),
-              NodeServices.layer,
-            ),
-          ),
-        )
-        expect(result).toMatchObject({
-          _tag: "Failure",
-          failure: {
-            _tag: "OverlappingProjectOwnership",
-            fileName: Path.join(fixturePath("multi-overlap"), "nested/src/shared.ts"),
-            projectIds: ["root", "nested"],
-          },
-        })
-      }),
-    60_000,
+  effect("rejects overlapping physical source ownership", () =>
+    Effect.gen(function* () {
+      const definition = yield* WorkspaceDefinition.make({
+        projects: [
+          { id: "root", config: "tsconfig.json" },
+          { id: "nested", config: "nested/tsconfig.json" },
+        ],
+      })
+      const result = yield* Workspace.use((workspace) =>
+        workspace.withSnapshot(WorkspaceSnapshot).pipe(Effect.result),
+      ).pipe(
+        Effect.provide(
+          Layer.merge(workspaceLayer(definition, fixturePath("multi-overlap")), NodeServices.layer),
+        ),
+      )
+      expect(result).toMatchObject({
+        _tag: "Failure",
+        failure: {
+          _tag: "OverlappingProjectOwnership",
+          fileName: Path.join(fixturePath("multi-overlap"), "nested/src/shared.ts"),
+          projectIds: ["root", "nested"],
+        },
+      })
+    }),
   )
 
   effect("exposes owned files by portable path", () =>

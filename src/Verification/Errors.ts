@@ -16,7 +16,7 @@ export class PlanContextMismatch extends Data.TaggedError("PlanContextMismatch")
 
 export class VerificationFailure extends Data.TaggedError("VerificationFailure")<{
   readonly planId: string
-  readonly policy: "edits" | "affected-files" | "diagnostics" | "idempotence"
+  readonly policy: "affected-files" | "diagnostics" | "idempotence"
   readonly detail: string
   readonly diagnostics?: ReadonlyArray<DiagnosticRecord>
 }> {}

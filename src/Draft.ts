@@ -3,7 +3,6 @@ import { textEdit, type TextEdit } from "./Edit.ts"
 import type { FileOperation } from "./Plan.ts"
 import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import type { Selection } from "./Query.ts"
-import * as Sha256 from "./Sha256.ts"
 import type { ProjectFile, ProjectSnapshot } from "./Workspace/index.ts"
 
 export interface Draft {
@@ -72,7 +71,6 @@ export const deleteFile = (file: ProjectFile): Draft =>
     kind: "delete",
     projectId: file.project.project.id,
     fileName: file.fileName,
-    initialHash: Sha256.digest(file.sourceFile.text),
   })
 
 export const moveFile = (file: ProjectFile, toFileName: ProjectRelativePath.Type): Draft =>
@@ -81,7 +79,6 @@ export const moveFile = (file: ProjectFile, toFileName: ProjectRelativePath.Type
     projectId: file.project.project.id,
     fileName: file.fileName,
     toFileName,
-    initialHash: Sha256.digest(file.sourceFile.text),
   })
 
 export const replaceEach = <A extends Node>(
