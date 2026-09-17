@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { Data, Effect, FileSystem, Path, type PlatformError } from "effect"
+import { type Cause, Data, Effect, Exit, FileSystem, Path, type PlatformError } from "effect"
 import * as Sha256 from "./Sha256.ts"
 import { type FilePreview, StalePlanError, type VerifiedPlan } from "./Verification/index.ts"
 import { applicationState } from "./Verification/VerifiedPlan.ts"
@@ -8,12 +8,12 @@ export interface ApplicationOperationFailure {
   readonly phase: "commit" | "rollback" | "cleanup"
   readonly operation: "write" | "remove" | "restore" | "cleanup-temporary" | "cleanup-backup"
   readonly path: string
-  readonly cause: unknown
+  readonly cause: Cause.Cause<PlatformError.PlatformError>
 }
 
 export class ApplicationFailure extends Data.TaggedError("ApplicationFailure")<{
   readonly planId: string
-  readonly reason: "unissued" | "path-escape" | "filesystem" | "recovery"
+  readonly reason: "unissued" | "path-escape" | "filesystem" | "recovery" | "committed"
   readonly cause?: unknown
   readonly failures?: ReadonlyArray<ApplicationOperationFailure>
 }> {}
@@ -125,20 +125,17 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     target: string,
     action: Effect.Effect<void, PlatformError.PlatformError>,
   ) {
-    return yield* action.pipe(
-      Effect.as(undefined),
-      Effect.catch((cause) =>
-        Effect.succeed({
-          phase,
-          operation,
-          path: target,
-          cause,
-        } satisfies ApplicationOperationFailure),
-      ),
-    )
+    const exit = yield* Effect.exit(action)
+    if (Exit.isSuccess(exit)) return
+    return {
+      phase,
+      operation,
+      path: target,
+      cause: exit.cause,
+    } satisfies ApplicationOperationFailure
   })
   const rollback = Effect.fn(function* (
-    cause: ApplicationFailure | StalePlanError,
+    cause: Cause.Cause<ApplicationFailure | StalePlanError>,
   ): Effect.fn.Return<never, ApplicationFailure | StalePlanError> {
     const failures: Array<ApplicationOperationFailure> = []
     for (const target of written) {
@@ -151,7 +148,6 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       if (failure !== undefined) failures.push(failure)
     }
     for (const { target, backup } of backups.toReversed()) {
-      if (written.has(target)) continue
       const failure = yield* attempt("rollback", "restore", target, fs.rename(backup, target))
       if (failure !== undefined) failures.push(failure)
     }
@@ -172,7 +168,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
         failures,
       })
     }
-    return yield* Effect.fail(cause)
+    return yield* Effect.failCause(cause)
   })
   const write = Effect.fn(function* (
     file: FilePreview,
@@ -209,7 +205,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       if (file.after.exists) yield* write(file, target, file.after.bytes, mode)
     }
   })
-  yield* commit.pipe(Effect.catch(rollback))
+  yield* Effect.uninterruptibleMask((restore) => restore(commit).pipe(Effect.catchCause(rollback)))
 
   const cleanupFailures: Array<ApplicationOperationFailure> = []
   for (const { backup } of backups) {
@@ -224,7 +220,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
   if (cleanupFailures.length > 0) {
     return yield* new ApplicationFailure({
       planId: plan.planId,
-      reason: "recovery",
+      reason: "committed",
       failures: cleanupFailures,
     })
   }

@@ -1,7 +1,7 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, FileSystem } from "effect"
 import * as Application from "../src/Application.ts"
 import * as Draft from "../src/Draft.ts"
 import * as Query from "../src/Query.ts"
@@ -26,6 +26,9 @@ const verified = <E, R>(recipe: Recipe.Recipe<undefined, E, R>) =>
   Effect.flatMap(Recipe.run(recipe, undefined), (plan) =>
     Verification.verify(plan, recipe, undefined),
   )
+
+const withFaultyFileSystem = (use: (fs: FileSystem.FileSystem) => FileSystem.FileSystem) =>
+  Effect.provideServiceEffect(FileSystem.FileSystem, Effect.map(FileSystem.FileSystem, use))
 
 describe("Application.applyVerifiedPlan", () => {
   effect("creates, moves, edits, and deletes files in one plan, including empty ones", () =>
@@ -229,6 +232,81 @@ describe("Application.applyVerifiedPlan", () => {
         const failure = yield* Effect.flip(Application.applyVerifiedPlan(plan))
         expect(failure._tag).toBe("StalePlanError")
         expect(yield* read(root, "src/raced.ts")).toBe("created by another process\n")
+      }),
+    ),
+  )
+
+  effect("restores an edited file when a later write dies", () =>
+    withFixture((root, app) =>
+      Effect.gen(function* () {
+        const recipe = Recipe.define("edit-two-files", {
+          version: "1.0.0",
+          run: () =>
+            Effect.gen(function* () {
+              const project = yield* fixtureProject(app)
+              const barrel = (yield* project.file(projectPath("src/barrel.ts")))!
+              const consumer = (yield* project.file(projectPath("src/reexport-consumer.ts")))!
+              return Draft.concat(
+                Draft.insertBefore(project, barrel.sourceFile.statements[0]!, "// edited\n"),
+                Draft.insertBefore(project, consumer.sourceFile.statements[0]!, "// edited\n"),
+              )
+            }),
+        })
+        const plan = yield* verified(recipe)
+        const barrelBefore = yield* read(root, "src/barrel.ts")
+        const consumerBefore = yield* read(root, "src/reexport-consumer.ts")
+        let temporaryWrites = 0
+
+        const exit = yield* Effect.exit(
+          Application.applyVerifiedPlan(plan).pipe(
+            withFaultyFileSystem((fs) => ({
+              ...fs,
+              writeFile: (target, data, options) =>
+                target.includes(".safemods-") && ++temporaryWrites === 2
+                  ? Effect.die(new Error("injected write failure"))
+                  : fs.writeFile(target, data, options),
+            })),
+          ),
+        )
+
+        expect(exit._tag).toBe("Failure")
+        expect(yield* read(root, "src/barrel.ts")).toBe(barrelBefore)
+        expect(yield* read(root, "src/reexport-consumer.ts")).toBe(consumerBefore)
+      }),
+    ),
+  )
+
+  effect("reports cleanup failure as committed", () =>
+    withFixture((root, app) =>
+      Effect.gen(function* () {
+        const recipe = Recipe.define("edit-file", {
+          version: "1.0.0",
+          run: () =>
+            Effect.gen(function* () {
+              const project = yield* fixtureProject(app)
+              const barrel = (yield* project.file(projectPath("src/barrel.ts")))!
+              return Draft.insertBefore(project, barrel.sourceFile.statements[0]!, "// committed\n")
+            }),
+        })
+        const plan = yield* verified(recipe)
+        const failure = yield* Effect.flip(
+          Application.applyVerifiedPlan(plan).pipe(
+            withFaultyFileSystem((fs) => ({
+              ...fs,
+              remove: (target, options) =>
+                target.includes(".backup")
+                  ? Effect.die(new Error("injected cleanup failure"))
+                  : fs.remove(target, options),
+            })),
+          ),
+        )
+
+        expect(failure).toMatchObject({
+          _tag: "ApplicationFailure",
+          reason: "committed",
+          failures: [{ phase: "cleanup", operation: "cleanup-backup" }],
+        })
+        expect(yield* read(root, "src/barrel.ts")).toMatch(/^\/\/ committed\n/)
       }),
     ),
   )
