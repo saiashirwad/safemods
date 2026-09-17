@@ -17,7 +17,7 @@ export const fixturePath = (name: string): string =>
   fileURLToPath(new URL(`../../fixtures/${name}/`, import.meta.url))
 
 export const fixtureProject = (app: ConfiguredProject.Type) =>
-  WorkspaceSnapshot.use((snapshot) => snapshot.project(app))
+  WorkspaceSnapshot.use((snapshot) => snapshot.project(app.id))
 
 export const withFixture = <A, E, R>(
   use: (root: string, app: ConfiguredProject.Type) => Effect.Effect<A, E, R>,

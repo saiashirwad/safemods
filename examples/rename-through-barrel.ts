@@ -17,12 +17,10 @@ export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
   run: () =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
-      const configured = snapshot.projects[0]
-      if (configured === undefined) {
+      const project = snapshot.projects[0]
+      if (project === undefined) {
         return Draft.empty
       }
-      const project = yield* snapshot.project(configured)
-
       const spelledInDeclaration = yield* Query.identifiers(project).pipe(
         Query.within(DECLARATION_FILE),
         Query.filter((selection) => selection.value.text === "loadAccount"),

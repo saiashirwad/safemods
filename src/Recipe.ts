@@ -4,7 +4,7 @@ import * as FileRef from "./FileRef.ts"
 import {
   type FileOperation,
   finalizePlan,
-  type PlanBuildError,
+  type InvalidPlan,
   type PlanPolicies,
   type SourceFingerprint,
   type TransformationPlan,
@@ -75,7 +75,8 @@ const fingerprintSources = (fileOperations: ReadonlyArray<FileOperation>) =>
     const record = (file: FileRef.FileRef, content: string | undefined) =>
       sources.set(FileRef.key(file), fingerprint(file, content))
 
-    for (const configured of snapshot.projects) {
+    for (const project of snapshot.projects) {
+      const configured = project.project
       const config = {
         projectId: configured.id,
         fileName: ProjectRelativePath.schema.make(configured.config.split("/").at(-1)!),
@@ -84,7 +85,6 @@ const fingerprintSources = (fileOperations: ReadonlyArray<FileOperation>) =>
         .readFileString(workspace.absolutePath(config))
         .pipe(Effect.orElseSucceed(() => undefined))
       record(config, configText)
-      const project = yield* snapshot.project(configured)
       for (const file of yield* project.files) {
         record({ projectId: configured.id, fileName: file.fileName }, file.sourceFile.text)
       }
@@ -109,7 +109,7 @@ export const run = <Input, E, R>(
   input: Input,
 ): Effect.Effect<
   TransformationPlan,
-  E | RecipeInputError | PlanBuildError | ProjectSnapshotError | ProjectNotInSnapshot,
+  E | RecipeInputError | InvalidPlan | ProjectSnapshotError | ProjectNotInSnapshot,
   Workspace | FileSystem.FileSystem | Exclude<R, WorkspaceSnapshot>
 > =>
   Effect.gen(function* () {
@@ -121,7 +121,10 @@ export const run = <Input, E, R>(
         const draft = yield* recipe.run(input)
         return yield* finalizePlan({
           recipe: { name: recipe.name, version: recipe.version, options },
-          projects: snapshot.projects.map(({ id, config }) => ({ id, configFileName: config })),
+          projects: snapshot.projects.map(({ project: { id, config } }) => ({
+            id,
+            configFileName: config,
+          })),
           sources: yield* fingerprintSources(draft.fileOperations),
           edits: draft.edits,
           fileOperations: draft.fileOperations,

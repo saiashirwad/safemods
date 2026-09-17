@@ -61,9 +61,8 @@ export const relativeJsExtensions = Recipe.define("relative-js-extensions", {
   run: () =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
-      const drafts = yield* Effect.forEach(snapshot.projects, (configured) =>
+      const drafts = yield* Effect.forEach(snapshot.projects, (project) =>
         Effect.gen(function* () {
-          const project = yield* snapshot.project(configured)
           const specifiers = yield* Query.nodes(project, isStringLiteral).pipe(
             Query.filter((selection) => isRewritableModuleSpecifier(selection.value)),
             Query.collect,

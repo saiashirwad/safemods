@@ -30,7 +30,7 @@ export const positionalToOptions = Recipe.define("positional-to-options", {
   run: (input: PositionalToOptionsInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
-      const project = yield* snapshot.project(input.project)
+      const project = yield* snapshot.project(input.project.id)
       const createSession = yield* project.symbolNamed("createSession", {
         within: ProjectRelativePath.schema.make("src/sessions.ts"),
       })

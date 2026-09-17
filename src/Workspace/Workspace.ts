@@ -3,7 +3,6 @@ import { Context, Data, Effect, Layer } from "effect"
 import { API } from "typescript/unstable/async"
 import type * as FileRef from "../FileRef.ts"
 import type * as ProjectId from "../ProjectId.ts"
-import type * as ConfiguredProject from "./ConfiguredProject.ts"
 import { nativeRequest, type WorkspaceCompilerError } from "./NativeRequest.ts"
 import * as Overlay from "./Overlay.ts"
 import * as ProjectSnapshot from "./ProjectSnapshot.ts"
@@ -16,9 +15,9 @@ export class ProjectNotInSnapshot extends Data.TaggedError("ProjectNotInSnapshot
 export class WorkspaceSnapshot extends Context.Service<
   WorkspaceSnapshot,
   {
-    readonly projects: ReadonlyArray<ConfiguredProject.Type>
+    readonly projects: ReadonlyArray<ProjectSnapshot.ProjectSnapshot>
     readonly project: (
-      project: ConfiguredProject.Type,
+      projectId: ProjectId.Type,
     ) => Effect.Effect<ProjectSnapshot.ProjectSnapshot, ProjectNotInSnapshot>
   }
 >()("safemods/Workspace/Workspace/WorkspaceSnapshot") {}
@@ -78,22 +77,28 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
           active ? Effect.void : Effect.fail(new ProjectSnapshot.SnapshotExpired()),
         )
 
+        const projects = definition.projects.flatMap((configured) => {
+          const configFile = configFiles.get(configured.id)
+          const nativeProject = configFile === undefined ? undefined : native.getProject(configFile)
+          return configFile === undefined || nativeProject === undefined
+            ? []
+            : [
+                ProjectSnapshot.make({
+                  configured,
+                  native: nativeProject,
+                  projectRoot: Path.dirname(configFile),
+                  ensureActive,
+                }),
+              ]
+        })
+        const byId = new Map(projects.map((project) => [project.project.id, project]))
         const snapshot = WorkspaceSnapshot.of({
-          projects: definition.projects,
-          project: (configured) => {
-            const configFile = configFiles.get(configured.id)
-            const nativeProject =
-              configFile === undefined ? undefined : native.getProject(configFile)
-            return configFile === undefined || nativeProject === undefined
-              ? Effect.fail(new ProjectNotInSnapshot({ projectId: configured.id }))
-              : Effect.succeed(
-                  ProjectSnapshot.make({
-                    configured,
-                    native: nativeProject,
-                    projectRoot: Path.dirname(configFile),
-                    ensureActive,
-                  }),
-                )
+          projects,
+          project: (projectId) => {
+            const project = byId.get(projectId)
+            return project === undefined
+              ? Effect.fail(new ProjectNotInSnapshot({ projectId }))
+              : Effect.succeed(project)
           },
         })
 

@@ -2,7 +2,7 @@ import { Effect, FileSystem, Order } from "effect"
 import { applyFileEdits } from "../Edit.ts"
 import * as FileRef from "../FileRef.ts"
 import {
-  type PlanDecodeError,
+  type InvalidPlan,
   type SourceFingerprint,
   type TransformationPlan,
   type ValidatedPlan,
@@ -10,7 +10,7 @@ import {
 } from "../Plan.ts"
 import * as Sha256 from "../Sha256.ts"
 import { Workspace } from "../Workspace/index.ts"
-import { ProjectIdentityMismatch, StalePlanError, VerificationFailure } from "./Errors.ts"
+import { PlanContextMismatch, StalePlanError } from "./Errors.ts"
 
 export type FileState =
   | { readonly exists: false }
@@ -31,13 +31,13 @@ const stateOf = (text: string | undefined): FileState =>
 
 export const requireWorkspaceProjects = (
   plan: TransformationPlan,
-): Effect.Effect<void, ProjectIdentityMismatch, Workspace> =>
+): Effect.Effect<void, PlanContextMismatch, Workspace> =>
   Effect.gen(function* () {
     const workspace = yield* Workspace
     const live = workspace.definition.projects.map(({ id, config }) => `${id}\0${config}`)
     const planned = plan.projects.map(({ id, configFileName }) => `${id}\0${configFileName}`)
     if (live.sort().join("\n") !== planned.sort().join("\n")) {
-      return yield* new ProjectIdentityMismatch({ planId: plan.planId })
+      return yield* new PlanContextMismatch({ planId: plan.planId, field: "workspace" })
     }
   })
 
@@ -58,11 +58,7 @@ const readSource = (plan: ValidatedPlan, source: SourceFingerprint) =>
 
 export const previewValidated = (
   plan: ValidatedPlan,
-): Effect.Effect<
-  PlanPreview,
-  StalePlanError | VerificationFailure,
-  Workspace | FileSystem.FileSystem
-> =>
+): Effect.Effect<PlanPreview, StalePlanError, Workspace | FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const before = new Map<string, string | undefined>()
     for (const source of plan.sources) {
@@ -71,16 +67,7 @@ export const previewValidated = (
 
     const after = new Map(before)
     for (const [key, edits] of Map.groupBy(plan.edits, FileRef.key)) {
-      const edited = yield* applyFileEdits(before.get(key)!, edits).pipe(
-        Effect.mapError(
-          ({ _tag }) =>
-            new VerificationFailure({
-              planId: plan.planId,
-              policy: "edits",
-              detail: `${_tag} in ${edits[0]!.fileName}`,
-            }),
-        ),
-      )
+      const edited = yield* applyFileEdits(before.get(key)!, edits).pipe(Effect.orDie)
       after.set(key, edited)
     }
 
@@ -121,7 +108,7 @@ export const preview = (
   plan: TransformationPlan,
 ): Effect.Effect<
   PlanPreview,
-  PlanDecodeError | ProjectIdentityMismatch | StalePlanError | VerificationFailure,
+  InvalidPlan | PlanContextMismatch | StalePlanError,
   Workspace | FileSystem.FileSystem
 > =>
   Effect.gen(function* () {

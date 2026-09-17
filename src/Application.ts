@@ -6,7 +6,8 @@ import { isIssued } from "./Verification/VerifiedPlan.ts"
 
 export class ApplicationFailure extends Data.TaggedError("ApplicationFailure")<{
   readonly planId: string
-  readonly cause: unknown
+  readonly reason: "unissued" | "path-escape" | "filesystem"
+  readonly cause?: unknown
 }> {}
 
 export interface ApplicationReceipt {
@@ -19,16 +20,14 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
   verified: VerifiedPlan,
 ) {
   if (!isIssued(verified)) {
-    return yield* new ApplicationFailure({
-      planId: "unissued",
-      cause: "Verified plan was not issued by verification",
-    })
+    return yield* new ApplicationFailure({ planId: "unissued", reason: "unissued" })
   }
   const { workspace, plan, preview } = verified
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
 
-  const failed = (cause: unknown) => new ApplicationFailure({ planId: plan.planId, cause })
+  const failed = (cause: unknown) =>
+    new ApplicationFailure({ planId: plan.planId, reason: "filesystem", cause })
 
   const isWithin = (directory: string, candidate: string): boolean => {
     const relative = path.relative(directory, candidate)
@@ -52,7 +51,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     const anchor = yield* nearestExisting(target)
     const realAnchor = yield* fs.realPath(anchor).pipe(Effect.mapError(failed))
     if (!isWithin(realWorkspace, realProject) || !isWithin(realProject, realAnchor)) {
-      return yield* failed(`Path escapes its project through a symlink: ${file.fileName}`)
+      return yield* new ApplicationFailure({ planId: plan.planId, reason: "path-escape" })
     }
     return target
   })

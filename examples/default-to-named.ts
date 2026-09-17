@@ -57,7 +57,7 @@ export const defaultToNamed = Recipe.define("default-to-named", {
   run: (input: DefaultToNamedInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
-      const project = yield* snapshot.project(input.project)
+      const project = yield* snapshot.project(input.project.id)
       const exported = yield* project.symbolNamed(input.exportName, {
         within: input.declarationFile,
       })

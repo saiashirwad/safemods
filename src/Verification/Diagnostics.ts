@@ -46,8 +46,7 @@ const diagnosticKinds = [
 export const collectDiagnostics = Effect.gen(function* () {
   const snapshot = yield* WorkspaceSnapshot
   const diagnostics: Array<DiagnosticRecord> = []
-  for (const configured of snapshot.projects) {
-    const project = yield* snapshot.project(configured)
+  for (const project of snapshot.projects) {
     for (const kind of diagnosticKinds) {
       const found = yield* project.unsafeNative(({ program }) =>
         nativeRequest(kind, () => program[kind]()),

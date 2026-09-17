@@ -67,11 +67,8 @@ export type TransformationPlan = typeof TransformationPlan.Type
 declare const ValidatedPlanTypeId: unique symbol
 export type ValidatedPlan = TransformationPlan & { readonly [ValidatedPlanTypeId]: true }
 
-export class PlanBuildError extends Data.TaggedError("PlanBuildError")<{
-  readonly detail: string
-}> {}
-
-export class PlanDecodeError extends Data.TaggedError("PlanDecodeError")<{
+export class InvalidPlan extends Data.TaggedError("InvalidPlan")<{
+  readonly phase: "build" | "decode"
   readonly detail: string
 }> {}
 
@@ -173,45 +170,50 @@ const semanticError = (plan: PlanContent): string | undefined => {
 
 const strict = { onExcessProperty: "error" } as const
 
-export const finalizePlan = (input: PlanInput): Effect.Effect<TransformationPlan, PlanBuildError> =>
+export const finalizePlan = (input: PlanInput): Effect.Effect<TransformationPlan, InvalidPlan> =>
   Effect.gen(function* () {
     const decoded = yield* Schema.decodeEffect(
       PlanInput,
       strict,
-    )(input).pipe(Effect.mapError(() => new PlanBuildError({ detail: "Plan shape is invalid" })))
+    )(input).pipe(
+      Effect.mapError(() => new InvalidPlan({ phase: "build", detail: "Plan shape is invalid" })),
+    )
     const content = canonicalize(decoded)
     const detail = semanticError(content)
-    if (detail !== undefined) return yield* new PlanBuildError({ detail })
+    if (detail !== undefined) return yield* new InvalidPlan({ phase: "build", detail })
     const unsigned = { schemaVersion: 1 as const, ...content }
     return { ...unsigned, planId: planIdOf(unsigned) }
   })
 
-export const validatePlan = (
-  plan: TransformationPlan,
-): Effect.Effect<ValidatedPlan, PlanDecodeError> =>
+export const validatePlan = (plan: TransformationPlan): Effect.Effect<ValidatedPlan, InvalidPlan> =>
   Effect.gen(function* () {
     yield* Schema.decodeEffect(
       TransformationPlan,
       strict,
-    )(plan).pipe(Effect.mapError(() => new PlanDecodeError({ detail: "Plan shape is invalid" })))
+    )(plan).pipe(
+      Effect.mapError(() => new InvalidPlan({ phase: "decode", detail: "Plan shape is invalid" })),
+    )
     const { schemaVersion: _, planId: __, ...content } = plan
     const rebuilt = yield* finalizePlan(content).pipe(
-      Effect.mapError((error) => new PlanDecodeError({ detail: error.detail })),
+      Effect.mapError((error) => new InvalidPlan({ phase: "decode", detail: error.detail })),
     )
     if (serializePlan(rebuilt) !== serializePlan(plan)) {
-      return yield* new PlanDecodeError({ detail: "Plan is not canonical or its hash is wrong" })
+      return yield* new InvalidPlan({
+        phase: "decode",
+        detail: "Plan is not canonical or its hash is wrong",
+      })
     }
     return rebuilt as ValidatedPlan
   })
 
-export const parsePlan = (text: string): Effect.Effect<ValidatedPlan, PlanDecodeError> =>
+export const parsePlan = (text: string): Effect.Effect<ValidatedPlan, InvalidPlan> =>
   Effect.gen(function* () {
     const json = yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Json))(text).pipe(
-      Effect.mapError(() => new PlanDecodeError({ detail: "Plan is not valid JSON" })),
+      Effect.mapError(() => new InvalidPlan({ phase: "decode", detail: "Plan is not valid JSON" })),
     )
     const plan = yield* validatePlan(json as TransformationPlan)
     if (text !== serializePlan(plan)) {
-      return yield* new PlanDecodeError({ detail: "Plan text is not canonical JSON" })
+      return yield* new InvalidPlan({ phase: "decode", detail: "Plan text is not canonical JSON" })
     }
     return plan
   })

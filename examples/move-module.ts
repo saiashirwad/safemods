@@ -41,7 +41,7 @@ export const moveModule = Recipe.define("move-module", {
   run: (input: MoveModuleInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
-      const project = yield* snapshot.project(input.project)
+      const project = yield* snapshot.project(input.project.id)
       const moved = yield* project.file(input.from)
       if (moved === undefined) return Draft.empty
 

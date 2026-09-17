@@ -30,12 +30,10 @@ export const renamePackageImport = Recipe.define("rename-package-import", {
   run: () =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
-      const configured = snapshot.projects[0]
-      if (configured === undefined) {
+      const project = snapshot.projects[0]
+      if (project === undefined) {
         return Draft.empty
       }
-      const project = yield* snapshot.project(configured)
-
       const references = yield* Query.nodes(project, isModuleReference).pipe(
         Query.filter(({ value }) => value.moduleSpecifier.text === FROM_PACKAGE),
         Query.collect,

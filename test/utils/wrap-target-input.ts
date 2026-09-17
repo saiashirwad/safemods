@@ -18,7 +18,7 @@ export const wrapTargetInput = Recipe.define("wrap-target-input", {
   run: (input: WrapTargetInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
-      const project = yield* snapshot.project(input.project)
+      const project = yield* snapshot.project(input.project.id)
 
       const target = yield* project.symbolNamed("target", { within: input.declarationFile })
 

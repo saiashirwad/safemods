@@ -1,10 +1,5 @@
 import { Effect, type FileSystem } from "effect"
-import {
-  canonicalJson,
-  type PlanDecodeError,
-  type TransformationPlan,
-  validatePlan,
-} from "../Plan.ts"
+import { canonicalJson, type InvalidPlan, type TransformationPlan, validatePlan } from "../Plan.ts"
 import { encodeInput, type Recipe, type RecipeInputError } from "../Recipe.ts"
 import type { Overlay } from "../Workspace/Overlay.ts"
 import {
@@ -14,12 +9,7 @@ import {
   type WorkspaceSnapshot,
 } from "../Workspace/index.ts"
 import { collectDiagnostics, type DiagnosticDiff, diffDiagnostics } from "./Diagnostics.ts"
-import {
-  type ProjectIdentityMismatch,
-  RecipeMismatch,
-  type StalePlanError,
-  VerificationFailure,
-} from "./Errors.ts"
+import { PlanContextMismatch, type StalePlanError, VerificationFailure } from "./Errors.ts"
 import { type PlanPreview, previewValidated, requireWorkspaceProjects } from "./Preview.ts"
 import { issue, type VerifiedPlan } from "./VerifiedPlan.ts"
 
@@ -27,7 +17,7 @@ const requireAuthoringRecipe = <Input, E, R>(
   plan: TransformationPlan,
   recipe: Recipe<Input, E, R>,
   input: Input,
-): Effect.Effect<void, RecipeMismatch | RecipeInputError> =>
+): Effect.Effect<void, PlanContextMismatch | RecipeInputError> =>
   Effect.gen(function* () {
     const options = yield* encodeInput(recipe, input)
     const mismatches = {
@@ -37,7 +27,7 @@ const requireAuthoringRecipe = <Input, E, R>(
       policies: canonicalJson(recipe.policies) !== canonicalJson(plan.policies),
     }
     for (const field of ["name", "version", "input", "policies"] as const) {
-      if (mismatches[field]) return yield* new RecipeMismatch({ planId: plan.planId, field })
+      if (mismatches[field]) return yield* new PlanContextMismatch({ planId: plan.planId, field })
     }
   })
 
@@ -83,9 +73,8 @@ export const verify = <Input, E, R>(
 ): Effect.Effect<
   VerifiedPlan,
   | E
-  | PlanDecodeError
-  | ProjectIdentityMismatch
-  | RecipeMismatch
+  | InvalidPlan
+  | PlanContextMismatch
   | RecipeInputError
   | StalePlanError
   | VerificationFailure

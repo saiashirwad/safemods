@@ -17,7 +17,7 @@ export const migrateImportSource = Recipe.define("migrate-import-source", {
   run: (input: MigrateImportSourceInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
-      const project = yield* snapshot.project(input.project)
+      const project = yield* snapshot.project(input.project.id)
 
       const declarations = yield* Query.imports(project).pipe(
         Query.filter(
