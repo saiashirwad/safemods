@@ -1,4 +1,4 @@
-import { Effect, FileSystem, Order } from "effect"
+import { Effect, FileSystem, Order, Schema } from "effect"
 import { applyFileEdits } from "../Edit.ts"
 import * as FileRef from "../FileRef.ts"
 import {
@@ -43,14 +43,24 @@ const stateOf = (bytes: Uint8Array | undefined): FileState => {
   }
 }
 
+const workspaceProjects = Schema.Array(
+  Schema.Struct({ projectId: Schema.String, configFileName: Schema.String }),
+)
+const workspaceProjectsEquivalent = Schema.toEquivalence(workspaceProjects)
+
 export const requireWorkspaceProjects = (
   plan: TransformationPlan,
 ): Effect.Effect<void, PlanContextMismatch, Workspace> =>
   Effect.gen(function* () {
     const workspace = yield* Workspace
-    const live = workspace.definition.projects.map(({ id, config }) => `${id}\0${config}`)
-    const planned = plan.projects.map(({ id, configFileName }) => `${id}\0${configFileName}`)
-    if (live.sort().join("\n") !== planned.sort().join("\n")) {
+    const live = workspace.definition.projects
+      .map(({ id, config }) => ({ projectId: id, configFileName: config }))
+      .sort(Order.Struct({ projectId: Order.String }))
+    const planned = plan.projects.map(({ id, configFileName }) => ({
+      projectId: id,
+      configFileName,
+    }))
+    if (!workspaceProjectsEquivalent(live, planned)) {
       return yield* new PlanContextMismatch({ planId: plan.planId, field: "workspace" })
     }
   })
@@ -74,12 +84,12 @@ const invalidReplayPlan = (detail: string) => new InvalidPlan({ phase: "build", 
 
 export const previewCaptured = (
   plan: ValidatedPlan,
-  captured: ReadonlyMap<string, Uint8Array | undefined>,
+  captured: FileRef.ReadonlyMap<Uint8Array | undefined>,
 ): Effect.Effect<PlanPreview, InvalidPlan> =>
   Effect.gen(function* () {
     const before = new Map(
-      [...captured].map(([key, bytes]) => [
-        key,
+      [...FileRef.entries(captured)].map(([file, bytes]) => [
+        FileRef.key(file),
         bytes === undefined ? undefined : Uint8Array.from(bytes),
       ]),
     )
@@ -139,9 +149,9 @@ export const previewValidated = (
   plan: ValidatedPlan,
 ): Effect.Effect<PlanPreview, InvalidPlan | StalePlanError, Workspace | FileSystem.FileSystem> =>
   Effect.gen(function* () {
-    const captured = new Map<string, Uint8Array | undefined>()
+    const captured: FileRef.Map<Uint8Array | undefined> = new Map()
     for (const source of plan.sources) {
-      captured.set(FileRef.key(source), yield* readSource(plan, source))
+      FileRef.set(captured, source, yield* readSource(plan, source))
     }
     return yield* previewCaptured(plan, captured)
   })

@@ -1,8 +1,8 @@
-import { Effect, type FileSystem } from "effect"
+import { Effect, type FileSystem, Schema } from "effect"
 import * as FileRef from "../FileRef.ts"
 import {
-  canonicalJson,
   finalizePlan,
+  PlanPolicies,
   type InvalidPlan,
   type TransformationPlan,
   validatePlan,
@@ -27,6 +27,8 @@ import {
 } from "./Preview.ts"
 import { issue, type VerifiedPlan } from "./VerifiedPlan.ts"
 
+const policiesEquivalent = Schema.toEquivalence(PlanPolicies)
+
 const requireAuthoringRecipe = <Input, E, R>(
   plan: TransformationPlan,
   recipe: Recipe<Input, E, R>,
@@ -34,11 +36,22 @@ const requireAuthoringRecipe = <Input, E, R>(
 ): Effect.Effect<void, PlanContextMismatch | RecipeInputError> =>
   Effect.gen(function* () {
     const options = yield* encodeInput(recipe, input)
+    const inputMatches =
+      recipe.schema === undefined
+        ? Schema.toEquivalence(Schema.Json)(options, plan.recipe.options)
+        : Schema.toEquivalence(recipe.schema)(
+            input,
+            yield* Schema.decodeUnknownEffect(recipe.schema)(plan.recipe.options).pipe(
+              Effect.mapError(
+                () => new PlanContextMismatch({ planId: plan.planId, field: "input" }),
+              ),
+            ),
+          )
     const mismatches = {
       name: recipe.name !== plan.recipe.name,
       version: recipe.version !== plan.recipe.version,
-      input: canonicalJson(options) !== canonicalJson(plan.recipe.options),
-      policies: canonicalJson(recipe.policies) !== canonicalJson(plan.policies),
+      input: !inputMatches,
+      policies: !policiesEquivalent(recipe.policies, plan.policies),
     }
     for (const field of ["name", "version", "input", "policies"] as const) {
       if (mismatches[field]) return yield* new PlanContextMismatch({ planId: plan.planId, field })
@@ -123,28 +136,21 @@ export const verify = <Input, E, R>(
         const diagnostics = yield* collectDiagnostics
         if (validated.policies.idempotence !== "required") return [diagnostics, 0] as const
         const draft = yield* recipe.run(input)
-        const captured = new Map(
-          preview.sources.map((file) => [
-            FileRef.key(file),
-            file.after.exists ? file.after.bytes : undefined,
-          ]),
-        )
+        const captured: FileRef.Map<Uint8Array | undefined> = new Map()
+        for (const file of preview.sources) {
+          FileRef.set(captured, file, file.after.exists ? file.after.bytes : undefined)
+        }
         for (const file of preview.files) {
-          captured.set(FileRef.key(file), file.after.exists ? file.after.bytes : undefined)
+          FileRef.set(captured, file, file.after.exists ? file.after.bytes : undefined)
         }
         const replayPlan = yield* finalizePlan({
           recipe: validated.recipe,
           projects: validated.projects,
-          sources: [...captured].map(([key, bytes]) => {
-            const separator = key.indexOf("\0")
-            const projectId = key.slice(0, separator) as (typeof validated.projects)[number]["id"]
-            const fileName = key.slice(
-              separator + 1,
-            ) as (typeof preview.sources)[number]["fileName"]
-            return bytes === undefined
-              ? { projectId, fileName, kind: "missing" as const }
-              : { projectId, fileName, kind: "file" as const, hash: Sha256.digest(bytes) }
-          }),
+          sources: [...FileRef.entries(captured)].map(([file, bytes]) =>
+            bytes === undefined
+              ? { ...file, kind: "missing" as const }
+              : { ...file, kind: "file" as const, hash: Sha256.digest(bytes) },
+          ),
           edits: draft.edits,
           fileOperations: draft.fileOperations,
           policies: validated.policies,

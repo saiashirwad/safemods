@@ -9,7 +9,6 @@ import {
   type SourceFingerprint,
   type TransformationPlan,
 } from "./Plan.ts"
-import * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import * as Sha256 from "./Sha256.ts"
 import {
   type OverlappingProjectOwnership,
@@ -81,19 +80,14 @@ const readOptional = Effect.fn("Recipe.readOptional")(function* (path: string) {
 })
 
 const fingerprintSources = (
-  captured: ReadonlyMap<string, Uint8Array | undefined>,
+  captured: FileRef.ReadonlyMap<Uint8Array | undefined>,
   fileOperations: ReadonlyArray<FileOperation>,
 ) =>
   Effect.gen(function* () {
     const workspace = yield* Workspace
     const sources = new Map<string, SourceFingerprint>()
-    for (const [key, content] of captured) {
-      const separator = key.indexOf("\0")
-      const file = {
-        projectId: key.slice(0, separator) as FileRef.FileRef["projectId"],
-        fileName: ProjectRelativePath.schema.make(key.slice(separator + 1)),
-      }
-      sources.set(key, fingerprint(file, content))
+    for (const [file, content] of FileRef.entries(captured)) {
+      sources.set(FileRef.key(file), fingerprint(file, content))
     }
     for (const operation of fileOperations) {
       const target = {
