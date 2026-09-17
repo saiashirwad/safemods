@@ -3,7 +3,7 @@ import { textEdit, type TextEdit } from "./Edit.ts"
 import type { FileOperation } from "./Plan.ts"
 import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import type { Selection } from "./Query.ts"
-import type { ProjectFile, ProjectSnapshot } from "./Workspace/index.ts"
+import type { ProjectFile, ProjectSnapshot, TextFile } from "./Workspace/index.ts"
 
 export interface Draft {
   readonly edits: ReadonlyArray<TextEdit>
@@ -103,6 +103,18 @@ export const insertBefore = (project: ProjectSnapshot, node: Node, text: string)
 export const insertAfter = (project: ProjectSnapshot, node: Node, text: string): Draft =>
   oneEdit(editBetween(project, node, "after", text))
 
+export const replaceText = (file: TextFile, newText: string): Draft =>
+  oneEdit(
+    textEdit({
+      projectId: file.project.project.id,
+      fileName: file.fileName,
+      sourceText: file.text,
+      start: 0,
+      end: file.text.length,
+      newText,
+    }),
+  )
+
 export const createFile = (
   project: ProjectSnapshot,
   fileName: ProjectRelativePath.Type,
@@ -115,14 +127,17 @@ export const createFile = (
     content,
   })
 
-export const deleteFile = (file: ProjectFile): Draft =>
+export const deleteFile = (file: ProjectFile | TextFile): Draft =>
   oneOperation({
     kind: "delete",
     projectId: file.project.project.id,
     fileName: file.fileName,
   })
 
-export const moveFile = (file: ProjectFile, toFileName: ProjectRelativePath.Type): Draft =>
+export const moveFile = (
+  file: ProjectFile | TextFile,
+  toFileName: ProjectRelativePath.Type,
+): Draft =>
   oneOperation({
     kind: "move",
     projectId: file.project.project.id,

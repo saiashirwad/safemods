@@ -39,6 +39,12 @@ export interface ProjectFile {
   readonly sourceFile: SourceFile
 }
 
+export interface TextFile {
+  readonly project: ProjectSnapshot
+  readonly fileName: ProjectRelativePath.Type
+  readonly text: string
+}
+
 export interface CallSignatureSummary {
   readonly signature: NativeSignature
   readonly parameters: ReadonlyArray<{ readonly name: string; readonly type: string }>
@@ -52,7 +58,11 @@ export interface ProjectSnapshot {
   readonly file: (
     fileName: ProjectRelativePath.Type,
   ) => Effect.Effect<ProjectFile | undefined, ProjectSnapshotError>
+  readonly textFile: (
+    fileName: ProjectRelativePath.Type,
+  ) => Effect.Effect<TextFile | undefined, ProjectSnapshotError>
   readonly files: Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError>
+  readonly textFiles: Effect.Effect<ReadonlyArray<TextFile>, ProjectSnapshotError>
   readonly symbolNamed: (
     name: string,
     options: { readonly within: ProjectRelativePath.Type },
@@ -137,6 +147,11 @@ export const make = (options: {
       ? symbol.getExportSymbol()
       : checker.getAliasedSymbol(symbol)
 
+  const files = request("getSourceFileNames", () => program.getSourceFileNames()).pipe(
+    Effect.flatMap((names) => Effect.forEach(names, ownedFile, { concurrency: 8 })),
+    Effect.map((files) => files.filter((file) => file !== undefined)),
+  )
+
   const project: ProjectSnapshot = {
     project: configured,
 
@@ -144,9 +159,17 @@ export const make = (options: {
 
     file: (fileName) => ownedFile(absolute(fileName)),
 
-    files: request("getSourceFileNames", () => program.getSourceFileNames()).pipe(
-      Effect.flatMap((names) => Effect.forEach(names, ownedFile, { concurrency: 8 })),
-      Effect.map((files) => files.filter((file) => file !== undefined)),
+    textFile: (fileName) =>
+      Effect.map(ownedFile(absolute(fileName)), (file) =>
+        file === undefined ? undefined : { project, fileName, text: file.sourceFile.text },
+      ),
+
+    files,
+
+    textFiles: files.pipe(
+      Effect.map((files) =>
+        files.map((file) => ({ project, fileName: file.fileName, text: file.sourceFile.text })),
+      ),
     ),
 
     symbolNamed: (name, { within }) =>
