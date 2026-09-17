@@ -173,24 +173,32 @@ const startOf = (node: Node): number => node.getStart(node.getSourceFile())
 export const resolvesTo = <A extends Node>(
   symbol: NativeSymbol,
   options?: { readonly location?: (candidate: A) => Node },
-): Criterion<A, ProjectSnapshotError | CriterionOutputError> => ({
-  id: "resolves-to-symbol",
-  select: perFile("resolves-to-symbol", (project, fileName, values) =>
-    Effect.gen(function* () {
-      const located = values.map((value) => options?.location?.(value) ?? value)
-      const symbols = yield* project.symbolsAt(fileName, located.map(startOf))
-      const canonical = new Map<NativeSymbol, NativeSymbol>()
-      for (const candidate of new Set(symbols)) {
-        if (candidate !== undefined) {
-          canonical.set(candidate, yield* project.canonicalSymbol(candidate))
+): Criterion<A, ProjectSnapshotError | CriterionOutputError> => {
+  const targets = new Map<ProjectSnapshot, NativeSymbol>()
+  return {
+    id: "resolves-to-symbol",
+    select: perFile("resolves-to-symbol", (project, fileName, values) =>
+      Effect.gen(function* () {
+        let target = targets.get(project)
+        if (target === undefined) {
+          target = yield* project.canonicalSymbol(symbol)
+          targets.set(project, target)
         }
-      }
-      return symbols.map(
-        (candidate) => candidate !== undefined && canonical.get(candidate) === symbol,
-      )
-    }),
-  ),
-})
+        const located = values.map((value) => options?.location?.(value) ?? value)
+        const symbols = yield* project.symbolsAt(fileName, located.map(startOf))
+        const canonical = new Map<NativeSymbol, NativeSymbol>()
+        for (const candidate of new Set(symbols)) {
+          if (candidate !== undefined) {
+            canonical.set(candidate, yield* project.canonicalSymbol(candidate))
+          }
+        }
+        return symbols.map(
+          (candidate) => candidate !== undefined && canonical.get(candidate) === target,
+        )
+      }),
+    ),
+  }
+}
 
 export const typeAssignableTo = <A extends Node>(
   target: NativeType | IntrinsicTypeName,

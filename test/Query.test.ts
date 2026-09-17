@@ -202,6 +202,40 @@ describe("queries", () => {
     ),
   )
 
+  effect("resolvesTo canonicalizes a target symbol supplied through an import alias", () =>
+    withProject(
+      {
+        "src/alias-library.ts": "export const oldThing = 1\n",
+        "src/alias-consumer.ts": [
+          'import { oldThing as localThing } from "./alias-library.js"',
+          "export const result = localThing",
+          "",
+        ].join("\n"),
+      },
+      (project) =>
+        Effect.gen(function* () {
+          const consumer = yield* project.file(projectPath("src/alias-consumer.ts"))
+          const localThing = (yield* Query.identifiers([consumer!]).pipe(
+            Query.filter(({ value }) => value.text === "localThing"),
+            Query.collect,
+          ))[0]!
+          const [alias] = yield* project.symbolsAt(localThing.fileName, [localThing.start])
+          const references = yield* Query.identifiers(project).pipe(
+            Query.where(Query.resolvesTo(alias!)),
+            Query.collect,
+          )
+          expect(
+            references.map((selection) => `${selection.fileName}:${selection.value.text}`),
+          ).toEqual([
+            "src/alias-consumer.ts:oldThing",
+            "src/alias-consumer.ts:localThing",
+            "src/alias-consumer.ts:localThing",
+            "src/alias-library.ts:oldThing",
+          ])
+        }),
+    ),
+  )
+
   effect("typeAssignableTo admits nodes by their checked type", () =>
     withProject({ "src/sem.ts": SEM_SOURCE }, (project) =>
       Effect.gen(function* () {
