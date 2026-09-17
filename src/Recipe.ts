@@ -13,6 +13,7 @@ import * as Sha256 from "./Sha256.ts"
 import {
   type OverlappingProjectOwnership,
   type ProjectNotInSnapshot,
+  type ProjectNotInWorkspace,
   type ProjectSnapshotError,
   Workspace,
   WorkspaceSnapshot,
@@ -95,7 +96,7 @@ const fingerprintSources = (
         fileName: operation.kind === "move" ? operation.toFileName : operation.fileName,
       }
       if (operation.kind !== "delete" && !sources.has(FileRef.key(target))) {
-        const onDisk = yield* readOptional(workspace.absolutePath(target))
+        const onDisk = yield* readOptional(yield* workspace.absolutePath(target))
         sources.set(FileRef.key(target), fingerprint(target, onDisk))
       }
     }
@@ -112,6 +113,7 @@ export const run = <Input, E, R>(
   | InvalidPlan
   | ProjectSnapshotError
   | ProjectNotInSnapshot
+  | ProjectNotInWorkspace
   | OverlappingProjectOwnership
   | PlatformError.PlatformError,
   Workspace | FileSystem.FileSystem | Exclude<R, WorkspaceSnapshot>
@@ -122,7 +124,7 @@ export const run = <Input, E, R>(
     return yield* workspace.withSnapshot(
       Effect.gen(function* () {
         const snapshot = yield* WorkspaceSnapshot
-        const captured = yield* workspace.captureSnapshot
+        const captured = yield* snapshot.capture
         const draft = yield* recipe.run(input)
         return yield* finalizePlan({
           recipe: { name: recipe.name, version: recipe.version, options },

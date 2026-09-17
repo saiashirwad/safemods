@@ -26,9 +26,11 @@ const editBetween = (
   const sourceFile = node.getSourceFile()
   const start = range === "after" ? node.getEnd() : node.getStart(sourceFile)
   const end = range === "before" ? start : node.getEnd()
+  const fileName = project.fileNameOf(sourceFile)
+  if (fileName._tag === "None") throw new Error("Node is not in project")
   return textEdit({
     projectId: project.project.id,
-    fileName: project.fileNameOf(sourceFile),
+    fileName: fileName.value,
     sourceText: sourceFile.text,
     start,
     end,

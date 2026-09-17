@@ -12,6 +12,10 @@ export class ProjectNotInSnapshot extends Data.TaggedError("ProjectNotInSnapshot
   readonly projectId: ProjectId.Type
 }> {}
 
+export class ProjectNotInWorkspace extends Data.TaggedError("ProjectNotInWorkspace")<{
+  readonly projectId: ProjectId.Type
+}> {}
+
 export class OverlappingProjectOwnership extends Data.TaggedError("OverlappingProjectOwnership")<{
   readonly fileName: string
   readonly projectIds: ReadonlyArray<ProjectId.Type>
@@ -24,6 +28,11 @@ export class WorkspaceSnapshot extends Context.Service<
     readonly project: (
       projectId: ProjectId.Type,
     ) => Effect.Effect<ProjectSnapshot.ProjectSnapshot, ProjectNotInSnapshot>
+    readonly capture: Effect.Effect<
+      ReadonlyMap<string, Uint8Array | undefined>,
+      ProjectSnapshot.ProjectSnapshotError | PlatformError.PlatformError,
+      FileSystem.FileSystem
+    >
   }
 >()("safemods/Workspace/Workspace/WorkspaceSnapshot") {}
 
@@ -32,8 +41,10 @@ export class Workspace extends Context.Service<
   {
     readonly definition: WorkspaceDefinition.Type
     readonly root: string
-    readonly projectRoot: (projectId: ProjectId.Type) => string
-    readonly absolutePath: (file: FileRef.FileRef) => string
+    readonly projectRoot: (
+      projectId: ProjectId.Type,
+    ) => Effect.Effect<string, ProjectNotInWorkspace>
+    readonly absolutePath: (file: FileRef.FileRef) => Effect.Effect<string, ProjectNotInWorkspace>
     readonly withSnapshot: <A, E, R>(
       program: Effect.Effect<A, E, R | WorkspaceSnapshot>,
       overlay?: Overlay.Overlay,
@@ -42,13 +53,9 @@ export class Workspace extends Context.Service<
       | E
       | WorkspaceCompilerError
       | ProjectSnapshot.ProjectSnapshotError
+      | ProjectNotInWorkspace
       | OverlappingProjectOwnership,
       Exclude<R, WorkspaceSnapshot>
-    >
-    readonly captureSnapshot: Effect.Effect<
-      FileRef.ReadonlyMap<Uint8Array | undefined>,
-      ProjectSnapshot.ProjectSnapshotError | PlatformError.PlatformError,
-      FileSystem.FileSystem | WorkspaceSnapshot
     >
   }
 >()("safemods/Workspace/Workspace") {}
@@ -58,39 +65,19 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
   const configFiles = new Map(
     definition.projects.map((project) => [project.id, Path.join(root, project.config)]),
   )
-  const projectRoot = (projectId: ProjectId.Type): string => {
+  const projectRoot = (projectId: ProjectId.Type) => {
     const configFile = configFiles.get(projectId)
-    if (configFile === undefined) throw new Error(`Unknown project ${projectId}`)
-    return Path.dirname(configFile)
+    return configFile === undefined
+      ? Effect.fail(new ProjectNotInWorkspace({ projectId }))
+      : Effect.succeed(Path.dirname(configFile))
   }
 
   return {
     definition,
     root,
     projectRoot,
-    absolutePath: (file) => Path.join(projectRoot(file.projectId), file.fileName),
-    captureSnapshot: Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem
-      const snapshot = yield* WorkspaceSnapshot
-      const captured: FileRef.Map<Uint8Array | undefined> = new Map()
-      for (const project of snapshot.projects) {
-        const configured = project.project
-        const configFile = configFiles.get(configured.id)!
-        FileRef.set(
-          captured,
-          { projectId: configured.id, fileName: configured.config },
-          yield* fs.readFile(configFile),
-        )
-        for (const file of yield* project.files) {
-          FileRef.set(
-            captured,
-            { projectId: configured.id, fileName: file.fileName },
-            yield* fs.readFile(Path.join(projectRoot(configured.id), file.fileName)),
-          )
-        }
-      }
-      return captured
-    }),
+    absolutePath: (file) =>
+      Effect.map(projectRoot(file.projectId), (root) => Path.join(root, file.fileName)),
     withSnapshot: (program, overlay) =>
       Effect.gen(function* () {
         const api = yield* Effect.acquireRelease(
@@ -141,7 +128,7 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
         const ownership = new Map<string, Array<ProjectId.Type>>()
         for (const project of projects.values()) {
           for (const file of yield* project.files) {
-            const absolute = Path.resolve(projectRoot(project.project.id), file.fileName)
+            const absolute = Path.resolve(yield* projectRoot(project.project.id), file.fileName)
             const owners = ownership.get(absolute) ?? []
             owners.push(project.project.id)
             ownership.set(absolute, owners)
@@ -163,6 +150,22 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
               ? Effect.fail(new ProjectNotInSnapshot({ projectId }))
               : Effect.succeed(project)
           },
+          capture: Effect.gen(function* () {
+            const fs = yield* FileSystem.FileSystem
+            const captured = new Map<string, Uint8Array | undefined>()
+            for (const project of projects.values()) {
+              const configured = project.project
+              const configFile = configFiles.get(configured.id)!
+              captured.set(`${configured.id}\0${configured.config}`, yield* fs.readFile(configFile))
+              for (const file of yield* project.files) {
+                captured.set(
+                  `${configured.id}\0${file.fileName}`,
+                  yield* fs.readFile(Path.join(Path.dirname(configFile), file.fileName)),
+                )
+              }
+            }
+            return captured
+          }),
         })
 
         return yield* program.pipe(

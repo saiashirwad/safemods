@@ -13,6 +13,7 @@ import type { Overlay } from "../Workspace/Overlay.ts"
 import {
   type OverlappingProjectOwnership,
   type ProjectNotInSnapshot,
+  type ProjectNotInWorkspace,
   type ProjectSnapshotError,
   Workspace,
   type WorkspaceSnapshot,
@@ -49,26 +50,26 @@ const requireAuthoringRecipe = <Input, E, R>(
     }
   })
 
-const overlayOf = (
+const overlayOf = Effect.fn(function* (
   workspace: Workspace["Service"],
   preview: PlanPreview,
   after: boolean,
-): Overlay => {
+) {
   const files = new Map<string, string>()
   const deleted = new Set<string>()
   for (const file of preview.sources) {
     const state = after ? file.after : file.before
-    if (state.exists) files.set(workspace.absolutePath(file), state.text)
-    else deleted.add(workspace.absolutePath(file))
+    if (state.exists) files.set(yield* workspace.absolutePath(file), state.text)
+    else deleted.add(yield* workspace.absolutePath(file))
   }
   if (after) {
     for (const file of preview.files) {
-      if (file.after.exists) files.set(workspace.absolutePath(file), file.after.text)
-      else deleted.add(workspace.absolutePath(file))
+      if (file.after.exists) files.set(yield* workspace.absolutePath(file), file.after.text)
+      else deleted.add(yield* workspace.absolutePath(file))
     }
   }
-  return { files, deleted }
-}
+  return { files, deleted } satisfies Overlay
+})
 
 const policyFailure = (
   plan: TransformationPlan,
@@ -110,6 +111,7 @@ export const verify = <Input, E, R>(
   | VerificationFailure
   | ProjectSnapshotError
   | ProjectNotInSnapshot
+  | ProjectNotInWorkspace
   | OverlappingProjectOwnership,
   Workspace | FileSystem.FileSystem | Exclude<R, WorkspaceSnapshot>
 > =>
@@ -119,8 +121,8 @@ export const verify = <Input, E, R>(
     yield* requireWorkspaceProjects(validated)
     yield* requireAuthoringRecipe(validated, recipe, input)
     const preview = yield* previewValidated(validated)
-    const baselineOverlay = overlayOf(workspace, preview, false)
-    const proposedOverlay = overlayOf(workspace, preview, true)
+    const baselineOverlay = yield* overlayOf(workspace, preview, false)
+    const proposedOverlay = yield* overlayOf(workspace, preview, true)
 
     const baseline = yield* workspace.withSnapshot(collectDiagnostics, baselineOverlay)
     const [proposed, replayedChanges] = yield* workspace.withSnapshot(
@@ -180,21 +182,18 @@ export const verify = <Input, E, R>(
       proposedOverlay,
     )
 
-    const moves = new Map(
-      validated.fileOperations.flatMap((operation) =>
-        operation.kind === "move"
-          ? [
-              [
-                workspace.absolutePath(operation),
-                workspace.absolutePath({
-                  projectId: operation.projectId,
-                  fileName: operation.toFileName,
-                }),
-              ] as const,
-            ]
-          : [],
-      ),
-    )
+    const moves = new Map<string, string>()
+    for (const operation of validated.fileOperations) {
+      if (operation.kind === "move") {
+        moves.set(
+          yield* workspace.absolutePath(operation),
+          yield* workspace.absolutePath({
+            projectId: operation.projectId,
+            fileName: operation.toFileName,
+          }),
+        )
+      }
+    }
     const diff = diffDiagnostics(baseline, proposed, moves)
     const failure = policyFailure(validated, preview, diff, replayedChanges)
     if (failure !== undefined) {

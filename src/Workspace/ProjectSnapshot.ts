@@ -40,7 +40,7 @@ export interface ProjectFile {
 
 export interface ProjectSnapshot {
   readonly project: ConfiguredProject.Type
-  readonly fileNameOf: (sourceFile: SourceFile) => ProjectRelativePath.Type
+  readonly fileNameOf: (sourceFile: SourceFile) => Option.Option<ProjectRelativePath.Type>
   readonly file: (
     fileName: ProjectRelativePath.Type,
   ) => Effect.Effect<ProjectFile | undefined, ProjectSnapshotError>
@@ -119,7 +119,7 @@ export const make = (options: {
   const project: ProjectSnapshot = {
     project: configured,
 
-    fileNameOf: (sourceFile) => Option.getOrThrow(relative(sourceFile.fileName)),
+    fileNameOf: (sourceFile) => relative(sourceFile.fileName),
 
     file: (fileName) => ownedFile(absolute(fileName)),
 

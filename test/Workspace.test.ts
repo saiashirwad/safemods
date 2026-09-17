@@ -2,8 +2,9 @@ import { NodeServices } from "@effect/platform-node"
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Option, Schema } from "effect"
 import {
+  ProjectNotInWorkspace,
   SnapshotExpired,
   Workspace,
   WorkspaceDefinition,
@@ -69,8 +70,33 @@ describe("workspace snapshots", () => {
       Effect.gen(function* () {
         const library = yield* project.file(libraryPath)
         expect(library?.sourceFile.text).toContain("function target")
-        expect(project.fileNameOf(library!.sourceFile)).toBe(libraryPath)
+        expect(Option.getOrUndefined(project.fileNameOf(library!.sourceFile))).toBe(libraryPath)
         expect((yield* project.files).map((file) => file.fileName)).toContain(libraryPath)
+      }),
+    ),
+  )
+
+  effect("unknown workspace projects fail through the typed channel", () =>
+    withFixture(() =>
+      Effect.gen(function* () {
+        const workspace = yield* Workspace
+        const unknown = "unknown" as WorkspaceDefinition.Type["projects"][number]["id"]
+        expect(yield* Effect.flip(workspace.projectRoot(unknown))).toBeInstanceOf(
+          ProjectNotInWorkspace,
+        )
+        expect(
+          yield* Effect.flip(workspace.absolutePath({ projectId: unknown, fileName: libraryPath })),
+        ).toBeInstanceOf(ProjectNotInWorkspace)
+      }),
+    ),
+  )
+
+  effect("fileNameOf returns None for a source file outside its project", () =>
+    withProject({}, (project) =>
+      Effect.gen(function* () {
+        const library = yield* project.file(libraryPath)
+        const external = { ...library!.sourceFile, fileName: "/outside/project.ts" }
+        expect(Option.isNone(project.fileNameOf(external))).toBe(true)
       }),
     ),
   )

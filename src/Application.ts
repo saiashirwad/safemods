@@ -52,10 +52,10 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       ),
     )
   const confinedTarget = Effect.fn(function* (file: FilePreview) {
-    const target = workspace.absolutePath(file)
+    const target = yield* workspace.absolutePath(file)
     const realWorkspace = yield* fs.realPath(workspace.root).pipe(Effect.mapError(failed))
     const realProject = yield* fs
-      .realPath(workspace.projectRoot(file.projectId))
+      .realPath(yield* workspace.projectRoot(file.projectId))
       .pipe(Effect.mapError(failed))
     const anchor = yield* nearestExisting(target)
     const realAnchor = yield* fs.realPath(anchor).pipe(Effect.mapError(failed))
@@ -197,7 +197,12 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       if (file.after.exists) yield* write(file, target, file.after.bytes, mode)
     }
   })
-  yield* commit.pipe(Effect.catch(rollback))
+  yield* commit.pipe(
+    Effect.catchTag("ProjectNotInWorkspace", (cause) =>
+      rollback(new ApplicationFailure({ planId: plan.planId, reason: "path-escape", cause })),
+    ),
+    Effect.catch(rollback),
+  )
 
   const cleanupFailures: Array<ApplicationOperationFailure> = []
   for (const { backup } of backups) {

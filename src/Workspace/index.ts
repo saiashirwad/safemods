@@ -12,6 +12,7 @@ export {
   layer,
   OverlappingProjectOwnership,
   ProjectNotInSnapshot,
+  ProjectNotInWorkspace,
   Workspace,
   WorkspaceSnapshot,
 } from "./Workspace.ts"

@@ -10,7 +10,7 @@ import {
 } from "../Plan.ts"
 import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
 import * as Sha256 from "../Sha256.ts"
-import { Workspace } from "../Workspace/index.ts"
+import { type ProjectNotInWorkspace, Workspace } from "../Workspace/index.ts"
 import { PlanContextMismatch, StalePlanError } from "./Errors.ts"
 
 export type FileState =
@@ -69,7 +69,7 @@ const readSource = (plan: ValidatedPlan, source: SourceFingerprint) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
     const workspace = yield* Workspace
-    const absolute = workspace.absolutePath(source)
+    const absolute = yield* workspace.absolutePath(source)
     const { projectId, fileName } = source
     const stale = new StalePlanError({ planId: plan.planId, projectId, fileName })
     if (source.kind === "missing") {
@@ -161,7 +161,7 @@ export const previewValidated = (
   plan: ValidatedPlan,
 ): Effect.Effect<
   PlanPreview,
-  InvalidPlan | StalePlanError | PlatformError.PlatformError,
+  InvalidPlan | ProjectNotInWorkspace | StalePlanError | PlatformError.PlatformError,
   Workspace | FileSystem.FileSystem
 > =>
   Effect.gen(function* () {
@@ -176,7 +176,11 @@ export const preview = (
   plan: TransformationPlan,
 ): Effect.Effect<
   PlanPreview,
-  InvalidPlan | PlanContextMismatch | StalePlanError | PlatformError.PlatformError,
+  | InvalidPlan
+  | PlanContextMismatch
+  | ProjectNotInWorkspace
+  | StalePlanError
+  | PlatformError.PlatformError,
   Workspace | FileSystem.FileSystem
 > =>
   Effect.gen(function* () {
