@@ -1,7 +1,7 @@
 /** Process-local capability that grants application authority. */
 import { Brand, Predicate } from "effect"
 import type { ValidatedPlan } from "../Plan.ts"
-import type { DiagnosticDiff } from "../Policy.ts"
+import type { DiagnosticDiff } from "./Diagnostics.ts"
 import type { PlanPreview } from "./Preview.ts"
 
 /** Only plans in this set carry application authority; the brand is compile-time only. */

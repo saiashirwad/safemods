@@ -30,6 +30,9 @@ importers:
       '@types/node':
         specifier: 26.2.0
         version: 26.2.0
+      is-kit:
+        specifier: 1.14.1
+        version: 1.14.1
       knip:
         specifier: ^6.34.0
         version: 6.34.0
@@ -1185,6 +1188,10 @@ packages:
   get-tsconfig@4.14.3:
     resolution: {integrity: sha512-++QEw4DIY7WGoukz+/+A/8dGYPT9l9yIadnmSgZ8Rjr3YVSVDipQSO9CdnJo9ePqFqUUqh+wk9uIaoiAwsiPkA==}
 
+  is-kit@1.14.1:
+    resolution: {integrity: sha512-LyBXmcgnaP9rXScbetnWU6enZN9OC68EWJhHYw8s+fkQczES91nEWefltxT8p+dRL1bKKz9GIJm0HeaB2WapKA==}
+    hasBin: true
+
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
@@ -2251,6 +2258,8 @@ snapshots:
   get-tsconfig@4.14.3:
     dependencies:
       resolve-pkg-maps: 1.0.0
+
+  is-kit@1.14.1: {}
 
   jiti@2.7.0: {}
 

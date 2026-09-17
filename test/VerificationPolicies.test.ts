@@ -3,8 +3,7 @@ import * as Path from "node:path"
 import { describe, effect, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../src/Draft/index.ts"
-import type { DiagnosticRecord } from "../src/Policy.ts"
-import * as Policy from "../src/Policy.ts"
+import type { DiagnosticRecord } from "../src/Verification/Diagnostics.ts"
 import * as Query from "../src/Query/index.ts"
 import { computeDiagnosticDiff } from "../src/Verification/PolicyEvaluation.ts"
 import * as Recipe from "../src/Recipe.ts"
@@ -13,6 +12,7 @@ import * as Verification from "../src/Verification/index.ts"
 import { finalizePlan } from "../src/Plan.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
+import { projectPath } from "./utils/domain.ts"
 
 describe("verification diagnostics and policies", () => {
   it("computes diagnostic diffs accurately", () => {
@@ -74,14 +74,13 @@ describe("verification diagnostics and policies", () => {
           )
           const recipe = Recipe.define("swap-one-error-for-another", {
             version: "1.0.0",
-            policies: [],
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
                 // Resolve the TS2322 error, introduce one TS2304 error: count stays 1.
                 return yield* Draft.concat(
-                  yield* Draft.files.delete(project, "src/swap.ts"),
-                  yield* Draft.files.create(project, "src/other.ts", "missingName;\n"),
+                  yield* Draft.files.delete(project, projectPath("src/swap.ts")),
+                  yield* Draft.files.create(project, projectPath("src/other.ts"), "missingName;\n"),
                 )
               }),
           })
@@ -97,7 +96,7 @@ describe("verification diagnostics and policies", () => {
     60_000,
   )
 
-  it("treats a diagnostic category or span change as a real transition", () => {
+  it("treats a diagnostic category change as a real transition", () => {
     const warning: DiagnosticRecord = {
       code: 9999,
       message: "same diagnostic",
@@ -106,14 +105,17 @@ describe("verification diagnostics and policies", () => {
       start: 1,
       length: 2,
     }
-    const changedCategory = computeDiagnosticDiff([warning], [{ ...warning, category: "error" }])
+    const error: DiagnosticRecord = { ...warning, category: "error" }
+    const changedCategory = computeDiagnosticDiff([warning], [error])
     expect(changedCategory.resolved).toEqual([warning])
-    expect(changedCategory.introduced[0]?.category).toBe("error")
+    expect(changedCategory.introduced).toEqual([error])
+    expect(changedCategory.unchanged).toEqual([])
 
-    const changedSpan = computeDiagnosticDiff([warning], [{ ...warning, length: 3 }])
-    expect(changedSpan.unchanged).toHaveLength(0)
-    expect(changedSpan.resolved).toHaveLength(1)
-    expect(changedSpan.introduced).toHaveLength(1)
+    const moved: DiagnosticRecord = { ...warning, start: 4, length: 3 }
+    const sameIdentity = computeDiagnosticDiff([warning], [moved])
+    expect(sameIdentity.unchanged).toEqual([moved])
+    expect(sameIdentity.resolved).toEqual([])
+    expect(sameIdentity.introduced).toEqual([])
   })
 
   effect(
@@ -123,31 +125,29 @@ describe("verification diagnostics and policies", () => {
         Effect.gen(function* () {
           const validRecipe = Recipe.define("policy-valid", {
             version: "1.0.0",
-            policies: [Policy.matches({ min: 1 }), Policy.idempotent()],
+            policies: { matchCount: { min: 1 }, idempotence: "required" },
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.audit(
-                  yield* Query.imports(project).pipe(
-                    Query.within("src/consumer.ts"),
-                    Query.collect,
-                  ),
+                const matches = yield* Query.imports(project).pipe(
+                  Query.within("src/consumer.ts"),
+                  Query.collect,
                 )
+                return { ...Draft.empty, matches: matches.length }
               }),
           })
 
           const failingRecipe = Recipe.define("policy-failing", {
             version: "1.0.0",
-            policies: [Policy.matches({ min: 999 })],
+            policies: { matchCount: { min: 999 } },
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.audit(
-                  yield* Query.imports(project).pipe(
-                    Query.within("src/consumer.ts"),
-                    Query.collect,
-                  ),
+                const matches = yield* Query.imports(project).pipe(
+                  Query.within("src/consumer.ts"),
+                  Query.collect,
                 )
+                return { ...Draft.empty, matches: matches.length }
               }),
           })
 
@@ -166,21 +166,19 @@ describe("verification diagnostics and policies", () => {
   )
 
   effect(
-    "rejects recipe identity, implementation, input, and toolchain mismatches",
+    "rejects recipe identity, input, and toolchain mismatches",
     () =>
       withFixture(() =>
         Effect.gen(function* () {
           const input = { value: 1 }
           const author = Recipe.define("identity-author", {
             version: "1.0.0",
-            implementationHash: "author-hash",
             run: (_input: { readonly value: number }) => Effect.succeed(Draft.empty),
           })
           const plan = yield* Recipe.run(author, input)
 
           const differentRecipe = Recipe.define("different-recipe", {
             version: "1.0.0",
-            implementationHash: "author-hash",
             run: (_input: { readonly value: number }) => Effect.succeed(Draft.empty),
           })
           const recipeResult = yield* Verification.verify(plan, differentRecipe, input).pipe(
@@ -189,20 +187,6 @@ describe("verification diagnostics and policies", () => {
           expect(recipeResult._tag).toBe("Failure")
           if (recipeResult._tag === "Failure")
             expect(recipeResult.failure._tag).toBe("RecipeMismatch")
-
-          const differentImplementation = Recipe.define("identity-author", {
-            version: "1.0.0",
-            implementationHash: "different-hash",
-            run: (_input: { readonly value: number }) => Effect.succeed(Draft.empty),
-          })
-          const implementationResult = yield* Verification.verify(
-            plan,
-            differentImplementation,
-            input,
-          ).pipe(Effect.result)
-          expect(implementationResult._tag).toBe("Failure")
-          if (implementationResult._tag === "Failure")
-            expect(implementationResult.failure._tag).toBe("RecipeMismatch")
 
           const inputResult = yield* Verification.verify(plan, author, { value: 2 }).pipe(
             Effect.result,
@@ -234,13 +218,13 @@ describe("verification diagnostics and policies", () => {
         Effect.gen(function* () {
           const recipe = Recipe.define("non-idempotent-file-create", {
             version: "1.0.0",
-            policies: [{ diagnostics: "allow-new-errors" }, Policy.idempotent()],
+            policies: { diagnostics: "allow-new-errors", idempotence: "required" },
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
                 return yield* Draft.files.create(
                   project,
-                  "src/repeated.ts",
+                  projectPath("src/repeated.ts"),
                   "export const repeated = true;\n",
                 )
               }),
@@ -266,11 +250,10 @@ describe("verification diagnostics and policies", () => {
           const broken = "export const broken = {\n"
           const recipe = Recipe.define("introduce-syntax-error", {
             version: "1.0.0",
-            policies: [],
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return yield* Draft.files.create(project, "src/broken.ts", broken)
+                return yield* Draft.files.create(project, projectPath("src/broken.ts"), broken)
               }),
           })
           const plan = yield* Recipe.run(recipe, undefined)

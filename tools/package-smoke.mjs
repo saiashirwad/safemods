@@ -77,7 +77,6 @@ void previewValue
     `
 import * as ApplicationEntry from "safemods/Application"
 import * as DraftEntry from "safemods/Draft"
-import * as PolicyEntry from "safemods/Policy"
 import * as QueryEntry from "safemods/Query"
 import * as RecipeEntry from "safemods/Recipe"
 import * as VerificationEntry from "safemods/Verification"
@@ -86,7 +85,6 @@ const forbidden = [
   [ApplicationEntry, "Application"],
   [DraftEntry, "Draft"],
   [DraftEntry, "arguments"],
-  [PolicyEntry, "Policy"],
   [QueryEntry, "Query"],
   [QueryEntry, "preceding"],
   [QueryEntry, "following"],
@@ -112,6 +110,7 @@ const removedEntryPoints = [
   "safemods/Cli",
   "safemods/Edit",
   "safemods/Evidence",
+  "safemods/Policy",
   "safemods/ProjectPath",
   "safemods/VirtualFs",
 ]

@@ -17,8 +17,8 @@ export type EvidenceRecord = typeof EvidenceRecord.Type
 
 export const canonicalJson = (value: Schema.Json): string =>
   JSON.stringify(value, (_, v: Schema.Json) =>
-    Predicate.isObject(v) && !Array.isArray(v)
-      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)))
+    Predicate.isObject(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
       : v,
   )
 
@@ -26,8 +26,9 @@ export class DraftEvidenceConflict extends Data.TaggedError("DraftEvidenceConfli
   readonly id: string
 }> {}
 
-const evidenceIdentity = (record: EvidenceRecord): string =>
-  `${record.kind}\0${canonicalJson(record.facts)}`
+export class MissingDraftEvidence extends Data.TaggedError("MissingDraftEvidence")<{
+  readonly id: string
+}> {}
 
 export const mergeEvidence = (
   records: ReadonlyArray<EvidenceRecord>,
@@ -40,7 +41,10 @@ export const mergeEvidence = (
         evidence.set(record.id, record)
         continue
       }
-      if (evidenceIdentity(existing) !== evidenceIdentity(record)) {
+      if (
+        existing.kind !== record.kind ||
+        canonicalJson(existing.facts) !== canonicalJson(record.facts)
+      ) {
         return yield* new DraftEvidenceConflict({ id: record.id })
       }
     }
@@ -57,28 +61,19 @@ interface DraftEvidenceTarget {
   readonly evidence: ReadonlyArray<EvidenceRecord>
 }
 
-interface MissingEvidence {
-  readonly facts?: EvidenceRecord["facts"] | undefined
-}
-
 export const finalizeDraftEvidence = <A extends DraftEvidenceTarget>(
   draft: A,
-  missing: MissingEvidence = {},
-): Effect.Effect<A, DraftEvidenceConflict> =>
+): Effect.Effect<A, DraftEvidenceConflict | MissingDraftEvidence> =>
   Effect.gen(function* () {
     const merged = yield* mergeEvidence(draft.evidence)
-    const evidence = new Map(merged.map((record) => [record.id, record]))
+    const evidenceIds = new Set(merged.map((record) => record.id))
     const referencedIds = [
       ...draft.edits.flatMap((edit) => edit.evidenceIds ?? []),
       ...(draft.fileOperations ?? []).flatMap((operation) => operation.evidenceIds ?? []),
     ]
     for (const id of referencedIds) {
-      if (evidence.has(id)) continue
-      evidence.set(id, {
-        id,
-        kind: "draft-operation",
-        facts: missing.facts ?? {},
-      })
+      if (evidenceIds.has(id)) continue
+      return yield* new MissingDraftEvidence({ id })
     }
-    return { ...draft, evidence: [...evidence.values()] }
+    return { ...draft, evidence: merged }
   })

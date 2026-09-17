@@ -1,15 +1,17 @@
 /** Hash-guarded text edits: construction, validation, and application. */
-import { hash } from "node:crypto"
-import { Data, Effect, Schema } from "effect"
+import { Data, Effect, Order, Schema } from "effect"
+import * as ProjectId from "./ProjectId.ts"
+import * as ProjectRelativePath from "./ProjectRelativePath.ts"
+import * as Sha256 from "./Sha256.ts"
 
 export const NonNegativeInt = Schema.Finite.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
 
 export const TextEdit = Schema.Struct({
-  projectId: Schema.String,
-  fileName: Schema.String,
+  projectId: ProjectId.schema,
+  fileName: ProjectRelativePath.schema,
   start: NonNegativeInt,
   end: NonNegativeInt,
-  expectedTextHash: Schema.String,
+  expectedTextHash: Sha256.schema,
   newText: Schema.String,
   evidenceIds: Schema.Array(Schema.String),
 }).check(
@@ -18,8 +20,8 @@ export const TextEdit = Schema.Struct({
 export type TextEdit = typeof TextEdit.Type
 
 export const textEdit = (options: {
-  readonly projectId: string
-  readonly fileName: string
+  readonly projectId: ProjectId.Type
+  readonly fileName: ProjectRelativePath.Type
   readonly sourceText: string
   readonly start: number
   readonly end: number
@@ -31,7 +33,7 @@ export const textEdit = (options: {
   start: options.start,
   end: options.end,
   newText: options.newText,
-  expectedTextHash: hash("sha256", options.sourceText.slice(options.start, options.end), "hex"),
+  expectedTextHash: Sha256.digest(options.sourceText.slice(options.start, options.end)),
   evidenceIds: options.evidenceIds ?? [],
 })
 
@@ -46,25 +48,26 @@ export class EditConflict extends Data.TaggedError("EditConflict")<{
 }> {}
 
 export const compareEdits = (left: TextEdit, right: TextEdit): number =>
-  left.projectId.localeCompare(right.projectId) ||
-  left.fileName.localeCompare(right.fileName) ||
+  Order.String(left.projectId, right.projectId) ||
+  Order.String(left.fileName, right.fileName) ||
   left.start - right.start ||
   left.end - right.end ||
-  left.newText.localeCompare(right.newText)
+  Order.String(left.newText, right.newText)
 
 export const editsConflict = (left: TextEdit, right: TextEdit): boolean => {
   if (left.projectId !== right.projectId || left.fileName !== right.fileName) return false
   const leftInsert = left.start === left.end
   const rightInsert = right.start === right.end
   if (leftInsert && rightInsert) return left.start === right.start
-  if (leftInsert) return left.start >= right.start && left.start <= right.end
-  if (rightInsert) return right.start >= left.start && right.start <= left.end
+  if (leftInsert) return left.start >= right.start && left.start < right.end
+  if (rightInsert) return right.start >= left.start && right.start < left.end
   return left.start < right.end && right.start < left.end
 }
 
-const normalizeEdits = (
+export const applyFileEdits = (
+  sourceText: string,
   edits: ReadonlyArray<TextEdit>,
-): Effect.Effect<ReadonlyArray<TextEdit>, InvalidEdit | EditConflict> =>
+): Effect.Effect<string, InvalidEdit | EditConflict> =>
   Effect.gen(function* () {
     const sorted = [...edits].sort(compareEdits)
     for (const edit of sorted) {
@@ -72,7 +75,8 @@ const normalizeEdits = (
         !Number.isInteger(edit.start) ||
         !Number.isInteger(edit.end) ||
         edit.start < 0 ||
-        edit.end < edit.start
+        edit.end < edit.start ||
+        edit.end > sourceText.length
       ) {
         return yield* new InvalidEdit({ edit, reason: "range" })
       }
@@ -82,45 +86,15 @@ const normalizeEdits = (
       const right = sorted[index]!
       if (editsConflict(left, right)) return yield* new EditConflict({ left, right })
     }
-    return sorted
-  })
-
-interface TextReplacement {
-  readonly start: number
-  readonly end: number
-  readonly newText: string
-}
-
-/** Apply non-overlapping text replacements from right to left so offsets remain stable. */
-const applyTextReplacements = (
-  sourceText: string,
-  replacements: ReadonlyArray<TextReplacement>,
-): string => {
-  let ordered = replacements
-  for (let index = 1; index < replacements.length; index++) {
-    if (replacements[index - 1]!.start <= replacements[index]!.start) continue
-    ordered = [...replacements].sort((left, right) => left.start - right.start)
-    break
-  }
-  let output = sourceText
-  for (let index = ordered.length - 1; index >= 0; index--) {
-    const replacement = ordered[index]!
-    output = `${output.slice(0, replacement.start)}${replacement.newText}${output.slice(replacement.end)}`
-  }
-  return output
-}
-
-export const applyFileEdits = (
-  sourceText: string,
-  edits: ReadonlyArray<TextEdit>,
-): Effect.Effect<string, InvalidEdit | EditConflict> =>
-  Effect.gen(function* () {
-    const normalized = yield* normalizeEdits(edits)
-    for (const edit of normalized) {
-      if (edit.end > sourceText.length) return yield* new InvalidEdit({ edit, reason: "range" })
-      if (hash("sha256", sourceText.slice(edit.start, edit.end), "hex") !== edit.expectedTextHash) {
+    for (const edit of sorted) {
+      if (Sha256.digest(sourceText.slice(edit.start, edit.end)) !== edit.expectedTextHash) {
         return yield* new InvalidEdit({ edit, reason: "source-mismatch" })
       }
     }
-    return applyTextReplacements(sourceText, normalized)
+    let output = sourceText
+    for (let index = sorted.length - 1; index >= 0; index--) {
+      const edit = sorted[index]!
+      output = `${output.slice(0, edit.start)}${edit.newText}${output.slice(edit.end)}`
+    }
+    return output
   })

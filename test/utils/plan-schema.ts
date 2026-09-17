@@ -1,26 +1,58 @@
 import type { PlanInput } from "../../src/Plan.ts"
+import type * as ProjectRelativePath from "../../src/ProjectRelativePath.ts"
+import * as Sha256 from "../../src/Sha256.ts"
+import { projectId, projectPath } from "./domain.ts"
+
+// SAFETY: semantic-mutation tests deliberately send invalid values through the decode boundary.
+const uncheckedPath = (value: string) => value as ProjectRelativePath.Type
+// SAFETY: semantic-mutation tests deliberately send invalid values through the decode boundary.
+const uncheckedHash = (value: string) => value as Sha256.Type
 
 export const richInput: PlanInput = {
   recipe: {
     name: "test",
     version: "1",
-    implementationHash: "impl",
     options: { enabled: true, nested: [null, 1, "x"] },
   },
   toolchain: { systemVersion: "1", typescriptVersion: "7", effectVersion: "4" },
-  projects: [{ id: "app", configFileName: "tsconfig.json" }],
+  projects: [{ id: projectId("app"), configFileName: projectPath("tsconfig.json") }],
   sources: [
-    { projectId: "app", fileName: "src/index.ts", hash: "source", kind: "file" },
-    { projectId: "app", fileName: "src/delete.ts", hash: "delete", kind: "file" },
-    { projectId: "app", fileName: "src/move.ts", hash: "move", kind: "file" },
+    {
+      projectId: projectId("app"),
+      fileName: projectPath("src/created.ts"),
+      kind: "missing",
+    },
+    {
+      projectId: projectId("app"),
+      fileName: projectPath("src/moved.ts"),
+      kind: "missing",
+    },
+    {
+      projectId: projectId("app"),
+      fileName: projectPath("src/index.ts"),
+      hash: Sha256.digest("source"),
+      kind: "file",
+    },
+    {
+      projectId: projectId("app"),
+      fileName: projectPath("src/delete.ts"),
+      hash: Sha256.digest("delete"),
+      kind: "file",
+    },
+    {
+      projectId: projectId("app"),
+      fileName: projectPath("src/move.ts"),
+      hash: Sha256.digest("move"),
+      kind: "file",
+    },
   ],
   edits: [
     {
-      projectId: "app",
-      fileName: "src/index.ts",
+      projectId: projectId("app"),
+      fileName: projectPath("src/index.ts"),
       start: 0,
       end: 0,
-      expectedTextHash: "empty",
+      expectedTextHash: Sha256.digest(""),
       newText: "x",
       evidenceIds: ["edit"],
     },
@@ -28,24 +60,24 @@ export const richInput: PlanInput = {
   fileOperations: [
     {
       kind: "create",
-      projectId: "app",
-      path: "src/created.ts",
+      projectId: projectId("app"),
+      path: projectPath("src/created.ts"),
       content: "created",
       evidenceIds: ["create"],
     },
     {
       kind: "delete",
-      projectId: "app",
-      path: "src/delete.ts",
-      initialHash: "delete",
+      projectId: projectId("app"),
+      path: projectPath("src/delete.ts"),
+      initialHash: Sha256.digest("delete"),
       evidenceIds: ["delete"],
     },
     {
       kind: "move",
-      projectId: "app",
-      path: "src/move.ts",
-      toPath: "src/moved.ts",
-      initialHash: "move",
+      projectId: projectId("app"),
+      path: projectPath("src/move.ts"),
+      toPath: projectPath("src/moved.ts"),
+      initialHash: Sha256.digest("move"),
       content: "moved",
       evidenceIds: ["move"],
     },
@@ -82,32 +114,117 @@ export const semanticMutations: ReadonlyArray<{
   readonly mutate: (input: PlanInput) => PlanInput
 }> = [
   {
+    name: "no projects",
+    mutate: (value) => ({ ...value, projects: [], sources: [], edits: [], fileOperations: [] }),
+  },
+  {
+    name: "two project IDs for the same config path",
+    mutate: (value) => ({
+      ...value,
+      projects: [...value.projects, { ...value.projects[0]!, id: projectId("other") }],
+    }),
+  },
+  {
+    name: "one project ID for two config paths",
+    mutate: (value) => ({
+      ...value,
+      projects: [...value.projects, { ...value.projects[0]!, configFileName: "other.json" }],
+    }),
+  },
+  {
+    name: "one source is both a file and missing",
+    mutate: (value) => ({
+      ...value,
+      sources: [...value.sources, { projectId: "app", fileName: "src/index.ts", kind: "missing" }],
+    }),
+  },
+  ...["src/created.ts", "src/moved.ts"].map((fileName) => ({
+    name: `no absence fingerprint for ${fileName}`,
+    mutate: (value: PlanInput): PlanInput => ({
+      ...value,
+      sources: value.sources.filter((source) => source.fileName !== fileName),
+    }),
+  })),
+  ...["src/delete.ts", "src/move.ts"].map((fileName) => ({
+    name: `edit conflicts with operation on ${fileName}`,
+    mutate: (value: PlanInput): PlanInput => ({
+      ...value,
+      edits: [{ ...value.edits[0]!, fileName }],
+    }),
+  })),
+  {
+    name: "overlapping edits",
+    mutate: (value) => ({ ...value, edits: [...value.edits, value.edits[0]!] }),
+  },
+  ...[0, 1, 2].map((index) => ({
+    name: `repeated ${richInput.fileOperations[index]!.kind}`,
+    mutate: (value: PlanInput): PlanInput => ({
+      ...value,
+      fileOperations: [...value.fileOperations, value.fileOperations[index]!],
+    }),
+  })),
+  {
+    name: "create and move to the same target",
+    mutate: (value) =>
+      withOperation(value, 0, (operation) => ({ ...operation, path: "src/moved.ts" })),
+  },
+  {
+    name: "delete and move the same source",
+    mutate: (value) =>
+      withOperation(value, 1, (operation) => ({
+        ...operation,
+        path: "src/move.ts",
+        initialHash: Sha256.digest("move"),
+      })),
+  },
+  {
+    name: "move to an existing source",
+    mutate: (value) =>
+      withOperation(value, 2, (operation) =>
+        operation.kind === "move" ? { ...operation, toPath: "src/index.ts" } : operation,
+      ),
+  },
+  {
+    name: "move to the same path",
+    mutate: (value) =>
+      withOperation(value, 2, (operation) =>
+        operation.kind === "move" ? { ...operation, toPath: operation.path } : operation,
+      ),
+  },
+  {
     name: "unsafe project path",
     mutate: (value) => ({
       ...value,
-      projects: [{ id: "app", configFileName: "../tsconfig.json" }],
+      projects: [{ id: projectId("app"), configFileName: uncheckedPath("../tsconfig.json") }],
     }),
   },
   {
     name: "unsafe source path",
     mutate: (value) => ({
       ...value,
-      sources: [{ ...value.sources[0]!, fileName: "/src/index.ts" }, ...value.sources.slice(1)],
+      sources: [
+        { ...value.sources[0]!, fileName: uncheckedPath("/src/index.ts") },
+        ...value.sources.slice(1),
+      ],
     }),
   },
   {
     name: "unsafe edit path",
-    mutate: (value) => ({ ...value, edits: [{ ...value.edits[0]!, fileName: "../index.ts" }] }),
+    mutate: (value) => ({
+      ...value,
+      edits: [{ ...value.edits[0]!, fileName: uncheckedPath("../index.ts") }],
+    }),
   },
   {
     name: "unsafe operation path",
-    mutate: (value) => withOperation(value, 0, (operation) => ({ ...operation, path: "C:/x" })),
+    mutate: (value) =>
+      withOperation(value, 0, (operation) => ({ ...operation, path: uncheckedPath("C:/x") })),
   },
   {
     name: "unsafe move target path",
     mutate: (value) =>
       withOperation(value, 2, (operation) =>
-        operation.kind === "move" ? { ...operation, toPath: "../x" } : operation,
+        operation.kind === "move" ? { ...operation, toPath: uncheckedPath("../x") } : operation,
       ),
   },
   {
@@ -131,7 +248,10 @@ export const semanticMutations: ReadonlyArray<{
   },
   {
     name: "edit on a file that is not a source",
-    mutate: (value) => ({ ...value, edits: [{ ...value.edits[0]!, fileName: "src/other.ts" }] }),
+    mutate: (value) => ({
+      ...value,
+      edits: [{ ...value.edits[0]!, fileName: projectPath("src/other.ts") }],
+    }),
   },
   {
     name: "missing edit evidence link",
@@ -145,18 +265,26 @@ export const semanticMutations: ReadonlyArray<{
   {
     name: "create over an existing source",
     mutate: (value) =>
-      withOperation(value, 0, (operation) => ({ ...operation, path: "src/index.ts" })),
+      withOperation(value, 0, (operation) => ({
+        ...operation,
+        path: projectPath("src/index.ts"),
+      })),
   },
   {
     name: "delete with a stale fingerprint",
     mutate: (value) =>
       withOperation(value, 1, (operation) =>
-        operation.kind === "delete" ? { ...operation, initialHash: "stale" } : operation,
+        operation.kind === "delete"
+          ? { ...operation, initialHash: uncheckedHash("stale") }
+          : operation,
       ),
   },
   {
     name: "two operations on one path",
     mutate: (value) =>
-      withOperation(value, 0, (operation) => ({ ...operation, path: "src/delete.ts" })),
+      withOperation(value, 0, (operation) => ({
+        ...operation,
+        path: projectPath("src/delete.ts"),
+      })),
   },
 ]

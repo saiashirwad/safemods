@@ -17,6 +17,7 @@ import {
   type MigrateImportSourceInput,
 } from "./utils/migrate-import-source.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
+import { projectPath, workspaceDefinition } from "./utils/domain.ts"
 
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
@@ -59,7 +60,7 @@ describe("candidate public API (@effect/vitest)", () => {
         Effect.gen(function* () {
           const input: WrapTargetInput = {
             project: app,
-            declarationFile: "src/library.ts",
+            declarationFile: projectPath("src/library.ts"),
             property: "value",
           }
 
@@ -86,7 +87,9 @@ describe("candidate public API (@effect/vitest)", () => {
           const roundTripped = yield* Plan.parsePlan(Plan.serializePlan(plan))
           expect(roundTripped.planId).toBe(plan.planId)
 
-          const freshWorkspaceLayer = workspaceLayerNode({ projects: [app] }, { cwd: root })
+          const freshWorkspaceLayer = workspaceLayerNode(workspaceDefinition({ projects: [app] }), {
+            cwd: root,
+          })
           const second = yield* Recipe.run(wrapTargetInput, input).pipe(
             Effect.provide(Layer.merge(freshWorkspaceLayer, nodeLayer)),
           )
@@ -104,7 +107,7 @@ describe("candidate public API (@effect/vitest)", () => {
         Effect.gen(function* () {
           const input: WrapTargetInput = {
             project: app,
-            declarationFile: "src/library.ts",
+            declarationFile: projectPath("src/library.ts"),
             property: "value",
           }
           const [first, second] = yield* Effect.all([

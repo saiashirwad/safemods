@@ -1,6 +1,6 @@
 /** Generic query stream operators. */
 import { matchesGlob } from "node:path"
-import { Effect, Function, Predicate, Stream } from "effect"
+import { Effect, Function, Order, Predicate, Stream } from "effect"
 import { isProjectFile, type ProjectFile } from "../Workspace/ProjectSnapshot.ts"
 import { type Criterion, type Query, QueryContractError, type Selection } from "./Query.ts"
 
@@ -57,13 +57,24 @@ export const where = Function.dual<
   ),
 )
 
-/** Selection-level predicate filter; evidence of surviving selections is preserved. */
+/** Selection-level filter that preserves predicate refinements and evidence. */
 export const filter = Function.dual<
-  <A>(
-    predicate: (selection: Selection<A>) => boolean,
-  ) => <E, R>(self: Query<A, E, R>) => Query<A, E, R>,
-  <A, E, R>(self: Query<A, E, R>, predicate: (selection: Selection<A>) => boolean) => Query<A, E, R>
->(2, (self, predicate) => Stream.filter(self, predicate))
+  {
+    <A, B extends A>(
+      refinement: (selection: Selection<A>) => selection is Selection<B>,
+    ): <E, R>(self: Query<A, E, R>) => Query<B, E, R>
+    <A>(
+      predicate: (selection: Selection<A>) => boolean,
+    ): <E, R>(self: Query<A, E, R>) => Query<A, E, R>
+  },
+  {
+    <A, E, R, B extends A>(
+      self: Query<A, E, R>,
+      refinement: (selection: Selection<A>) => selection is Selection<B>,
+    ): Query<B, E, R>
+    <A, E, R>(self: Query<A, E, R>, predicate: (selection: Selection<A>) => boolean): Query<A, E, R>
+  }
+>(2, Stream.filter)
 
 /**
  * Run a query to completion in canonical plan order: project ID,
@@ -74,10 +85,10 @@ export const collect = <A, E, R>(
 ): Effect.Effect<ReadonlyArray<Selection<A>>, E, R> =>
   Stream.runCollect(self).pipe(
     Effect.map((selections) =>
-      [...selections].sort(
+      selections.sort(
         (left, right) =>
-          left.project.project.id.localeCompare(right.project.project.id) ||
-          left.fileName.localeCompare(right.fileName) ||
+          Order.String(left.project.project.id, right.project.project.id) ||
+          Order.String(left.fileName, right.fileName) ||
           left.start - right.start ||
           left.end - right.end,
       ),

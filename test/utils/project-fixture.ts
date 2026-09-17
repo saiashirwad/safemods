@@ -2,15 +2,15 @@ import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { Effect } from "effect"
 import {
+  type ConfiguredProject,
   Workspace,
   WorkspaceSnapshot,
-  type ConfiguredProject,
   type ProjectSnapshot,
 } from "../../src/Workspace/index.ts"
 import { withFixture } from "./declarative-fixture.ts"
 
 /** Resolve the fixture's configured project in the active snapshot region. */
-export const fixtureProject = (app: ConfiguredProject) =>
+export const fixtureProject = (app: ConfiguredProject.Type) =>
   WorkspaceSnapshot.use((snapshot) => snapshot.project(app))
 
 /**

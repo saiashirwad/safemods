@@ -5,9 +5,11 @@
     "src/Draft/index.ts",
     "src/Node.ts",
     "src/Plan.ts",
-    "src/Policy.ts",
+    "src/ProjectId.ts",
+    "src/ProjectRelativePath.ts",
     "src/Query/index.ts",
     "src/Recipe.ts",
+    "src/Sha256.ts",
     "src/Verification/index.ts",
     "src/Workspace/index.ts",
     "tools/*.mjs"

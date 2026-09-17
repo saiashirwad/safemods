@@ -20,9 +20,13 @@
       "types": "./dist/src/Plan.d.ts",
       "default": "./dist/src/Plan.js"
     },
-    "./Policy": {
-      "types": "./dist/src/Policy.d.ts",
-      "default": "./dist/src/Policy.js"
+    "./ProjectId": {
+      "types": "./dist/src/ProjectId.d.ts",
+      "default": "./dist/src/ProjectId.js"
+    },
+    "./ProjectRelativePath": {
+      "types": "./dist/src/ProjectRelativePath.d.ts",
+      "default": "./dist/src/ProjectRelativePath.js"
     },
     "./Query": {
       "types": "./dist/src/Query/index.d.ts",
@@ -31,6 +35,10 @@
     "./Recipe": {
       "types": "./dist/src/Recipe.d.ts",
       "default": "./dist/src/Recipe.js"
+    },
+    "./Sha256": {
+      "types": "./dist/src/Sha256.d.ts",
+      "default": "./dist/src/Sha256.js"
     },
     "./Verification": {
       "types": "./dist/src/Verification/index.d.ts",
@@ -57,7 +65,8 @@
     "effect:check": "effect-tsgo diagnostics --project tsconfig.json",
     "prepare": "effect-tsgo patch --no-typescript --oxlint",
     "test": "vitest run",
-    "test:package": "node tools/package-smoke.mjs"
+    "test:package": "node tools/package-smoke.mjs",
+    "example": "node examples/run.ts"
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-rc.109",
@@ -69,6 +78,7 @@
     "@effect/vitest": "4.0.0-rc.109",
     "@oxlint/plugins": "^1.78.0",
     "@types/node": "26.2.0",
+    "is-kit": "1.14.1",
     "knip": "^6.34.0",
     "oxfmt": "^0.63.0",
     "oxlint": "^1.78.0",

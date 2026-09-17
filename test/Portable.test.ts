@@ -1,14 +1,17 @@
-import { describe, expect, it } from "vitest"
-import { parseProjectRelativePath } from "../src/ProjectPath.ts"
+import { describe, effect, expect } from "@effect/vitest"
+import { Effect } from "effect"
+import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
 
 describe("portable project paths", () => {
-  it("normalizes portable relative paths", () => {
-    expect(parseProjectRelativePath("./src\\feature/../index.ts")).toBe("src/index.ts")
-    expect(parseProjectRelativePath("src//index.ts")).toBe("src/index.ts")
-    expect(parseProjectRelativePath("src/../src/index.ts")).toBe("src/index.ts")
-  })
+  effect("normalizes portable relative paths", () =>
+    Effect.gen(function* () {
+      expect(yield* ProjectRelativePath.make("./src\\feature/../index.ts")).toBe("src/index.ts")
+      expect(yield* ProjectRelativePath.make("src//index.ts")).toBe("src/index.ts")
+      expect(yield* ProjectRelativePath.make("src/../src/index.ts")).toBe("src/index.ts")
+    }),
+  )
 
-  it.each([
+  effect.each([
     "",
     ".",
     "..",
@@ -20,7 +23,11 @@ describe("portable project paths", () => {
     "C:/src/index.ts",
     "src/device:name.ts",
     "src/\0index.ts",
-  ])("rejects nonportable path %j", (path) => {
-    expect(parseProjectRelativePath(path)).toBeUndefined()
-  })
+  ])("rejects nonportable path %j", (path) =>
+    Effect.gen(function* () {
+      const failure = yield* ProjectRelativePath.make(path).pipe(Effect.flip)
+      expect(failure).toBeInstanceOf(ProjectRelativePath.InvalidProjectRelativePath)
+      expect(failure.path).toBe(path)
+    }),
+  )
 })

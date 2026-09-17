@@ -1,5 +1,5 @@
 /** Complete verification orchestration and VerifiedPlan issuance. */
-import { Effect, type FileSystem, type Path, Schema } from "effect"
+import { Effect, type FileSystem, type Path } from "effect"
 import {
   type ProjectNotInSnapshot,
   type SnapshotExpired,
@@ -9,7 +9,7 @@ import {
 } from "../Workspace/index.ts"
 import { canonicalJson } from "../Evidence.ts"
 import { type PlanDecodeError, type TransformationPlan, validatePlan } from "../Plan.ts"
-import { type Recipe, TOOLCHAIN, validateRecipeInput } from "../Recipe.ts"
+import { type Recipe, type RecipeInputError, TOOLCHAIN, validateRecipeInput } from "../Recipe.ts"
 import type { VirtualFsSnapshot } from "../VirtualFs.ts"
 import { collectDiagnostics } from "./Diagnostics.ts"
 import {
@@ -26,31 +26,26 @@ import { computeDiagnosticDiff, evaluateBuiltInPolicies } from "./PolicyEvaluati
 import { absoluteTarget, requireMatchingProjectIdentity } from "./SourceRevalidation.ts"
 import { issueVerifiedPlan, type VerifiedPlan } from "./VerifiedPlan.ts"
 
-const decodeJson = Schema.decodeUnknownSync(Schema.Json)
-
 const validateRecipeForPlan = <Input, E, R>(
   plan: TransformationPlan,
   recipe: Recipe<Input, E, R>,
   input: Input,
 ): Effect.Effect<
   Input,
-  RecipeMismatch | RecipeInputMismatch | PolicyMismatch | ToolchainMismatch
+  RecipeMismatch | RecipeInputError | RecipeInputMismatch | PolicyMismatch | ToolchainMismatch
 > =>
   Effect.gen(function* () {
     const expectedIdentity = {
       name: plan.recipe.name,
       version: plan.recipe.version,
-      implementationHash: plan.recipe.implementationHash,
     }
     const actualIdentity = {
       name: recipe.name,
       version: recipe.version,
-      implementationHash: recipe.implementationHash,
     }
     if (
       expectedIdentity.name !== actualIdentity.name ||
-      expectedIdentity.version !== actualIdentity.version ||
-      expectedIdentity.implementationHash !== actualIdentity.implementationHash
+      expectedIdentity.version !== actualIdentity.version
     ) {
       return yield* new RecipeMismatch({
         planId: plan.planId,
@@ -59,16 +54,7 @@ const validateRecipeForPlan = <Input, E, R>(
       })
     }
 
-    const validated = yield* validateRecipeInput(recipe, input).pipe(
-      Effect.mapError(
-        () =>
-          new RecipeInputMismatch({
-            planId: plan.planId,
-            expected: plan.recipe.options,
-            actual: null,
-          }),
-      ),
-    )
+    const validated = yield* validateRecipeInput(recipe, input)
     if (canonicalJson(validated.encoded) !== canonicalJson(plan.recipe.options)) {
       return yield* new RecipeInputMismatch({
         planId: plan.planId,
@@ -77,7 +63,7 @@ const validateRecipeForPlan = <Input, E, R>(
       })
     }
 
-    if (canonicalJson(decodeJson(recipe.policies)) !== canonicalJson(decodeJson(plan.policies))) {
+    if (canonicalJson(recipe.policies) !== canonicalJson(plan.policies)) {
       return yield* new PolicyMismatch({
         planId: plan.planId,
         expected: plan.policies,
@@ -85,7 +71,7 @@ const validateRecipeForPlan = <Input, E, R>(
       })
     }
 
-    if (canonicalJson(decodeJson(TOOLCHAIN)) !== canonicalJson(decodeJson(plan.toolchain))) {
+    if (canonicalJson(TOOLCHAIN) !== canonicalJson(plan.toolchain)) {
       return yield* new ToolchainMismatch({
         planId: plan.planId,
         expected: plan.toolchain,
@@ -109,6 +95,7 @@ export const verify = <Input, E, R>(
   | VerificationFailure
   | StalePlanError
   | RecipeMismatch
+  | RecipeInputError
   | RecipeInputMismatch
   | PolicyMismatch
   | ToolchainMismatch

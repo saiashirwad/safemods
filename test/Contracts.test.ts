@@ -3,11 +3,11 @@ import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Draft from "../src/Draft/index.ts"
-import { requireProjectRelativePath } from "../src/ProjectPath.ts"
 import * as Query from "../src/Query/index.ts"
 import { Workspace } from "../src/Workspace/index.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
+import { projectId, projectPath } from "./utils/domain.ts"
 
 const expectCompleteEvidence = (draft: Draft.Draft): void => {
   const evidenceIds = draft.evidence.map((record) => record.id)
@@ -25,7 +25,7 @@ const expectCompleteEvidence = (draft: Draft.Draft): void => {
 
 describe("Draft helper contracts", () => {
   effect(
-    "aligns replace, insert, and remove matches and gives operation edits complete, unique evidence",
+    "gives replace, insert, and remove edits complete, unique evidence",
     () =>
       withFixture((root, app) =>
         Effect.gen(function* () {
@@ -46,7 +46,7 @@ describe("Draft helper contracts", () => {
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
               const calls = yield* Query.calls(project).pipe(
-                Query.within("src/arguments.ts"),
+                Query.within(projectPath("src/arguments.ts")),
                 Query.collect,
               )
               const call = calls.find((selection) => selection.value.arguments.length === 3)?.value
@@ -68,7 +68,6 @@ describe("Draft helper contracts", () => {
                 expectCompleteEvidence(draft)
               }
               expectCompleteEvidence(yield* Draft.concat(...drafts))
-              expectCompleteEvidence(yield* Draft.concat({ ...drafts[0]!, evidence: [] }))
 
               const emptyEach = yield* Draft.replaceEach(calls.slice(0, 1), () => Draft.empty)
               expect(emptyEach.edits).toEqual([])
@@ -76,22 +75,22 @@ describe("Draft helper contracts", () => {
               expect(emptyEach.evidence).toHaveLength(1)
               expect(emptyEach.evidence[0]?.kind).toBe("selection")
 
-              const createEvidence = (projectId: string): Draft.Draft => ({
+              const createEvidence = (id: string): Draft.Draft => ({
                 edits: [],
                 fileOperations: [
                   {
                     kind: "create",
-                    projectId,
-                    path: requireProjectRelativePath("src/a.ts"),
-                    content: projectId,
-                    evidenceIds: [`file:create:${projectId}:src/a.ts`],
+                    projectId: projectId(id),
+                    path: projectPath("src/a.ts"),
+                    content: id,
+                    evidenceIds: [`file:create:${id}:src/a.ts`],
                   },
                 ],
                 evidence: [
                   {
-                    id: `file:create:${projectId}:src/a.ts`,
+                    id: `file:create:${id}:src/a.ts`,
                     kind: "file-operation",
-                    facts: { kind: "create", projectId, path: "src/a.ts" },
+                    facts: { kind: "create", projectId: id, path: "src/a.ts" },
                   },
                 ],
                 matches: 1,
@@ -117,21 +116,6 @@ describe("Draft helper contracts", () => {
                 ],
               }).pipe(Effect.flip)
               expect(conflictingConcat._tag).toBe("DraftEvidenceConflict")
-
-              const sameRange = calls[0]!
-              const firstAudit = yield* Draft.audit([sameRange])
-              const secondSelection = {
-                ...sameRange,
-                evidence: [{ criterion: "other", facts: { extra: true } }],
-              }
-              const conflictingAudit = yield* Draft.audit([sameRange, secondSelection]).pipe(
-                Effect.flip,
-              )
-              expect(conflictingAudit._tag).toBe("DraftEvidenceConflict")
-              const sameAudit = yield* Draft.audit([sameRange, sameRange])
-              expect(sameAudit.matches).toBe(1)
-              expect(sameAudit.evidence).toHaveLength(1)
-              expect(firstAudit.evidence[0]?.id).toBe(sameAudit.evidence[0]?.id)
 
               const conflictingEach = yield* Draft.replaceEach(calls.slice(0, 1), (selection) => ({
                 edits: [],

@@ -10,6 +10,13 @@ import {
   validatePlan,
 } from "../src/Plan.ts"
 import { richInput, semanticMutations } from "./utils/plan-schema.ts"
+import type * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
+import * as Sha256 from "../src/Sha256.ts"
+
+// SAFETY: these tests deliberately build invalid plans to exercise validation.
+const uncheckedPath = (value: string) => value as ProjectRelativePath.Type
+// SAFETY: these tests deliberately build invalid plans to exercise validation.
+const uncheckedHash = (value: string) => value as Sha256.Type
 
 const rejects = (plan: TransformationPlan) =>
   Effect.gen(function* () {
@@ -19,6 +26,48 @@ const rejects = (plan: TransformationPlan) =>
   })
 
 describe("plan validation", () => {
+  effect("accepts disjoint edits, creation, deletion, and movement in one plan", () =>
+    Effect.gen(function* () {
+      const plan = yield* finalizePlan({
+        ...richInput,
+        edits: [
+          ...richInput.edits,
+          { ...richInput.edits[0]!, start: 2, end: 3, expectedTextHash: Sha256.digest("u") },
+        ],
+      })
+      expect(plan.edits).toHaveLength(2)
+      expect(plan.fileOperations.map((operation) => operation.kind)).toEqual([
+        "create",
+        "delete",
+        "move",
+      ])
+    }),
+  )
+
+  effect("treats the same relative path in different projects as different sources", () =>
+    Effect.gen(function* () {
+      const plan = yield* finalizePlan({
+        ...richInput,
+        projects: [...richInput.projects, { id: "other", configFileName: "other/tsconfig.json" }],
+        sources: [
+          ...richInput.sources,
+          { projectId: "other", fileName: "src/index.ts", kind: "missing" },
+        ],
+        fileOperations: [
+          ...richInput.fileOperations,
+          {
+            kind: "create",
+            projectId: "other",
+            path: "src/index.ts",
+            content: "",
+            evidenceIds: [],
+          },
+        ],
+      })
+      expect(plan.projects).toHaveLength(2)
+    }),
+  )
+
   effect("rejects semantic input mutations", () =>
     Effect.gen(function* () {
       for (const mutation of semanticMutations) {
@@ -50,9 +99,9 @@ describe("plan validation", () => {
         planId: planHashOf(candidate),
       })
       const sources = [...plan.sources].reverse()
-      const tampered = [
-        { ...plan, planId: "0".repeat(64) },
-        { ...plan, snapshotHash: "0".repeat(64) },
+      const tampered: ReadonlyArray<TransformationPlan> = [
+        { ...plan, planId: uncheckedHash("0".repeat(64)) },
+        { ...plan, snapshotHash: uncheckedHash("0".repeat(64)) },
         rehash({ ...plan, evidence: [...plan.evidence].reverse() }),
         rehash({ ...plan, fileOperations: [...plan.fileOperations].reverse() }),
         rehash({
@@ -60,7 +109,10 @@ describe("plan validation", () => {
           sources,
           snapshotHash: snapshotHashOf({ projects: plan.projects, sources }),
         }),
-        rehash({ ...plan, edits: [{ ...plan.edits[0]!, fileName: "./src/index.ts" }] }),
+        rehash({
+          ...plan,
+          edits: [{ ...plan.edits[0]!, fileName: uncheckedPath("./src/index.ts") }],
+        }),
       ]
       for (const candidate of tampered) expect(yield* rejects(candidate)).toBe(true)
     }),

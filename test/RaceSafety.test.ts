@@ -10,6 +10,7 @@ import * as Recipe from "../src/Recipe.ts"
 import * as Verification from "../src/Verification/index.ts"
 import { withFixture } from "./utils/declarative-fixture.ts"
 import { fixtureProject } from "./utils/project-fixture.ts"
+import { projectPath } from "./utils/domain.ts"
 
 const exists = (fileName: string): Effect.Effect<boolean> =>
   Effect.promise(() =>
@@ -20,16 +21,50 @@ const exists = (fileName: string): Effect.Effect<boolean> =>
   )
 
 describe("Node application race and filesystem safety", () => {
+  effect("rejects create and move targets that appear between planning and preview", () =>
+    Effect.gen(function* () {
+      for (const kind of ["create", "move"] as const) {
+        yield* withFixture((root, app) =>
+          Effect.gen(function* () {
+            const targetPath = projectPath("src/raced.ts")
+            const recipe = Recipe.define(`${kind}-preview-race`, {
+              version: "1.0.0",
+              run: () =>
+                Effect.gen(function* () {
+                  const project = yield* fixtureProject(app)
+                  const draft =
+                    kind === "create"
+                      ? Draft.files.create(project, targetPath, "")
+                      : Draft.files.move(project, projectPath("src/library.ts"), targetPath)
+                  return yield* draft
+                }),
+            })
+            const plan = yield* Recipe.run(recipe, undefined)
+            yield* Verification.preview(plan)
+            const target = Path.join(root, targetPath)
+            yield* Effect.promise(() => Fs.writeFile(target, "created by another process\n"))
+
+            const failure = yield* Verification.preview(plan).pipe(Effect.flip)
+            expect(failure._tag).toBe("StalePlanError")
+            expect(yield* Effect.promise(() => Fs.readFile(target, "utf8"))).toBe(
+              "created by another process\n",
+            )
+          }),
+        )
+      }
+    }),
+  )
+
   effect("rejects a create-target race without overwriting the raced file", () =>
     withFixture((root, app) =>
       Effect.gen(function* () {
         const recipe = Recipe.define("create-race", {
           version: "1.0.0",
-          policies: [],
+          policies: {},
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
-              return yield* Draft.files.create(project, "src/raced.ts", "")
+              return yield* Draft.files.create(project, projectPath("src/raced.ts"), "")
             }),
         })
         const plan = yield* Recipe.run(recipe, undefined)
@@ -61,17 +96,21 @@ describe("Node application race and filesystem safety", () => {
         )
         const recipe = Recipe.define("empty-file-lifecycle", {
           version: "1.0.0",
-          policies: [{ diagnostics: "allow-new-errors" }],
+          policies: { diagnostics: "allow-new-errors" },
           run: () =>
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
-              const create = yield* Draft.files.create(project, "src/created-empty.ts", "")
+              const create = yield* Draft.files.create(
+                project,
+                projectPath("src/created-empty.ts"),
+                "",
+              )
               const move = yield* Draft.files.move(
                 project,
-                "src/move-empty.ts",
-                "src/moved-empty.ts",
+                projectPath("src/move-empty.ts"),
+                projectPath("src/moved-empty.ts"),
               )
-              const remove = yield* Draft.files.delete(project, "src/delete-empty.ts")
+              const remove = yield* Draft.files.delete(project, projectPath("src/delete-empty.ts"))
               return yield* Draft.concat(create, move, remove)
             }),
         })

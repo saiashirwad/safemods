@@ -11,8 +11,8 @@
 import { Effect, Predicate } from "effect"
 import {
   type DraftEvidenceConflict,
+  type MissingDraftEvidence,
   finalizeDraftEvidence,
-  mergeEvidence,
   type EvidenceRecord,
 } from "../Evidence.ts"
 import type { PlannedFileOperation } from "../Plan.ts"
@@ -31,50 +31,19 @@ export interface Draft {
 
 export const empty: Draft = { edits: [], fileOperations: [], evidence: [], matches: 0 }
 
-const mergeDrafts = (...drafts: ReadonlyArray<Draft>) => ({
-  edits: drafts.flatMap((draft) => draft.edits),
-  fileOperations: drafts.flatMap((draft) => draft.fileOperations ?? []),
-  evidence: drafts.flatMap((draft) => draft.evidence),
-  matches: drafts.reduce((total, draft) => total + draft.matches, 0),
-})
-
 /**
  * Combine drafts built from disjoint selections. Identical evidence records
  * merge; records sharing an ID with different facts are rejected.
  */
 export const concat = (
   ...drafts: ReadonlyArray<Draft>
-): Effect.Effect<Draft, DraftEvidenceConflict> =>
-  finalizeDraftEvidence(mergeDrafts(...drafts), { facts: { source: "concat" } })
-
-type DraftEdit = Omit<TextEdit, "evidenceIds">
-
-/** Build one syntax edit with deterministic, self-contained operation evidence. */
-const draftForEdit = (
-  edit: DraftEdit,
-  operation: string,
-  facts: EvidenceRecord["facts"] = {},
-): Draft => {
-  const evidenceId = `${operation}:${edit.projectId}:${edit.fileName}:${edit.start}-${edit.end}`
-  return {
-    edits: [{ ...edit, evidenceIds: [evidenceId] }],
-    evidence: [
-      {
-        id: evidenceId,
-        kind: "draft-operation",
-        facts: {
-          ...facts,
-          operation,
-          projectId: edit.projectId,
-          fileName: edit.fileName,
-          start: edit.start,
-          end: edit.end,
-        },
-      },
-    ],
-    matches: 1,
-  }
-}
+): Effect.Effect<Draft, DraftEvidenceConflict | MissingDraftEvidence> =>
+  finalizeDraftEvidence({
+    edits: drafts.flatMap((draft) => draft.edits),
+    fileOperations: drafts.flatMap((draft) => draft.fileOperations ?? []),
+    evidence: drafts.flatMap((draft) => draft.evidence),
+    matches: drafts.reduce((total, draft) => total + draft.matches, 0),
+  })
 
 const textEditForRange = (
   project: ProjectSnapshot,
@@ -85,23 +54,12 @@ const textEditForRange = (
 ): TextEdit =>
   textEdit({
     projectId: project.project.id,
-    fileName: project.relativeFileName(sourceFile.fileName),
+    fileName: project.pathOf(sourceFile),
     sourceText: sourceFile.text,
     start,
     end,
     newText,
   })
-
-export const draftForRange = (
-  project: ProjectSnapshot,
-  sourceFile: SourceFile,
-  start: number,
-  end: number,
-  newText: string,
-  operation: string,
-  facts: EvidenceRecord["facts"] = {},
-): Draft =>
-  draftForEdit(textEditForRange(project, sourceFile, start, end, newText), operation, facts)
 
 /** Draft replacing a node-derived range, evaluated inside the snapshot's native scope. */
 const draftForNodeRange = (
@@ -115,7 +73,25 @@ const draftForNodeRange = (
     Effect.sync(() => {
       const sourceFile = node.getSourceFile()
       const { start, end } = range(sourceFile)
-      return draftForRange(project, sourceFile, start, end, newText, operation)
+      const edit = textEditForRange(project, sourceFile, start, end, newText)
+      const evidenceId = `${operation}:${edit.projectId}:${edit.fileName}:${edit.start}-${edit.end}`
+      return {
+        edits: [{ ...edit, evidenceIds: [evidenceId] }],
+        evidence: [
+          {
+            id: evidenceId,
+            kind: "draft-operation",
+            facts: {
+              operation,
+              projectId: edit.projectId,
+              fileName: edit.fileName,
+              start: edit.start,
+              end: edit.end,
+            },
+          },
+        ],
+        matches: 1,
+      }
     }),
   )
 
@@ -164,59 +140,36 @@ export type Replacement = string | { readonly node: Node; readonly text: string 
 const isDraft = (value: unknown): value is Draft =>
   Predicate.isObject(value) && "edits" in value && "evidence" in value && "matches" in value
 
-/** A returned Draft with no edits, operations, evidence, or matches is `empty`. */
-const isCompletelyEmpty = (draft: Draft): boolean =>
-  draft.edits.length === 0 &&
-  (draft.fileOperations?.length ?? 0) === 0 &&
-  draft.evidence.length === 0 &&
-  draft.matches === 0
-
 /**
- * A returned `Draft.empty` still counts as one selected occurrence: match
- * policies and scan audits count the selection, not whether an edit was
- * produced.
+ * Fold a returned Draft into the selection, tagging its records with the
+ * selection's evidence. A returned `Draft.empty` still counts as one selected
+ * occurrence: match policies and scan audits count the selection, not whether
+ * an edit was produced.
  */
-const emptySelectionDraft = <A extends Node>(
-  selection: Selection<A>,
-  evidenceId: string,
-): Draft => ({
-  edits: [],
-  fileOperations: [],
-  evidence: [selectionEvidence(selection, evidenceId)],
-  matches: 1,
-})
-
-/** Fold a returned Draft into the selection, tagging its records with the selection's evidence. */
 const adoptReturnedDraft = <A extends Node>(
   selection: Selection<A>,
   evidenceId: string,
   proposed: Draft,
-): Effect.Effect<Draft, DraftEvidenceConflict> =>
-  finalizeDraftEvidence(
-    {
-      edits: proposed.edits.map((edit) => ({
-        ...edit,
-        evidenceIds: [...new Set([...edit.evidenceIds, evidenceId])],
-      })),
-      fileOperations: (proposed.fileOperations ?? []).map((operation) => ({
-        ...operation,
-        evidenceIds: [...new Set([...operation.evidenceIds, evidenceId])],
-      })),
-      evidence: [...proposed.evidence, selectionEvidence(selection, evidenceId)],
-      matches: 1,
-    },
-    { facts: { source: "replaceEach" } },
-  )
+): Effect.Effect<Draft, DraftEvidenceConflict | MissingDraftEvidence> =>
+  finalizeDraftEvidence({
+    edits: proposed.edits.map((edit) => ({
+      ...edit,
+      evidenceIds: [...new Set([...edit.evidenceIds, evidenceId])],
+    })),
+    fileOperations: (proposed.fileOperations ?? []).map((operation) => ({
+      ...operation,
+      evidenceIds: [...new Set([...operation.evidenceIds, evidenceId])],
+    })),
+    evidence: [...proposed.evidence, selectionEvidence(selection, evidenceId)],
+    matches: 1,
+  })
 
 const draftFromProposal = <A extends Node>(
   selection: Selection<A>,
   proposed: Replacement | Draft,
-): Effect.Effect<Draft, SnapshotExpired | DraftEvidenceConflict> => {
+): Effect.Effect<Draft, SnapshotExpired | DraftEvidenceConflict | MissingDraftEvidence> => {
   const evidenceId = selectionEvidenceId(selection)
   if (isDraft(proposed)) {
-    if (isCompletelyEmpty(proposed)) {
-      return Effect.succeed(emptySelectionDraft(selection, evidenceId))
-    }
     return adoptReturnedDraft(selection, evidenceId, proposed)
   }
   const node = Predicate.isString(proposed) ? selection.value : proposed.node
@@ -250,7 +203,7 @@ export const replaceEach = <A extends Node, E = never, R = never>(
   replacement: (
     selection: Selection<A>,
   ) => Replacement | Draft | Effect.Effect<Replacement | Draft, E, R>,
-): Effect.Effect<Draft, E | SnapshotExpired | DraftEvidenceConflict, R> =>
+): Effect.Effect<Draft, E | SnapshotExpired | DraftEvidenceConflict | MissingDraftEvidence, R> =>
   Effect.forEach(selections, (selection) => {
     const raw = replacement(selection)
     const effect: Effect.Effect<Replacement | Draft, E, R> = Effect.isEffect(raw)
@@ -264,7 +217,7 @@ const selectionEvidenceId = <A extends Node>(selection: Selection<A>): string =>
 
 const selectionEvidence = <A extends Node>(
   selection: Selection<A>,
-  evidenceId = selectionEvidenceId(selection),
+  evidenceId: string,
 ): EvidenceRecord => ({
   id: evidenceId,
   kind: "selection",
@@ -279,18 +232,3 @@ const selectionEvidence = <A extends Node>(
     })),
   },
 })
-/**
- * Record query selections as search/audit evidence without proposing any file edits.
- * Enables read-only codebase audits, inventorying, and migration sizing.
- */
-export const audit = <A extends Node>(
-  selections: ReadonlyArray<Selection<A>>,
-): Effect.Effect<Draft, DraftEvidenceConflict> =>
-  Effect.map(
-    mergeEvidence(selections.map((selection) => selectionEvidence(selection))),
-    (evidence) => ({
-      edits: [],
-      evidence,
-      matches: evidence.length,
-    }),
-  )
