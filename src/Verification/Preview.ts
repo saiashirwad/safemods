@@ -73,7 +73,13 @@ const readSource = (plan: ValidatedPlan, source: SourceFingerprint) =>
     const { projectId, fileName } = source
     const stale = new StalePlanError({ planId: plan.planId, projectId, fileName })
     if (source.kind === "missing") {
-      const exists = yield* fs.exists(absolute)
+      const exists = yield* fs
+        .exists(absolute)
+        .pipe(
+          Effect.mapError((cause): PlatformError.PlatformError | StalePlanError =>
+            cause.reason._tag === "NotFound" ? stale : cause,
+          ),
+        )
       return exists ? yield* stale : undefined
     }
     const bytes = yield* fs

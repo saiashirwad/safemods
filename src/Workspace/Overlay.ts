@@ -23,7 +23,14 @@ const diskEntries = (directory: string) => {
       directories: entries.filter(({ kind }) => kind?.isDirectory()).map(({ name }) => name),
     }
   } catch (cause) {
-    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return undefined
+    if (
+      cause !== null &&
+      typeof cause === "object" &&
+      "code" in cause &&
+      (cause.code === "ENOENT" || cause.code === "ENOTDIR")
+    ) {
+      return undefined
+    }
     throw cause
   }
 }

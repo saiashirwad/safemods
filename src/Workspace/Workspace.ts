@@ -103,14 +103,14 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
               ),
             catch: (cause) => new WorkspaceCompilerError({ operation: "createAPI", cause }),
           }),
-          (api) => nativeRequest("closeAPI", () => api.close()).pipe(Effect.orDie),
+          (api) => nativeRequest("closeAPI", () => api.close()).pipe(Effect.ignore),
         )
         const native = yield* Effect.acquireRelease(
           nativeRequest("updateSnapshot", () =>
             api.updateSnapshot({ openProjects: [...configFiles.values()] }),
           ),
           (snapshot) =>
-            nativeRequest("disposeSnapshot", () => snapshot.dispose()).pipe(Effect.orDie),
+            nativeRequest("disposeSnapshot", () => snapshot.dispose()).pipe(Effect.ignore),
         )
 
         let active = true
