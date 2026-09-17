@@ -16,7 +16,7 @@ import {
   type ProjectNotInWorkspace,
   type ProjectSnapshotError,
   Workspace,
-  type WorkspaceSnapshot,
+  WorkspaceSnapshot,
 } from "../Workspace/index.ts"
 import { collectDiagnostics, type DiagnosticDiff, diffDiagnostics } from "./Diagnostics.ts"
 import { PlanContextMismatch, type StalePlanError, VerificationFailure } from "./Errors.ts"
@@ -129,13 +129,29 @@ export const verify = <Input, E, R>(
       Effect.gen(function* () {
         const diagnostics = yield* collectDiagnostics
         if (validated.policies.idempotence !== "required") return [diagnostics, 0] as const
-        const draft = yield* recipe.run(input)
         const captured: FileRef.Map<Uint8Array | undefined> = new Map()
         for (const file of preview.sources) {
           FileRef.set(captured, file, file.after.exists ? file.after.bytes : undefined)
         }
         for (const file of preview.files) {
           FileRef.set(captured, file, file.after.exists ? file.after.bytes : undefined)
+        }
+        const draft = yield* recipe.run(input)
+        const snapshot = yield* WorkspaceSnapshot
+        for (const operation of [...draft.edits, ...draft.fileOperations]) {
+          if (
+            [...FileRef.entries(captured)].some(
+              ([file]) => FileRef.key(file) === FileRef.key(operation),
+            )
+          ) {
+            continue
+          }
+          const file = yield* (yield* snapshot.project(operation.projectId)).file(
+            operation.fileName,
+          )
+          if (file !== undefined) {
+            FileRef.set(captured, operation, new TextEncoder().encode(file.sourceFile.text))
+          }
         }
         const replayPlan = yield* finalizePlan({
           recipe: validated.recipe,

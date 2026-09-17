@@ -211,6 +211,33 @@ describe("Verification.verify", () => {
     ),
   )
 
+  effect("rejects replay changes to files that were absent from the first plan", () =>
+    withFixture((root, app) =>
+      Effect.gen(function* () {
+        const external = projectPath("src/external.ts")
+        const recipe = Recipe.define("external-after-planning", {
+          version: "1.0.0",
+          policies: { idempotence: "required" },
+          run: () =>
+            Effect.gen(function* () {
+              const project = yield* fixtureProject(app)
+              const file = yield* project.file(external)
+              return file === undefined
+                ? Draft.empty
+                : Draft.insertBefore(project, file.sourceFile.statements[0]!, "// second run\n")
+            }),
+        })
+        const plan = yield* Recipe.run(recipe, undefined)
+        yield* write(root, external, "export const external = true\n")
+        expect(yield* Effect.flip(Verification.verify(plan, recipe, undefined))).toMatchObject({
+          _tag: "VerificationFailure",
+          policy: "idempotence",
+          detail: "Second run proposed 1 change(s)",
+        })
+      }),
+    ),
+  )
+
   effect("rejects a recipe, input, or policy set other than the plan's author", () =>
     withFixture(() =>
       Effect.gen(function* () {
