@@ -92,7 +92,8 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
         const projects = new Map(
           definition.projects.flatMap((configured) => {
             const configFile = configFiles.get(configured.id)
-            const nativeProject = configFile === undefined ? undefined : native.getProject(configFile)
+            const nativeProject =
+              configFile === undefined ? undefined : native.getProject(configFile)
             return configFile === undefined || nativeProject === undefined
               ? []
               : [

@@ -110,7 +110,12 @@ export const run = <Input, E, R>(
   input: Input,
 ): Effect.Effect<
   TransformationPlan,
-  E | RecipeInputError | InvalidPlan | ProjectSnapshotError | ProjectNotInSnapshot | OverlappingProjectOwnership,
+  | E
+  | RecipeInputError
+  | InvalidPlan
+  | ProjectSnapshotError
+  | ProjectNotInSnapshot
+  | OverlappingProjectOwnership,
   Workspace | FileSystem.FileSystem | Exclude<R, WorkspaceSnapshot>
 > =>
   Effect.gen(function* () {
