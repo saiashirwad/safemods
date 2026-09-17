@@ -29,7 +29,20 @@ const deepFreeze = <A>(value: A): A => {
   return value
 }
 
-const clonePreview = (preview: PlanPreview): PlanPreview => structuredClone(preview)
+const cloneFileState = (state: PlanPreview["files"][number]["before"]) =>
+  state.exists ? { exists: true as const, text: state.text, bytes: state.bytes } : state
+
+const cloneFilePreview = ({ before, after, ...file }: PlanPreview["files"][number]) => ({
+  ...file,
+  before: cloneFileState(before),
+  after: cloneFileState(after),
+})
+
+const clonePreview = (preview: PlanPreview): PlanPreview => ({
+  planId: preview.planId,
+  sources: preview.sources.map(cloneFilePreview),
+  files: preview.files.map(cloneFilePreview),
+})
 
 export const issue = (
   workspace: Workspace["Service"],
@@ -41,7 +54,7 @@ export const issue = (
     preview: deepFreeze(clonePreview(preview)),
     diagnosticDiff: deepFreeze(diagnosticDiff),
   }) as VerifiedPlan
-  issued.set(verified, { workspace, plan, preview })
+  issued.set(verified, { workspace, plan, preview: clonePreview(preview) })
   return verified
 }
 
