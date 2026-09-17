@@ -7,9 +7,12 @@ Pre-alpha. Recipes query the checker, emit a draft, then plan → verify → app
 ```ts
 import { Effect } from "effect"
 import * as Draft from "safemods/Draft"
+import * as ProjectRelativePath from "safemods/ProjectRelativePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { WorkspaceSnapshot } from "safemods/Workspace"
+
+const store = ProjectRelativePath.schema.make("src/accounts/store.ts")
 
 export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
   version: "1.0.0",
@@ -17,21 +20,58 @@ export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
   run: () =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
-      const configured = snapshot.projects[0]
-      if (configured === undefined) return Draft.empty
-      const project = yield* snapshot.project(configured)
-      const symbol = yield* project.symbolNamed("loadAccount", {
-        within: "src/accounts/store.ts",
-      })
+      const project = yield* snapshot.project(snapshot.projects[0]!)
+      const symbol = yield* project.symbolNamed("loadAccount", { within: store })
       const matches = yield* Query.identifiers(project).pipe(
         Query.where(Query.resolvesTo(symbol)),
         Query.filter((selection) => selection.value.text === "loadAccount"),
         Query.collect,
       )
-      return yield* Draft.replaceEach(matches, () => "findAccount")
+      return Draft.replaceEach(matches, () => "findAccount")
     }),
 })
 ```
+
+Run it against a workspace:
+
+```ts
+import { NodeServices } from "@effect/platform-node"
+import { Effect, Layer } from "effect"
+import { applyVerifiedPlan } from "safemods/Application"
+import * as Recipe from "safemods/Recipe"
+import { verify } from "safemods/Verification"
+import * as Workspace from "safemods/Workspace"
+
+const migrate = Effect.gen(function* () {
+  const plan = yield* Recipe.run(renameThroughBarrel, undefined)
+  const verified = yield* verify(plan, renameThroughBarrel, undefined)
+  return yield* applyVerifiedPlan(verified)
+})
+
+export const main = Effect.gen(function* () {
+  const definition = yield* Workspace.WorkspaceDefinition.make({
+    projects: [{ id: "app", config: "tsconfig.json" }],
+  })
+  const workspace = Workspace.layer(definition, process.cwd())
+  return yield* migrate.pipe(Effect.provide(Layer.merge(workspace, NodeServices.layer)))
+})
+```
+
+## Modules
+
+Each module depends only on the ones above it.
+
+| Module                                       | Responsibility                                                       |
+| -------------------------------------------- | -------------------------------------------------------------------- |
+| `Sha256`, `ProjectId`, `ProjectRelativePath` | branded value types                                                  |
+| `Edit`                                       | hash-guarded text edits and their application                        |
+| `Plan`                                       | the canonical, content-addressed plan: finalize, validate, parse     |
+| `Workspace`                                  | compiler snapshots; every snapshot is a fresh view of disk + overlay |
+| `Query`                                      | streams of selected nodes, each carrying the evidence that chose it  |
+| `Draft`                                      | pure values: proposed edits and file operations                      |
+| `Recipe`                                     | define a transformation; `run` turns its draft into a plan           |
+| `Verification`                               | preview exact bytes, diff diagnostics, replay, issue a verified plan |
+| `Application`                                | write a verified plan, refusing stale files and symlink escapes      |
 
 ## Examples
 

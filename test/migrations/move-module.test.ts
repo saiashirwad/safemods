@@ -1,18 +1,14 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
-import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
 import { moveModule, type MoveModuleInput } from "../../examples/move-module.ts"
-import { layer as nodeLayer, workspaceLayerNode } from "../../src/Node.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { withFixture } from "../utils/declarative-fixture.ts"
+import { withFixture } from "../utils/fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
-import { projectPath, workspaceDefinition } from "../utils/domain.ts"
+import { projectPath } from "../utils/domain.ts"
 
-const fixturePath = fileURLToPath(
-  new URL("../../fixtures/migrations/move-module/", import.meta.url),
-)
+const fixture = "migrations/move-module"
 
 describe("move-module", () => {
   effect(
@@ -34,8 +30,8 @@ describe("move-module", () => {
             expect(plan.fileOperations).toHaveLength(1)
             expect(plan.fileOperations[0]).toMatchObject({
               kind: "move",
-              path: "src/users/account.ts",
-              toPath: "src/identity/account.ts",
+              fileName: "src/users/account.ts",
+              toFileName: "src/identity/account.ts",
             })
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
 
@@ -100,19 +96,12 @@ describe("move-module", () => {
               Fs.readFile(Path.join(root, "src/diagnostics/baseline.ts"), "utf8"),
             )
             expect(baseline).toContain("severity: 1")
-
-            const freshWorkspaceLayer = workspaceLayerNode(
-              workspaceDefinition({ projects: [app] }),
-              { cwd: root },
-            )
-            const second = yield* Recipe.run(moveModule, input).pipe(
-              Effect.provide(Layer.merge(freshWorkspaceLayer, nodeLayer)),
-            )
+            const second = yield* Recipe.run(moveModule, input)
             expect(second.edits).toHaveLength(0)
             expect(second.fileOperations).toHaveLength(0)
             expect(second.measurements.matches).toBe(0)
           }),
-        { fixturePath },
+        { fixture },
       ),
     60_000,
   )

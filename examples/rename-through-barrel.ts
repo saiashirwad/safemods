@@ -39,6 +39,6 @@ export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
         Query.collect,
       )
 
-      return yield* Draft.replaceEach(matches, () => "findAccount")
+      return Draft.replaceEach(matches, () => "findAccount")
     }),
 })

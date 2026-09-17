@@ -1,23 +1,16 @@
-import * as Fs from "node:fs/promises"
-import * as Path from "node:path"
-import { layer as nodeLayer, workspaceLayerNode } from "../src/Node.ts"
-import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Layer, type Stream } from "effect"
+import { Effect, type Stream } from "effect"
 import type { CallExpression } from "typescript/unstable/ast"
-import { executeRecipe } from "./utils/execute-recipe.ts"
 import * as Application from "../src/Application.ts"
 import * as Plan from "../src/Plan.ts"
-import type * as Query from "../src/Query/index.ts"
+import type * as Query from "../src/Query.ts"
 import * as Recipe from "../src/Recipe.ts"
 import type * as Verification from "../src/Verification/index.ts"
+import { projectPath } from "./utils/domain.ts"
+import { executeRecipe } from "./utils/execute-recipe.ts"
+import { read, withFixture } from "./utils/fixture.ts"
+import { migrateImportSource } from "./utils/migrate-import-source.ts"
 import { wrapTargetInput, type WrapTargetInput } from "./utils/wrap-target-input.ts"
-import {
-  migrateImportSource,
-  type MigrateImportSourceInput,
-} from "./utils/migrate-import-source.ts"
-import { withFixture } from "./utils/declarative-fixture.ts"
-import { projectPath, workspaceDefinition } from "./utils/domain.ts"
 
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
@@ -29,20 +22,17 @@ export type _RecipeInputInference = Assert<
   Equal<Parameters<typeof wrapTargetInput.run>[0], WrapTargetInput>
 >
 
-declare const _anyProject: Parameters<typeof Query.calls>[0]
 export type _CallInference = Assert<
   Equal<
-    ReturnType<typeof Query.calls> extends Stream.Stream<infer S, infer _E, infer _R>
-      ? S extends Query.Selection<infer Node>
-        ? Node
-        : never
+    ReturnType<typeof Query.calls> extends Stream.Stream<Query.Selection<infer Node>, infer _E>
+      ? Node
       : never,
     CallExpression
   >
 >
 
 const _rawPlanIsNotApplicationAuthority = (plan: Plan.TransformationPlan) =>
-  // @ts-expect-error — Application accepts only a Verified Plan
+  // @ts-expect-error Application accepts only a VerifiedPlan
   Application.applyVerifiedPlan(plan)
 void _rawPlanIsNotApplicationAuthority
 
@@ -50,11 +40,9 @@ const _verifiedPlanIsApplicationAuthority = (verified: Verification.VerifiedPlan
   Application.applyVerifiedPlan(verified)
 void _verifiedPlanIsApplicationAuthority
 
-const stressFixture = fileURLToPath(new URL("../fixtures/stress/", import.meta.url))
-
-describe("candidate public API (@effect/vitest)", () => {
+describe("run → verify → apply", () => {
   effect(
-    "runs query → plan → preview → verify → apply as one typed pipeline",
+    "rewrites calls through aliases and re-exports, then finds nothing left to do",
     () =>
       withFixture((root, app) =>
         Effect.gen(function* () {
@@ -65,35 +53,27 @@ describe("candidate public API (@effect/vitest)", () => {
           }
 
           const { plan, receipt, verified } = yield* executeRecipe(wrapTargetInput, input)
-
-          expect(plan.recipe.name).toBe("wrap-target-input")
           expect(plan.measurements.matches).toBe(2)
-          expect(verified.preview.files).toHaveLength(2)
-          expect(verified.diagnosticDiff.introduced).toHaveLength(0)
-          expect(receipt.outputs).toHaveLength(2)
+          expect(verified.diagnosticDiff.introduced).toEqual([])
+          expect(receipt.written.map((file) => file.fileName)).toEqual([
+            "src/consumer.ts",
+            "src/reexport-consumer.ts",
+          ])
 
-          const consumer = yield* Effect.tryPromise(() =>
-            Fs.readFile(Path.join(root, "src/consumer.ts"), "utf8"),
-          )
-          const reexport = yield* Effect.tryPromise(() =>
-            Fs.readFile(Path.join(root, "src/reexport-consumer.ts"), "utf8"),
-          )
+          const consumer = yield* read(root, "src/consumer.ts")
           expect(consumer).toContain("renamed(/* keep this comment */ { value: 1 })")
           expect(consumer).toContain("const first  =")
           expect(consumer).toContain("other(2)")
           expect(consumer).toContain("local.target(3)")
-          expect(reexport).toContain("publicTarget({ value: 4 })")
+          expect(yield* read(root, "src/reexport-consumer.ts")).toContain(
+            "publicTarget({ value: 4 })",
+          )
 
           const roundTripped = yield* Plan.parsePlan(Plan.serializePlan(plan))
-          expect(roundTripped.planId).toBe(plan.planId)
+          expect(roundTripped).toEqual(plan)
 
-          const freshWorkspaceLayer = workspaceLayerNode(workspaceDefinition({ projects: [app] }), {
-            cwd: root,
-          })
-          const second = yield* Recipe.run(wrapTargetInput, input).pipe(
-            Effect.provide(Layer.merge(freshWorkspaceLayer, nodeLayer)),
-          )
-          expect(second.edits).toHaveLength(0)
+          const second = yield* Recipe.run(wrapTargetInput, input)
+          expect(second.edits).toEqual([])
           expect(second.measurements.matches).toBe(0)
         }),
       ),
@@ -126,25 +106,19 @@ describe("candidate public API (@effect/vitest)", () => {
       withFixture(
         (root, app) =>
           Effect.gen(function* () {
-            const input: MigrateImportSourceInput = {
+            const { plan } = yield* executeRecipe(migrateImportSource, {
               project: app,
               from: "./legacy.js",
               to: "./replacement.js",
-            }
-
-            const { plan, receipt } = yield* executeRecipe(migrateImportSource, input)
-
+            })
             expect(plan.edits).toHaveLength(1)
-            expect(receipt.outputs).toHaveLength(1)
 
-            const consumer = yield* Effect.tryPromise(() =>
-              Fs.readFile(Path.join(root, "src/import-consumer.ts"), "utf8"),
-            )
+            const consumer = yield* read(root, "src/import-consumer.ts")
             expect(consumer).toContain("from './replacement.js'")
             expect(consumer).toContain("/* preserve import trivia */")
             expect(consumer).toContain("const importResult  =")
           }),
-        { fixturePath: stressFixture },
+        { fixture: "stress" },
       ),
     60_000,
   )

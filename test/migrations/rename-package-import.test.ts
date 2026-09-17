@@ -1,18 +1,14 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
-import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
 import { renamePackageImport } from "../../examples/rename-package-import.ts"
-import { layer as nodeLayer, workspaceLayerNode } from "../../src/Node.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { withFixture } from "../utils/declarative-fixture.ts"
+import { fixturePath as fixtureDirectory, withFixture } from "../utils/fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
-import { workspaceDefinition } from "../utils/domain.ts"
 
-const fixturePath = fileURLToPath(
-  new URL("../../fixtures/migrations/rename-package-import/", import.meta.url),
-)
+const fixture = "migrations/rename-package-import"
+const fixturePath = fixtureDirectory(fixture)
 
 const read = (root: string, relativePath: string) =>
   Effect.tryPromise(() => Fs.readFile(Path.join(root, relativePath), "utf8"))
@@ -22,7 +18,7 @@ describe("rename-package-import", () => {
     "rewrites @acme/legacy-client specifiers and leaves other modules alone",
     () =>
       withFixture(
-        (root, app) =>
+        (root) =>
           Effect.gen(function* () {
             const { plan, verified } = yield* executeRecipe(renamePackageImport, undefined)
 
@@ -77,18 +73,11 @@ describe("rename-package-import", () => {
               yield* read(fixturePath, "src/acme-modules.ts"),
             )
             expect(yield* read(root, "src/webhooks/inbox.ts")).toContain("deliveryId: 4012")
-
-            const freshWorkspaceLayer = workspaceLayerNode(
-              workspaceDefinition({ projects: [app] }),
-              { cwd: root },
-            )
-            const second = yield* Recipe.run(renamePackageImport, undefined).pipe(
-              Effect.provide(Layer.merge(freshWorkspaceLayer, nodeLayer)),
-            )
+            const second = yield* Recipe.run(renamePackageImport, undefined)
             expect(second.edits).toHaveLength(0)
             expect(second.measurements.matches).toBe(0)
           }),
-        { fixturePath },
+        { fixture },
       ),
     60_000,
   )

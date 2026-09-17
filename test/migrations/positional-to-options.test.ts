@@ -1,18 +1,14 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
-import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
 import { positionalToOptions } from "../../examples/positional-to-options.ts"
-import { layer as nodeLayer, workspaceLayerNode } from "../../src/Node.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { withFixture } from "../utils/declarative-fixture.ts"
+import { fixturePath as fixtureDirectory, withFixture } from "../utils/fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
-import { workspaceDefinition } from "../utils/domain.ts"
 
-const fixtureDir = fileURLToPath(
-  new URL("../../fixtures/migrations/positional-to-options/", import.meta.url),
-)
+const fixture = "migrations/positional-to-options"
+const fixturePath = fixtureDirectory(fixture)
 
 const readUtf8 = (root: string, relative: string) =>
   Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
@@ -46,11 +42,11 @@ describe("positional-to-options", () => {
             expect(new Set(verified.preview.files.map((file) => file.fileName))).toEqual(
               new Set(["src/auth/login.ts", "src/auth/refresh.ts", "src/http/middleware.ts"]),
             )
-            expect(receipt.outputs).toHaveLength(3)
+            expect(receipt.written).toHaveLength(3)
 
-            const originalLogin = yield* readUtf8(fixtureDir, "src/auth/login.ts")
-            const originalRefresh = yield* readUtf8(fixtureDir, "src/auth/refresh.ts")
-            const originalMiddleware = yield* readUtf8(fixtureDir, "src/http/middleware.ts")
+            const originalLogin = yield* readUtf8(fixturePath, "src/auth/login.ts")
+            const originalRefresh = yield* readUtf8(fixturePath, "src/auth/refresh.ts")
+            const originalMiddleware = yield* readUtf8(fixturePath, "src/http/middleware.ts")
             const login = yield* readUtf8(root, "src/auth/login.ts")
             const refresh = yield* readUtf8(root, "src/auth/refresh.ts")
             const middleware = yield* readUtf8(root, "src/http/middleware.ts")
@@ -87,22 +83,15 @@ describe("positional-to-options", () => {
             for (const relative of UNCHANGED) {
               const [actual, original] = yield* Effect.all([
                 readUtf8(root, relative),
-                readUtf8(fixtureDir, relative),
+                readUtf8(fixturePath, relative),
               ])
               expect(actual).toBe(original)
             }
-
-            const freshWorkspaceLayer = workspaceLayerNode(
-              workspaceDefinition({ projects: [app] }),
-              { cwd: root },
-            )
-            const second = yield* Recipe.run(positionalToOptions, input).pipe(
-              Effect.provide(Layer.merge(freshWorkspaceLayer, nodeLayer)),
-            )
+            const second = yield* Recipe.run(positionalToOptions, input)
             expect(second.edits).toHaveLength(0)
             expect(second.measurements.matches).toBe(0)
           }),
-        { fixturePath: fixtureDir },
+        { fixture },
       ),
     60_000,
   )

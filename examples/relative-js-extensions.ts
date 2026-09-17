@@ -64,15 +64,11 @@ export const relativeJsExtensions = Recipe.define("relative-js-extensions", {
       const drafts = yield* Effect.forEach(snapshot.projects, (configured) =>
         Effect.gen(function* () {
           const project = yield* snapshot.project(configured)
-          const specifiers = yield* Query.nodes(
-            project,
-            isStringLiteral,
-            SyntaxKind.StringLiteral,
-          ).pipe(
+          const specifiers = yield* Query.nodes(project, isStringLiteral).pipe(
             Query.filter((selection) => isRewritableModuleSpecifier(selection.value)),
             Query.collect,
           )
-          return yield* Draft.replaceEach(specifiers, (selection) => {
+          return Draft.replaceEach(specifiers, (selection) => {
             const next = toNodeNextSpecifier(selection.value.text)
             if (next === undefined) {
               return Draft.empty
@@ -82,6 +78,6 @@ export const relativeJsExtensions = Recipe.define("relative-js-extensions", {
           })
         }),
       )
-      return yield* Draft.concat(...drafts)
+      return Draft.concat(...drafts)
     }),
 })

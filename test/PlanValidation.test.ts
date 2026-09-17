@@ -3,9 +3,8 @@ import { Effect } from "effect"
 import {
   finalizePlan,
   parsePlan,
-  planHashOf,
+  planIdOf,
   serializePlan,
-  snapshotHashOf,
   type TransformationPlan,
   validatePlan,
 } from "../src/Plan.ts"
@@ -13,9 +12,7 @@ import { richInput, semanticMutations } from "./utils/plan-schema.ts"
 import type * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
 import * as Sha256 from "../src/Sha256.ts"
 
-// SAFETY: these tests deliberately build invalid plans to exercise validation.
 const uncheckedPath = (value: string) => value as ProjectRelativePath.Type
-// SAFETY: these tests deliberately build invalid plans to exercise validation.
 const uncheckedHash = (value: string) => value as Sha256.Type
 
 const rejects = (plan: TransformationPlan) =>
@@ -58,13 +55,23 @@ describe("plan validation", () => {
           {
             kind: "create",
             projectId: "other",
-            path: "src/index.ts",
+            fileName: "src/index.ts",
             content: "",
             evidenceIds: [],
           },
         ],
       })
       expect(plan.projects).toHaveLength(2)
+    }),
+  )
+
+  effect("accepts edits to a file that the same plan moves", () =>
+    Effect.gen(function* () {
+      const plan = yield* finalizePlan({
+        ...richInput,
+        edits: [...richInput.edits, { ...richInput.edits[0]!, fileName: "src/move.ts" }],
+      })
+      expect(plan.edits.map((edit) => edit.fileName)).toEqual(["src/index.ts", "src/move.ts"])
     }),
   )
 
@@ -84,9 +91,7 @@ describe("plan validation", () => {
     Effect.gen(function* () {
       const plan = yield* finalizePlan(richInput)
       const { recipe: _, ...missingRecipe } = plan
-      // SAFETY: deliberately malformed payloads crossing the parse boundary.
       expect(yield* rejects({ ...plan, unexpected: true } as TransformationPlan)).toBe(true)
-      // SAFETY: deliberately malformed payloads crossing the parse boundary.
       expect(yield* rejects(missingRecipe as TransformationPlan)).toBe(true)
     }),
   )
@@ -94,21 +99,15 @@ describe("plan validation", () => {
   effect("rejects tampered hashes and non-canonical ordering", () =>
     Effect.gen(function* () {
       const plan = yield* finalizePlan(richInput)
-      const rehash = (candidate: TransformationPlan) => ({
-        ...candidate,
-        planId: planHashOf(candidate),
+      const rehash = ({ planId: _, ...content }: TransformationPlan): TransformationPlan => ({
+        ...content,
+        planId: planIdOf(content),
       })
-      const sources = [...plan.sources].reverse()
       const tampered: ReadonlyArray<TransformationPlan> = [
         { ...plan, planId: uncheckedHash("0".repeat(64)) },
-        { ...plan, snapshotHash: uncheckedHash("0".repeat(64)) },
         rehash({ ...plan, evidence: [...plan.evidence].reverse() }),
         rehash({ ...plan, fileOperations: [...plan.fileOperations].reverse() }),
-        rehash({
-          ...plan,
-          sources,
-          snapshotHash: snapshotHashOf({ projects: plan.projects, sources }),
-        }),
+        rehash({ ...plan, sources: [...plan.sources].reverse() }),
         rehash({
           ...plan,
           edits: [{ ...plan.edits[0]!, fileName: uncheckedPath("./src/index.ts") }],

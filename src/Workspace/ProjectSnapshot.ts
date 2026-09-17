@@ -1,459 +1,181 @@
-/** Project-scoped compiler operations for one active snapshot region. */
-import { Data, Effect, Option, Predicate } from "effect"
-import type { Identifier, SourceFile } from "typescript/unstable/ast"
-import {
-  isExportDeclaration,
-  isIdentifier,
-  isImportDeclaration,
-  isNamedExports,
-  isNamedImports,
-} from "typescript/unstable/ast/is"
+import * as Path from "node:path"
+import { Data, Effect, Option, Schema } from "effect"
+import type { SourceFile } from "typescript/unstable/ast"
 import {
   SymbolFlags,
   type Project as NativeProject,
   type Symbol as NativeSymbol,
   type Type as NativeType,
 } from "typescript/unstable/async"
-import { nativeRequest, type WorkspaceCompilerError } from "./NativeRequest.ts"
-import type * as ProjectId from "../ProjectId.ts"
-import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
+import * as ProjectRelativePath from "../ProjectRelativePath.ts"
 import type * as ConfiguredProject from "./ConfiguredProject.ts"
-import * as CompilerFileName from "./internal/CompilerFileName.ts"
-import type { WorkspaceRuntimeService } from "./Runtime.ts"
+import { nativeRequest, type WorkspaceCompilerError } from "./NativeRequest.ts"
 
-export class SnapshotExpired extends Data.TaggedError("SnapshotExpired")<{
-  readonly generation: number
-}> {}
+export class SnapshotExpired extends Data.TaggedError("SnapshotExpired")<{}> {}
 
 export class SymbolNotFound extends Data.TaggedError("SymbolNotFound")<{
   readonly name: string
   readonly fileName: ProjectRelativePath.Type
 }> {}
 
-export class FileNotFound extends Data.TaggedError("FileNotFound")<{
-  readonly fileName: ProjectRelativePath.Type
-  readonly projectId: ProjectId.Type
-}> {}
-
 export type ProjectSnapshotError = WorkspaceCompilerError | SnapshotExpired
 
-export type IntrinsicTypeName =
-  | "string"
-  | "number"
-  | "boolean"
-  | "any"
-  | "unknown"
-  | "never"
-  | "void"
+const intrinsicTypeGetters = {
+  string: "getStringType",
+  number: "getNumberType",
+  boolean: "getBooleanType",
+  any: "getAnyType",
+  unknown: "getUnknownType",
+  never: "getNeverType",
+  void: "getVoidType",
+} as const
 
-export const isIntrinsicTypeName = (
-  value: NativeType | IntrinsicTypeName,
-): value is IntrinsicTypeName => Predicate.isString(value)
+export type IntrinsicTypeName = keyof typeof intrinsicTypeGetters
 
-export const ProjectFileTypeSymbol = Symbol.for("@safemods/ProjectFile")
-
-/** A validated reference to an existing source file in a Project Snapshot. */
 export interface ProjectFile {
-  readonly [ProjectFileTypeSymbol]: true
   readonly project: ProjectSnapshot
-  /** Canonical portable path for this checked project file. */
-  readonly path: ProjectRelativePath.Type
-  readonly sourceFile: Effect.Effect<SourceFile, SnapshotExpired>
-  readonly sourceText: Effect.Effect<string, SnapshotExpired>
-  readonly symbolNamed: (
-    name: string,
-  ) => Effect.Effect<NativeSymbol, SymbolNotFound | ProjectSnapshotError>
+  readonly fileName: ProjectRelativePath.Type
+  readonly sourceFile: SourceFile
 }
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Type guard boundary for ProjectFile handles.
-export const isProjectFile = (value: unknown): value is ProjectFile =>
-  Predicate.isObject(value) && ProjectFileTypeSymbol in value
-
-/** A checked view of one configured project in one Workspace Snapshot. */
 export interface ProjectSnapshot {
   readonly project: ConfiguredProject.Type
-  /** Return the portable path for a source file owned by this snapshot. */
-  readonly pathOf: (sourceFile: SourceFile) => ProjectRelativePath.Type
-  readonly sourceFile: (
-    path: ProjectRelativePath.Type,
-  ) => Effect.Effect<SourceFile | undefined, ProjectSnapshotError>
-  readonly sourceText: (
-    path: ProjectRelativePath.Type,
-  ) => Effect.Effect<string, FileNotFound | ProjectSnapshotError>
+  readonly fileNameOf: (sourceFile: SourceFile) => ProjectRelativePath.Type
   readonly file: (
-    path: ProjectRelativePath.Type,
-  ) => Effect.Effect<ProjectFile, FileNotFound | ProjectSnapshotError>
+    fileName: ProjectRelativePath.Type,
+  ) => Effect.Effect<ProjectFile | undefined, ProjectSnapshotError>
   readonly files: Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError>
-  readonly symbolsAt: (
-    path: ProjectRelativePath.Type,
-    positions: ReadonlyArray<number>,
-  ) => Effect.Effect<ReadonlyArray<NativeSymbol | undefined>, ProjectSnapshotError>
-  readonly referencesToSymbolInFile: (
-    path: ProjectRelativePath.Type,
-    symbol: NativeSymbol,
-  ) => Effect.Effect<ReadonlyArray<Identifier>, ProjectSnapshotError>
-  readonly canonicalSymbol: (
-    symbol: NativeSymbol,
-  ) => Effect.Effect<NativeSymbol, ProjectSnapshotError>
   readonly symbolNamed: (
     name: string,
     options: { readonly within: ProjectRelativePath.Type },
   ) => Effect.Effect<NativeSymbol, SymbolNotFound | ProjectSnapshotError>
+  readonly symbolsAt: (
+    fileName: ProjectRelativePath.Type,
+    positions: ReadonlyArray<number>,
+  ) => Effect.Effect<ReadonlyArray<NativeSymbol | undefined>, ProjectSnapshotError>
+  readonly canonicalSymbol: (
+    symbol: NativeSymbol,
+  ) => Effect.Effect<NativeSymbol, ProjectSnapshotError>
   readonly typesAt: (
-    path: ProjectRelativePath.Type,
+    fileName: ProjectRelativePath.Type,
     positions: ReadonlyArray<number>,
   ) => Effect.Effect<ReadonlyArray<NativeType | undefined>, ProjectSnapshotError>
   readonly typeToString: (type: NativeType) => Effect.Effect<string, ProjectSnapshotError>
   readonly isTypeAssignableTo: (
-    fromType: NativeType,
-    toType: NativeType,
+    source: NativeType,
+    target: NativeType,
   ) => Effect.Effect<boolean, ProjectSnapshotError>
   readonly intrinsicType: (
-    kind: IntrinsicTypeName,
+    name: IntrinsicTypeName,
   ) => Effect.Effect<NativeType, ProjectSnapshotError>
-  /** Native values remain valid only during the snapshot region. */
   readonly unsafeNative: <A, E, R>(
     use: (project: NativeProject) => Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E | SnapshotExpired, R>
 }
 
-interface ProjectSnapshotOptions {
-  readonly configured: ConfiguredProject.Type
-  readonly nativeProject: NativeProject
-  readonly projectRoot: string
-  readonly ensureActive: Effect.Effect<void, SnapshotExpired>
-  readonly runtime: WorkspaceRuntimeService
-}
-
-/** Symbol meanings searched by `resolveName`: values, types, namespaces, and aliases. */
-const resolveNameMeaning =
+const anyMeaning =
   SymbolFlags.Value |
   SymbolFlags.Type |
   SymbolFlags.Namespace |
   SymbolFlags.Alias |
   SymbolFlags.ExportValue
 
-/** Build the checked project view for one native compiler project. */
-export const projectSnapshotFor = ({
-  configured,
-  nativeProject,
-  projectRoot,
-  ensureActive,
-  runtime,
-}: ProjectSnapshotOptions): ProjectSnapshot => {
-  const compilerFileNames = CompilerFileName.forProject(runtime, projectRoot)
+const decodePath = Schema.decodeOption(ProjectRelativePath.schema)
+
+export const make = (options: {
+  readonly configured: ConfiguredProject.Type
+  readonly native: NativeProject
+  readonly projectRoot: string
+  readonly ensureActive: Effect.Effect<void, SnapshotExpired>
+}): ProjectSnapshot => {
+  const { configured, native, projectRoot, ensureActive } = options
+  const { program, checker } = native
+
+  const request = <A>(operation: string, evaluate: () => PromiseLike<A>) =>
+    Effect.andThen(ensureActive, nativeRequest(operation, evaluate))
+
+  const absolute = (fileName: ProjectRelativePath.Type): string => Path.join(projectRoot, fileName)
+
+  const relative = (absoluteName: string): Option.Option<ProjectRelativePath.Type> =>
+    decodePath(Path.relative(projectRoot, absoluteName))
+
+  const ownedFile = (absoluteName: string) =>
+    request("getSourceFile", async (): Promise<ProjectFile | undefined> => {
+      const fileName = Option.getOrUndefined(relative(absoluteName))
+      const sourceFile = await program.getSourceFile(absoluteName)
+      if (fileName === undefined || sourceFile === undefined) return undefined
+      const [isDefaultLibrary, isExternal] = await Promise.all([
+        program.isSourceFileDefaultLibrary(sourceFile),
+        program.isSourceFileFromExternalLibrary(sourceFile),
+      ])
+      return isDefaultLibrary || isExternal ? undefined : { project, fileName, sourceFile }
+    })
 
   const canonicalSymbolOf = (symbol: NativeSymbol): Promise<NativeSymbol> =>
     (symbol.flags & SymbolFlags.Alias) === 0
       ? symbol.getExportSymbol()
-      : nativeProject.checker.getAliasedSymbol(symbol)
+      : checker.getAliasedSymbol(symbol)
 
-  const isOwnedSourceFile = (sf: SourceFile, observedName: string) =>
-    Effect.gen(function* () {
-      if (!compilerFileNames.contains(observedName)) return false
-      const isDefault = yield* nativeRequest("isSourceFileDefaultLibrary", () =>
-        nativeProject.program.isSourceFileDefaultLibrary(sf),
-      )
-      const isExternal = yield* nativeRequest("isSourceFileFromExternalLibrary", () =>
-        nativeProject.program.isSourceFileFromExternalLibrary(sf),
-      )
-      return !isDefault && !isExternal
-    })
-
-  const ownedSourceFiles = Effect.gen(function* () {
-    const allFileNames = yield* nativeRequest("getSourceFileNames", () =>
-      nativeProject.program.getSourceFileNames(),
-    )
-    const owned: Array<{
-      relative: ProjectRelativePath.Type
-      sourceFile: SourceFile
-    }> = []
-    for (const fileName of allFileNames) {
-      const relative = Option.getOrUndefined(compilerFileNames.toProjectPath(fileName))
-      if (relative === undefined) continue
-      const sourceFile = yield* nativeRequest("getSourceFile", () =>
-        nativeProject.program.getSourceFile(fileName),
-      )
-      if (sourceFile === undefined) continue
-      if (!(yield* isOwnedSourceFile(sourceFile, fileName))) continue
-      owned.push({
-        relative,
-        sourceFile,
-      })
-    }
-    return owned
-  })
-
-  const sourceFile = Effect.fn("ProjectSnapshot.sourceFile")(function* (
-    fileName: ProjectRelativePath.Type,
-  ) {
-    yield* ensureActive
-    const absolute = Option.getOrUndefined(compilerFileNames.fromProjectPath(fileName))
-    if (absolute === undefined) return undefined
-    const found = yield* nativeRequest("getSourceFile", () =>
-      nativeProject.program.getSourceFile(absolute),
-    )
-    if (found === undefined || !(yield* isOwnedSourceFile(found, absolute))) return undefined
-    return found
-  })
-
-  const sourceText = Effect.fn("ProjectSnapshot.sourceText")(function* (
-    fileName: ProjectRelativePath.Type,
-  ) {
-    yield* ensureActive
-    const file = yield* sourceFile(fileName)
-    if (file === undefined) {
-      return yield* new FileNotFound({ fileName, projectId: configured.id })
-    }
-    return file.text
-  })
-
-  const symbolsAt = Effect.fn("ProjectSnapshot.symbolsAt")(function* (
-    fileName: ProjectRelativePath.Type,
-    positions: ReadonlyArray<number>,
-  ) {
-    yield* ensureActive
-    if (positions.length === 0) return []
-    const absolute = Option.getOrUndefined(compilerFileNames.fromProjectPath(fileName))
-    if (absolute === undefined) return positions.map(() => undefined)
-    return yield* nativeRequest("getSymbolsAtPositions", () =>
-      nativeProject.checker.getSymbolAtPosition(absolute, positions),
-    )
-  })
-  const referencesToSymbolInFile = Effect.fn("ProjectSnapshot.referencesToSymbolInFile")(function* (
-    fileName: ProjectRelativePath.Type,
-    symbol: NativeSymbol,
-  ) {
-    yield* ensureActive
-    const absolute = Option.getOrUndefined(compilerFileNames.fromProjectPath(fileName))
-    if (absolute === undefined) return []
-    return yield* nativeRequest("getReferencesToSymbolInFile", async () => {
-      const source = await nativeProject.program.getSourceFile(absolute)
-      if (source === undefined) return []
-
-      const targetSymbol = await canonicalSymbolOf(symbol)
-      const localSymbol = await nativeProject.checker.resolveName(
-        symbol.name,
-        resolveNameMeaning,
-        source,
-      )
-      const candidates: Array<{ readonly symbol: NativeSymbol; readonly node?: Identifier }> =
-        localSymbol === undefined ? [] : [{ symbol: localSymbol }]
-      const candidateNodes: Array<Identifier> = []
-      for (const statement of source.statements) {
-        if (isImportDeclaration(statement)) {
-          const clause = statement.importClause
-          if (clause?.name !== undefined) candidateNodes.push(clause.name)
-          if (clause?.namedBindings !== undefined && isNamedImports(clause.namedBindings)) {
-            for (const element of clause.namedBindings.elements) {
-              if (element.propertyName !== undefined && isIdentifier(element.propertyName)) {
-                candidateNodes.push(element.propertyName)
-              }
-              candidateNodes.push(element.name)
-            }
-          }
-        } else if (
-          isExportDeclaration(statement) &&
-          statement.exportClause !== undefined &&
-          isNamedExports(statement.exportClause)
-        ) {
-          for (const element of statement.exportClause.elements) {
-            if (element.propertyName !== undefined && isIdentifier(element.propertyName)) {
-              candidateNodes.push(element.propertyName)
-            }
-            if (isIdentifier(element.name)) candidateNodes.push(element.name)
-          }
-        }
-      }
-      if (candidateNodes.length > 0) {
-        const located = await nativeProject.checker.getSymbolAtLocation(candidateNodes)
-        for (let index = 0; index < located.length; index++) {
-          const candidate = located[index]
-          const node = candidateNodes[index]
-          if (candidate !== undefined && node !== undefined) {
-            candidates.push({ symbol: candidate, node })
-          }
-        }
-      }
-
-      const canonicalCandidates = await Promise.all(
-        candidates.map(async (candidate) => ({
-          candidate,
-          canonical: await canonicalSymbolOf(candidate.symbol),
-        })),
-      )
-      const referenceSymbols = new Map<number, NativeSymbol>()
-      const directReferences: Array<Identifier> = []
-      for (const { candidate, canonical } of canonicalCandidates) {
-        if (canonical.id !== targetSymbol.id) continue
-        if (candidate.node !== undefined) directReferences.push(candidate.node)
-        referenceSymbols.set(
-          candidate.symbol.id,
-          (candidate.symbol.flags & SymbolFlags.Alias) === 0 ? canonical : candidate.symbol,
-        )
-      }
-
-      const handleGroups = await Promise.all(
-        [...referenceSymbols.values()].map((referenceSymbol) =>
-          nativeProject.checker.getReferencesToSymbolInFile(absolute, referenceSymbol),
-        ),
-      )
-      const handles = handleGroups.flat()
-      const resolved = await Promise.all(handles.map((handle) => handle.resolve(nativeProject)))
-      const references = [
-        ...directReferences,
-        ...resolved.filter((node): node is Identifier => node !== undefined && isIdentifier(node)),
-      ]
-      return [
-        ...new Map(
-          references.map((node) => [
-            `${node.getStart(node.getSourceFile())}:${node.getEnd()}`,
-            node,
-          ]),
-        ).values(),
-      ]
-    })
-  })
-
-  const canonicalSymbol = Effect.fn("ProjectSnapshot.canonicalSymbol")(function* (
-    symbol: NativeSymbol,
-  ) {
-    yield* ensureActive
-    return yield* nativeRequest("getCanonicalSymbol", () => canonicalSymbolOf(symbol))
-  })
-
-  const symbolNamed = Effect.fn("ProjectSnapshot.symbolNamed")(function* (
-    name: string,
-    options: { readonly within: ProjectRelativePath.Type },
-  ) {
-    yield* ensureActive
-    const absolute = Option.getOrUndefined(compilerFileNames.fromProjectPath(options.within))
-    if (absolute === undefined) {
-      return yield* new SymbolNotFound({ name, fileName: options.within })
-    }
-    const source = yield* nativeRequest("getSourceFile", () =>
-      nativeProject.program.getSourceFile(absolute),
-    )
-    if (source === undefined || !(yield* isOwnedSourceFile(source, absolute))) {
-      return yield* new SymbolNotFound({ name, fileName: options.within })
-    }
-    const symbol = yield* nativeRequest("resolveName", async () => {
-      const resolved = await nativeProject.checker.resolveName(name, resolveNameMeaning, source)
-      if (resolved !== undefined) return resolved
-      const [moduleSymbol] = await nativeProject.checker.getSymbolAtLocation([source])
-      return moduleSymbol === undefined
-        ? undefined
-        : nativeProject.checker.getMemberInModuleExports(moduleSymbol, name)
-    })
-    if (symbol === undefined) {
-      return yield* new SymbolNotFound({ name, fileName: options.within })
-    }
-    return yield* canonicalSymbol(symbol)
-  })
-
-  const typesAt = Effect.fn("ProjectSnapshot.typesAt")(function* (
-    fileName: ProjectRelativePath.Type,
-    positions: ReadonlyArray<number>,
-  ) {
-    yield* ensureActive
-    if (positions.length === 0) return []
-    const absolute = Option.getOrUndefined(compilerFileNames.fromProjectPath(fileName))
-    if (absolute === undefined) return positions.map(() => undefined)
-    return yield* nativeRequest("getTypeAtPosition", () =>
-      nativeProject.checker.getTypeAtPosition(absolute, positions),
-    )
-  })
-
-  const typeToString = Effect.fn("ProjectSnapshot.typeToString")(function* (type: NativeType) {
-    yield* ensureActive
-    return yield* nativeRequest("typeToString", () => nativeProject.checker.typeToString(type))
-  })
-
-  const isTypeAssignableTo = Effect.fn("ProjectSnapshot.isTypeAssignableTo")(function* (
-    fromType: NativeType,
-    toType: NativeType,
-  ) {
-    yield* ensureActive
-    return yield* nativeRequest("isTypeAssignableTo", () =>
-      nativeProject.checker.isTypeAssignableTo(fromType, toType),
-    )
-  })
-
-  const intrinsicType = Effect.fn("ProjectSnapshot.intrinsicType")(function* (
-    kind: IntrinsicTypeName,
-  ) {
-    yield* ensureActive
-    return yield* nativeRequest("getIntrinsicType", () => {
-      switch (kind) {
-        case "string":
-          return nativeProject.checker.getStringType()
-        case "number":
-          return nativeProject.checker.getNumberType()
-        case "boolean":
-          return nativeProject.checker.getBooleanType()
-        case "any":
-          return nativeProject.checker.getAnyType()
-        case "unknown":
-          return nativeProject.checker.getUnknownType()
-        case "never":
-          return nativeProject.checker.getNeverType()
-        case "void":
-          return nativeProject.checker.getVoidType()
-      }
-    })
-  })
-
-  const unsafeNative: ProjectSnapshot["unsafeNative"] = (use) =>
-    Effect.andThen(
-      ensureActive,
-      Effect.suspend(() => use(nativeProject)),
-    )
-
-  const makeProjectFile = (
-    relativePath: ProjectRelativePath.Type,
-    source: SourceFile,
-  ): ProjectFile => ({
-    [ProjectFileTypeSymbol]: true,
-    project: snapshotView,
-    path: relativePath,
-    sourceFile: Effect.as(ensureActive, source),
-    sourceText: Effect.as(ensureActive, source.text),
-    symbolNamed: (name) => snapshotView.symbolNamed(name, { within: relativePath }),
-  })
-
-  const file = Effect.fn("ProjectSnapshot.file")(function* (fileName: ProjectRelativePath.Type) {
-    yield* ensureActive
-    const found = yield* sourceFile(fileName)
-    if (found === undefined) {
-      return yield* new FileNotFound({ projectId: configured.id, fileName })
-    }
-    return makeProjectFile(fileName, found)
-  })
-
-  const files: ProjectSnapshot["files"] = Effect.gen(function* () {
-    yield* ensureActive
-    return (yield* ownedSourceFiles).map((owned) =>
-      makeProjectFile(owned.relative, owned.sourceFile),
-    )
-  })
-
-  const snapshotView: ProjectSnapshot = {
+  const project: ProjectSnapshot = {
     project: configured,
-    pathOf: (sourceFile) => Option.getOrThrow(compilerFileNames.toProjectPath(sourceFile.fileName)),
-    sourceFile,
-    sourceText,
-    file,
-    files,
-    symbolsAt,
-    referencesToSymbolInFile,
-    canonicalSymbol,
-    symbolNamed,
-    typesAt,
-    typeToString,
-    isTypeAssignableTo,
-    intrinsicType,
-    unsafeNative,
+
+    fileNameOf: (sourceFile) => Option.getOrThrow(relative(sourceFile.fileName)),
+
+    file: (fileName) => ownedFile(absolute(fileName)),
+
+    files: request("getSourceFileNames", () => program.getSourceFileNames()).pipe(
+      Effect.flatMap((names) => Effect.forEach(names, ownedFile, { concurrency: 8 })),
+      Effect.map((files) => files.filter((file) => file !== undefined)),
+    ),
+
+    symbolNamed: (name, { within }) =>
+      Effect.gen(function* () {
+        const file = yield* project.file(within)
+        const symbol =
+          file === undefined
+            ? undefined
+            : yield* request("resolveName", async () => {
+                const local = await checker.resolveName(name, anyMeaning, file.sourceFile)
+                if (local !== undefined) return local
+                const [module] = await checker.getSymbolAtLocation([file.sourceFile])
+                return module === undefined
+                  ? undefined
+                  : checker.getMemberInModuleExports(module, name)
+              })
+        if (symbol === undefined) return yield* new SymbolNotFound({ name, fileName: within })
+        return yield* project.canonicalSymbol(symbol)
+      }),
+
+    symbolsAt: (fileName, positions) =>
+      positions.length === 0
+        ? Effect.as(ensureActive, [])
+        : request("getSymbolAtPosition", () =>
+            checker.getSymbolAtPosition(absolute(fileName), positions),
+          ),
+
+    canonicalSymbol: (symbol) => request("getCanonicalSymbol", () => canonicalSymbolOf(symbol)),
+
+    typesAt: (fileName, positions) =>
+      positions.length === 0
+        ? Effect.as(ensureActive, [])
+        : request("getTypeAtPosition", () =>
+            checker.getTypeAtPosition(absolute(fileName), positions),
+          ),
+
+    typeToString: (type) => request("typeToString", () => checker.typeToString(type)),
+
+    isTypeAssignableTo: (source, target) =>
+      request("isTypeAssignableTo", () => checker.isTypeAssignableTo(source, target)),
+
+    intrinsicType: (name) =>
+      request("getIntrinsicType", () => checker[intrinsicTypeGetters[name]]()),
+
+    unsafeNative: (use) =>
+      Effect.andThen(
+        ensureActive,
+        Effect.suspend(() => use(native)),
+      ),
   }
 
-  return snapshotView
+  return project
 }

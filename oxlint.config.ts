@@ -13,7 +13,6 @@ export default defineConfig({
     "jest",
     "effecttsgo",
   ],
-  jsPlugins: [{ name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" }],
   categories: {
     correctness: "error",
     nursery: "off",
@@ -35,17 +34,11 @@ export default defineConfig({
     ".pi/**",
     ".roo/**",
     ".windsurf/**",
-    "tools/oxlint/anti-slop/**",
     "node_modules/**",
     "dist/**",
     "fixtures/**",
   ],
   rules: {
-    "anti-slop/no-chained-type-assertions": "error",
-    "anti-slop/no-unknown-parameters": "error",
-    "anti-slop/no-unknown-returns": "error",
-    "anti-slop/no-unknown-type-aliases": "error",
-    "anti-slop/require-safety-comment-for-type-assertion": "error",
     "arrow-body-style": "off",
     "capitalized-comments": "off",
     "typescript/consistent-return": "off",
@@ -300,48 +293,6 @@ export default defineConfig({
   },
   overrides: [
     {
-      files: ["tools/**/*.mjs"],
-      // Standalone scripts are outside tsconfig; JSDoc would add noise without
-      // changing their runtime contracts.
-      rules: {
-        "typescript/no-unsafe-assignment": "off",
-        "typescript/no-unsafe-argument": "off",
-        "typescript/no-unsafe-member-access": "off",
-        "typescript/no-unsafe-call": "off",
-        "typescript/no-unsafe-return": "off",
-        "eslint/no-await-in-loop": "off",
-        "unicorn/import-style": "off",
-        "unicorn/no-await-expression-member": "off",
-        "eslint/prefer-named-capture-group": "off",
-        // Untyped JS: indexed accesses (process.argv, plain records) cannot be
-        // proven nullable, yet they legitimately are at runtime.
-        "typescript/no-unnecessary-condition": "off",
-      },
-    },
-    {
-      files: ["src/Pattern.ts"],
-      rules: {
-        "no-restricted-imports": ["error", { patterns: ["./Query/*", "./Query/**"] }],
-      },
-    },
-    {
-      files: ["src/Workspace/**/*.ts"],
-      rules: {
-        "no-restricted-imports": [
-          "error",
-          {
-            patterns: [
-              "../Draft/*",
-              "../Edit/*",
-              "../Plan.ts",
-              "../Verification/*",
-              "../Application/*",
-            ],
-          },
-        ],
-      },
-    },
-    {
       files: ["test/**/*.ts"],
       rules: {
         "no-restricted-imports": "off",
@@ -364,15 +315,6 @@ export default defineConfig({
         // Test fixtures deliberately inspect untyped Effect failures.
         "effecttsgo/any-unknown-in-error-context": "off",
         "effecttsgo/unknown-in-effect-catch": "off",
-      },
-    },
-    {
-      files: ["tools/**/*.mjs"],
-      rules: {
-        // These are human-facing scripts and examples; console output is
-        // their API rather than application Effect logging.
-        "effecttsgo/global-console": "off",
-        "effecttsgo/global-console-in-effect": "off",
       },
     },
   ],

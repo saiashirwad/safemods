@@ -1,4 +1,3 @@
-/** Hash-guarded text edits: construction, validation, and application. */
 import { Data, Effect, Order, Schema } from "effect"
 import * as ProjectId from "./ProjectId.ts"
 import * as ProjectRelativePath from "./ProjectRelativePath.ts"
@@ -26,14 +25,14 @@ export const textEdit = (options: {
   readonly start: number
   readonly end: number
   readonly newText: string
-  readonly evidenceIds?: ReadonlyArray<string> | undefined
+  readonly evidenceIds?: ReadonlyArray<string>
 }): TextEdit => ({
   projectId: options.projectId,
   fileName: options.fileName,
   start: options.start,
   end: options.end,
-  newText: options.newText,
   expectedTextHash: Sha256.digest(options.sourceText.slice(options.start, options.end)),
+  newText: options.newText,
   evidenceIds: options.evidenceIds ?? [],
 })
 
@@ -54,14 +53,27 @@ export const compareEdits = (left: TextEdit, right: TextEdit): number =>
   left.end - right.end ||
   Order.String(left.newText, right.newText)
 
-export const editsConflict = (left: TextEdit, right: TextEdit): boolean => {
+const touches = (insert: TextEdit, other: TextEdit): boolean =>
+  other.start === other.end
+    ? insert.start === other.start
+    : insert.start >= other.start && insert.start < other.end
+
+const editsConflict = (left: TextEdit, right: TextEdit): boolean => {
   if (left.projectId !== right.projectId || left.fileName !== right.fileName) return false
-  const leftInsert = left.start === left.end
-  const rightInsert = right.start === right.end
-  if (leftInsert && rightInsert) return left.start === right.start
-  if (leftInsert) return left.start >= right.start && left.start < right.end
-  if (rightInsert) return right.start >= left.start && right.start < left.end
+  if (left.start === left.end) return touches(left, right)
+  if (right.start === right.end) return touches(right, left)
   return left.start < right.end && right.start < left.end
+}
+
+export const firstConflict = (
+  sorted: ReadonlyArray<TextEdit>,
+): readonly [TextEdit, TextEdit] | undefined => {
+  for (let index = 1; index < sorted.length; index++) {
+    const left = sorted[index - 1]!
+    const right = sorted[index]!
+    if (editsConflict(left, right)) return [left, right]
+  }
+  return undefined
 }
 
 export const applyFileEdits = (
@@ -70,30 +82,18 @@ export const applyFileEdits = (
 ): Effect.Effect<string, InvalidEdit | EditConflict> =>
   Effect.gen(function* () {
     const sorted = [...edits].sort(compareEdits)
-    for (const edit of sorted) {
-      if (
-        !Number.isInteger(edit.start) ||
-        !Number.isInteger(edit.end) ||
-        edit.start < 0 ||
-        edit.end < edit.start ||
-        edit.end > sourceText.length
-      ) {
+    const conflict = firstConflict(sorted)
+    if (conflict !== undefined) {
+      return yield* new EditConflict({ left: conflict[0], right: conflict[1] })
+    }
+    let output = sourceText
+    for (const edit of sorted.reverse()) {
+      if (edit.start < 0 || edit.start > edit.end || edit.end > sourceText.length) {
         return yield* new InvalidEdit({ edit, reason: "range" })
       }
-    }
-    for (let index = 1; index < sorted.length; index++) {
-      const left = sorted[index - 1]!
-      const right = sorted[index]!
-      if (editsConflict(left, right)) return yield* new EditConflict({ left, right })
-    }
-    for (const edit of sorted) {
       if (Sha256.digest(sourceText.slice(edit.start, edit.end)) !== edit.expectedTextHash) {
         return yield* new InvalidEdit({ edit, reason: "source-mismatch" })
       }
-    }
-    let output = sourceText
-    for (let index = sorted.length - 1; index >= 0; index--) {
-      const edit = sorted[index]!
       output = `${output.slice(0, edit.start)}${edit.newText}${output.slice(edit.end)}`
     }
     return output

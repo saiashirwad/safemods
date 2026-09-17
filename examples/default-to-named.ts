@@ -62,11 +62,7 @@ export const defaultToNamed = Recipe.define("default-to-named", {
         within: input.declarationFile,
       })
 
-      const defaultFunctions = yield* Query.nodes(
-        project,
-        isFunctionDeclaration,
-        SyntaxKind.FunctionDeclaration,
-      ).pipe(
+      const defaultFunctions = yield* Query.nodes(project, isFunctionDeclaration).pipe(
         Query.within(input.declarationFile),
         Query.filter(
           ({ value }) =>
@@ -87,11 +83,7 @@ export const defaultToNamed = Recipe.define("default-to-named", {
         Query.collect,
       )
 
-      const defaultReexports = yield* Query.nodes(
-        project,
-        isExportDeclaration,
-        SyntaxKind.ExportDeclaration,
-      ).pipe(
+      const defaultReexports = yield* Query.nodes(project, isExportDeclaration).pipe(
         Query.filter(({ value }) => {
           if (
             value.moduleSpecifier === undefined ||
@@ -112,11 +104,11 @@ export const defaultToNamed = Recipe.define("default-to-named", {
         Query.collect,
       )
 
-      return yield* Draft.concat(
-        yield* Draft.replaceEach(defaultFunctions, ({ value }) =>
+      return Draft.concat(
+        Draft.replaceEach(defaultFunctions, ({ value }) =>
           value.getText().replace(/^export\s+default\s+/, "export "),
         ),
-        yield* Draft.replaceEach(defaultImports, ({ value }) => {
+        Draft.replaceEach(defaultImports, ({ value }) => {
           const clause = value.importClause
           const binding = namedBinding(clause.name.text, input.exportName)
           const namedBindings = clause.namedBindings
@@ -129,7 +121,7 @@ export const defaultToNamed = Recipe.define("default-to-named", {
           }
           return { node: clause, text: `{ ${binding} }` }
         }),
-        yield* Draft.replaceEach(defaultReexports, ({ value }) =>
+        Draft.replaceEach(defaultReexports, ({ value }) =>
           rewriteDefaultReexport(value.getText(), input.exportName),
         ),
       )

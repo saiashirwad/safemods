@@ -1,33 +1,24 @@
-import { Data, Effect, Schema, SchemaIssue, SchemaTransformation } from "effect"
+import { Effect, Schema, SchemaIssue, SchemaTransformation } from "effect"
 
-export class InvalidProjectRelativePath extends Data.TaggedError("InvalidProjectRelativePath")<{
-  readonly path: string
-}> {}
-
-const canonicalPath = (value: string): string | undefined => {
-  if (value.length === 0 || value.includes("\0")) return undefined
-  if (value.startsWith("/") || value.startsWith("\\") || /^[A-Za-z]:[\\/]/.test(value)) {
-    return undefined
-  }
-
-  const result: Array<string> = []
+const normalize = (value: string): string | undefined => {
+  if (value.includes("\0") || /^([\\/]|[A-Za-z]:[\\/])/.test(value)) return undefined
+  const parts: Array<string> = []
   for (const part of value.replaceAll("\\", "/").split("/")) {
     if (part === "" || part === ".") continue
     if (part === "..") {
-      if (result.length === 0) return undefined
-      result.pop()
+      if (parts.pop() === undefined) return undefined
       continue
     }
     if (part.includes(":")) return undefined
-    result.push(part)
+    parts.push(part)
   }
-  return result.length === 0 ? undefined : result.join("/")
+  return parts.length === 0 ? undefined : parts.join("/")
 }
 
-const canonical = Schema.String.pipe(
+const normalized = Schema.String.pipe(
   Schema.check(
-    Schema.makeFilter((value) => canonicalPath(value) === value, {
-      expected: "a canonical project-relative path",
+    Schema.makeFilter((value) => normalize(value) === value, {
+      expected: "a normalized project-relative path",
     }),
   ),
   Schema.brand("ProjectRelativePath"),
@@ -35,10 +26,10 @@ const canonical = Schema.String.pipe(
 
 export const schema = Schema.String.pipe(
   Schema.decodeTo(
-    canonical,
+    normalized,
     SchemaTransformation.transformOrFail({
       decode: (value, options) => {
-        const path = canonicalPath(value)
+        const path = normalize(value)
         return path === undefined
           ? Effect.fail(
               new SchemaIssue.InvalidValue(
@@ -55,8 +46,3 @@ export const schema = Schema.String.pipe(
 )
 
 export type Type = typeof schema.Type
-
-export const make = (value: string): Effect.Effect<Type, InvalidProjectRelativePath> =>
-  Schema.decodeEffect(schema)(value).pipe(
-    Effect.mapError(() => new InvalidProjectRelativePath({ path: value })),
-  )

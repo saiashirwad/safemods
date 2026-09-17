@@ -3,7 +3,6 @@ import { applyVerifiedPlan } from "../../src/Application.ts"
 import { type Recipe, run } from "../../src/Recipe.ts"
 import { verify } from "../../src/Verification/index.ts"
 
-/** Test helper: run, verify, and apply a recipe in one step. */
 export const executeRecipe = <Input, E, R>(recipe: Recipe<Input, E, R>, input: Input) =>
   Effect.gen(function* () {
     const plan = yield* run(recipe, input)

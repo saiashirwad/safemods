@@ -1,18 +1,15 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
-import { layer as nodeLayer, workspaceLayerNode } from "../../src/Node.ts"
-import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
 import { defaultToNamed, type DefaultToNamedInput } from "../../examples/default-to-named.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
-import { withFixture } from "../utils/declarative-fixture.ts"
-import { projectPath, workspaceDefinition } from "../utils/domain.ts"
+import { fixturePath as fixtureDirectory, withFixture } from "../utils/fixture.ts"
+import { projectPath } from "../utils/domain.ts"
 
-const fixturePath = fileURLToPath(
-  new URL("../../fixtures/migrations/default-to-named/", import.meta.url),
-)
+const fixture = "migrations/default-to-named"
+const fixturePath = fixtureDirectory(fixture)
 
 describe("default-to-named", () => {
   effect(
@@ -74,18 +71,11 @@ describe("default-to-named", () => {
             expect(yield* read("src/diagnostics.ts")).toContain(
               "export const servicePort: string = 8080",
             )
-
-            const freshWorkspaceLayer = workspaceLayerNode(
-              workspaceDefinition({ projects: [app] }),
-              { cwd: root },
-            )
-            const second = yield* Recipe.run(defaultToNamed, input).pipe(
-              Effect.provide(Layer.merge(freshWorkspaceLayer, nodeLayer)),
-            )
+            const second = yield* Recipe.run(defaultToNamed, input)
             expect(second.edits).toHaveLength(0)
             expect(second.measurements.matches).toBe(0)
           }),
-        { fixturePath },
+        { fixture },
       ),
     60_000,
   )

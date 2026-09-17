@@ -1,20 +1,14 @@
-/**
- * Wrap the argument of every call to the canonical `target` symbol in an
- * object — through import aliases and re-exports, preserving trivia.
- */
 import { Effect } from "effect"
 import { isObjectLiteralExpression } from "typescript/unstable/ast/is"
-import * as Draft from "../../src/Draft/index.ts"
+import * as Draft from "../../src/Draft.ts"
 import type * as ProjectRelativePath from "../../src/ProjectRelativePath.ts"
-import * as Query from "../../src/Query/index.ts"
+import * as Query from "../../src/Query.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import { type ConfiguredProject, WorkspaceSnapshot } from "../../src/Workspace/index.ts"
 
 export interface WrapTargetInput {
   readonly project: ConfiguredProject.Type
-  /** Project-relative file declaring the target symbol. */
   readonly declarationFile: ProjectRelativePath.Type
-  /** Property name used to wrap each argument. */
   readonly property: string
 }
 
@@ -37,7 +31,7 @@ export const wrapTargetInput = Recipe.define("wrap-target-input", {
         Query.collect,
       )
 
-      return yield* Draft.replaceEach(matches, ({ value: call }) => {
+      return Draft.replaceEach(matches, ({ value: call }) => {
         const argument = call.arguments[0]!
         return { node: argument, text: `{ ${input.property}: ${argument.getText()} }` }
       })

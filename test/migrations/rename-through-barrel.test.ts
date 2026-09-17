@@ -1,18 +1,13 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
-import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
 import { renameThroughBarrel } from "../../examples/rename-through-barrel.ts"
-import { layer as nodeLayer, workspaceLayerNode } from "../../src/Node.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { withFixture } from "../utils/declarative-fixture.ts"
+import { withFixture } from "../utils/fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
-import { workspaceDefinition } from "../utils/domain.ts"
 
-const fixturePath = fileURLToPath(
-  new URL("../../fixtures/migrations/rename-through-barrel/", import.meta.url),
-)
+const fixture = "migrations/rename-through-barrel"
 
 const file = (lines: ReadonlyArray<string>) => lines.join("\n") + "\n"
 
@@ -207,7 +202,7 @@ describe("rename-through-barrel", () => {
     "renames loadAccount through barrels and aliases without touching a different loadAccount",
     () =>
       withFixture(
-        (root, app) =>
+        (root) =>
           Effect.gen(function* () {
             const { plan, verified } = yield* executeRecipe(renameThroughBarrel, undefined)
 
@@ -225,18 +220,11 @@ describe("rename-through-barrel", () => {
             expect(yield* readSource(root, "src/auth/session.ts")).toBe(unchangedSession)
             expect(yield* readSource(root, "src/users/directory.ts")).toBe(unchangedDirectory)
             expect(yield* readSource(root, "src/audit/metrics.ts")).toBe(unchangedMetrics)
-
-            const freshWorkspaceLayer = workspaceLayerNode(
-              workspaceDefinition({ projects: [app] }),
-              { cwd: root },
-            )
-            const second = yield* Recipe.run(renameThroughBarrel, undefined).pipe(
-              Effect.provide(Layer.merge(freshWorkspaceLayer, nodeLayer)),
-            )
+            const second = yield* Recipe.run(renameThroughBarrel, undefined)
             expect(second.edits).toHaveLength(0)
             expect(second.measurements.matches).toBe(0)
           }),
-        { fixturePath },
+        { fixture },
       ),
     60_000,
   )

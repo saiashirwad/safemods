@@ -1,18 +1,14 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
-import { fileURLToPath } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
 import { relativeJsExtensions } from "../../examples/relative-js-extensions.ts"
-import { layer as nodeLayer, workspaceLayerNode } from "../../src/Node.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { withFixture } from "../utils/declarative-fixture.ts"
+import { fixturePath as fixtureDirectory, withFixture } from "../utils/fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
-import { workspaceDefinition } from "../utils/domain.ts"
 
-const fixturePath = fileURLToPath(
-  new URL("../../fixtures/migrations/relative-js-extensions/", import.meta.url),
-)
+const fixture = "migrations/relative-js-extensions"
+const fixturePath = fixtureDirectory(fixture)
 
 const read = (root: string, relative: string) =>
   Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
@@ -22,7 +18,7 @@ describe("relative-js-extensions", () => {
     "adds .js extensions to relative import specifiers and is a no-op on rerun",
     () =>
       withFixture(
-        (root, app) =>
+        (root) =>
           Effect.gen(function* () {
             const { plan, verified } = yield* executeRecipe(relativeJsExtensions, undefined)
 
@@ -90,18 +86,11 @@ describe("relative-js-extensions", () => {
 
             const logger = yield* read(root, "src/telemetry/logger.ts")
             expect(logger).toContain('from "node:util"')
-
-            const freshWorkspaceLayer = workspaceLayerNode(
-              workspaceDefinition({ projects: [app] }),
-              { cwd: root },
-            )
-            const second = yield* Recipe.run(relativeJsExtensions, undefined).pipe(
-              Effect.provide(Layer.merge(freshWorkspaceLayer, nodeLayer)),
-            )
+            const second = yield* Recipe.run(relativeJsExtensions, undefined)
             expect(second.edits).toHaveLength(0)
             expect(second.measurements.matches).toBe(0)
           }),
-        { fixturePath },
+        { fixture },
       ),
     60_000,
   )
