@@ -68,10 +68,9 @@ export const relativeJsExtensions = Recipe.define("relative-js-extensions", {
             Query.filter((selection) => isRewritableModuleSpecifier(selection.value)),
             Query.collect,
           )
-          return Draft.replaceEach(specifiers, (selection) => {
-            const next = toNodeNextSpecifier(selection.value.text)
-            if (next === undefined) throw new Error("Expected a rewritable module specifier")
-            const quote = selection.value.getText().startsWith("'") ? "'" : '"'
+          return Draft.replaceEach(specifiers, ({ value }) => {
+            const next = toNodeNextSpecifier(value.text)!
+            const quote = value.getText().startsWith("'") ? "'" : '"'
             return `${quote}${next}${quote}`
           })
         }),

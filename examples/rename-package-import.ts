@@ -19,9 +19,9 @@ const isModuleReference = and(
   refineDefinedKey("moduleSpecifier", isStringLiteral),
 )
 
-const rewriteSpecifier = (specifier: StringLiteral) => {
+const rewriteSpecifier = (specifier: StringLiteral): string => {
   const quote = specifier.getText().startsWith("'") ? "'" : '"'
-  return { node: specifier, text: `${quote}${TO_PACKAGE}${quote}` }
+  return `${quote}${TO_PACKAGE}${quote}`
 }
 
 export const renamePackageImport = Recipe.define("rename-package-import", {
@@ -41,9 +41,10 @@ export const renamePackageImport = Recipe.define("rename-package-import", {
         Query.collect,
       )
 
-      return Draft.replaceEach(references, ({ value }) => {
-        const specifier = value.moduleSpecifier
-        return `${value.getText().slice(0, specifier.getStart() - value.getStart())}${rewriteSpecifier(specifier).text}${value.getText().slice(specifier.getEnd() - value.getStart())}`
-      })
+      return Draft.concat(
+        ...references.map(({ project, value }) =>
+          Draft.replace(project, value.moduleSpecifier, rewriteSpecifier(value.moduleSpecifier)),
+        ),
+      )
     }),
 })

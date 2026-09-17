@@ -12,8 +12,6 @@ import type {
   ProjectSnapshotError,
 } from "./Workspace/index.ts"
 
-export type Facts = Readonly<Record<string, string | number | boolean | null>>
-
 export interface Selection<A> {
   readonly value: A
   readonly project: ProjectSnapshot
@@ -30,7 +28,7 @@ export interface Criterion<A, E = never, R = never> {
   readonly id: string
   readonly select: (
     selections: ReadonlyArray<Selection<A>>,
-  ) => Effect.Effect<ReadonlyArray<Facts | undefined>, E, R>
+  ) => Effect.Effect<ReadonlyArray<boolean>, E, R>
 }
 
 const isFiles = (scope: Scope): scope is ReadonlyArray<ProjectFile> => Array.isArray(scope)
@@ -106,14 +104,11 @@ export const where =
     self.pipe(
       Stream.grouped(128),
       Stream.mapEffect((batch) =>
-        Effect.map(criterion.select(batch), (facts) => {
-          if (facts.length !== batch.length) {
-            throw new Error(`Criterion ${criterion.id} answered ${facts.length} of ${batch.length}`)
+        Effect.map(criterion.select(batch), (matches) => {
+          if (matches.length !== batch.length) {
+            throw new Error(`Criterion ${criterion.id} answered ${matches.length} of ${batch.length}`)
           }
-          return batch.flatMap((selection, index) => {
-            const admitted = facts[index]
-            return admitted === undefined ? [] : [selection]
-          })
+          return batch.filter((_, index) => matches[index])
         }),
       ),
       Stream.flatMap(Stream.fromIterable),
@@ -138,11 +133,11 @@ const perFile =
       project: ProjectSnapshot,
       fileName: ProjectRelativePath.Type,
       values: ReadonlyArray<A>,
-    ) => Effect.Effect<ReadonlyArray<Facts | undefined>, E>,
+    ) => Effect.Effect<ReadonlyArray<boolean>, E>,
   ): Criterion<A, E>["select"] =>
   (selections) =>
     Effect.gen(function* () {
-      const facts = new Map<Selection<A>, Facts | undefined>()
+      const matches = new Map<Selection<A>, boolean>()
       const groups = Map.groupBy(selections, (selection) => selection.project)
       for (const [project, inProject] of groups) {
         for (const [fileName, group] of Map.groupBy(inProject, (selection) => selection.fileName)) {
@@ -151,10 +146,10 @@ const perFile =
             fileName,
             group.map((selection) => selection.value),
           )
-          group.forEach((selection, index) => facts.set(selection, answers[index]))
+          group.forEach((selection, index) => matches.set(selection, answers[index] ?? false))
         }
       }
-      return selections.map((selection) => facts.get(selection))
+      return selections.map((selection) => matches.get(selection) ?? false)
     })
 
 const startOf = (node: Node): number => node.getStart(node.getSourceFile())
@@ -174,10 +169,8 @@ export const resolvesTo = <A extends Node>(
           canonical.set(candidate, yield* project.canonicalSymbol(candidate))
         }
       }
-      return symbols.map((candidate) =>
-        candidate !== undefined && canonical.get(candidate) === symbol
-          ? { symbol: symbol.name }
-          : undefined,
+      return symbols.map(
+        (candidate) => candidate !== undefined && canonical.get(candidate) === symbol,
       )
     }),
   ),
@@ -195,9 +188,8 @@ export const typeAssignableTo = <A extends Node>(
         const types = yield* project.typesAt(fileName, values.map(startOf))
         return yield* Effect.forEach(types, (type) =>
           Effect.gen(function* () {
-            if (type === undefined) return undefined
-            if (!(yield* project.isTypeAssignableTo(type, expected))) return undefined
-            return { type: yield* project.typeToString(type), assignableTo: label }
+            if (type === undefined) return false
+            return yield* project.isTypeAssignableTo(type, expected)
           }),
         )
       }),

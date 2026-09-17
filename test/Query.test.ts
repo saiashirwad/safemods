@@ -99,18 +99,14 @@ describe("queries", () => {
   )
 
   effect(
-    "where admits only selections the criterion gives facts",
+    "where admits only selections that satisfy the criterion",
     () =>
       withProject({ "src/tiny.ts": "export const alpha = 1\nexport const beta = 2\n" }, (project) =>
         Effect.gen(function* () {
           const isAlpha: Query.Criterion<Identifier> = {
             id: "name-is-alpha",
             select: (selections) =>
-              Effect.succeed(
-                selections.map((selection) =>
-                  selection.value.text === "alpha" ? { text: "alpha" } : undefined,
-                ),
-              ),
+              Effect.succeed(selections.map((selection) => selection.value.text === "alpha")),
           }
           const surviving = yield* Query.identifiers(project).pipe(
             Query.within("src/tiny.ts"),
