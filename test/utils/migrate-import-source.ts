@@ -1,12 +1,7 @@
-/**
- * Second example recipe against the candidate public API: rewrite an import
- * source specifier, preserving the original quote style and all surrounding
- * trivia. Demonstrates that the surface is not overfit to call-site rewrites.
- */
 import { Effect } from "effect"
 import { isStringLiteral } from "typescript/unstable/ast/is"
-import * as Draft from "../../src/Draft/index.ts"
-import * as Query from "../../src/Query/index.ts"
+import * as Draft from "../../src/Draft.ts"
+import * as Query from "../../src/Query.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import { type ConfiguredProject, WorkspaceSnapshot } from "../../src/Workspace/index.ts"
 
@@ -32,7 +27,7 @@ export const migrateImportSource = Recipe.define("migrate-import-source", {
         Query.collect,
       )
 
-      return yield* Draft.replaceEach(declarations, ({ value }) => {
+      return Draft.replaceEach(declarations, ({ value }) => {
         const specifier = value.moduleSpecifier
         const quote = specifier.getText().startsWith("'") ? "'" : '"'
         return { node: specifier, text: `${quote}${input.to}${quote}` }

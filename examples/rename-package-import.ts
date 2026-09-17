@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { and, or, refineDefinedKey } from "is-kit"
-import { SyntaxKind, type StringLiteral } from "typescript/unstable/ast"
+import type { StringLiteral } from "typescript/unstable/ast"
 import {
   isExportDeclaration,
   isImportDeclaration,
@@ -36,16 +36,11 @@ export const renamePackageImport = Recipe.define("rename-package-import", {
       }
       const project = yield* snapshot.project(configured)
 
-      const references = yield* Query.nodes(project, isModuleReference, [
-        SyntaxKind.ImportDeclaration,
-        SyntaxKind.ExportDeclaration,
-      ]).pipe(
+      const references = yield* Query.nodes(project, isModuleReference).pipe(
         Query.filter(({ value }) => value.moduleSpecifier.text === FROM_PACKAGE),
         Query.collect,
       )
 
-      return yield* Draft.replaceEach(references, ({ value }) =>
-        rewriteSpecifier(value.moduleSpecifier),
-      )
+      return Draft.replaceEach(references, ({ value }) => rewriteSpecifier(value.moduleSpecifier))
     }),
 })

@@ -1,15 +1,12 @@
-/** Apply a verified plan to the real filesystem. */
 import { randomUUID } from "node:crypto"
 import { Data, Effect, FileSystem, Path } from "effect"
-import type { TransformationPlan } from "./Plan.ts"
-import type * as ProjectId from "./ProjectId.ts"
-import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
-import * as Sha256 from "./Sha256.ts"
-import { isPathContained, resolvePlanFilePath, unsafePlanFilePathMessage } from "./ProjectPath.ts"
-import { StalePlanError } from "./Verification/Errors.ts"
-import { requireMatchingProjectIdentity } from "./Verification/SourceRevalidation.ts"
-import { isVerifiedPlan, type VerifiedPlan } from "./Verification/VerifiedPlan.ts"
-import { Workspace } from "./Workspace/index.ts"
+import type * as Sha256 from "./Sha256.ts"
+import {
+  type FilePreview,
+  isIssued,
+  StalePlanError,
+  type VerifiedPlan,
+} from "./Verification/index.ts"
 
 export class ApplicationFailure extends Data.TaggedError("ApplicationFailure")<{
   readonly planId: string
@@ -18,160 +15,92 @@ export class ApplicationFailure extends Data.TaggedError("ApplicationFailure")<{
 
 export interface ApplicationReceipt {
   readonly planId: Sha256.Type
-  readonly snapshotHash: Sha256.Type
-  readonly outputs: ReadonlyArray<{
-    readonly projectId: ProjectId.Type
-    readonly fileName: ProjectRelativePath.Type
-    readonly hash: Sha256.Type
-  }>
+  readonly written: ReadonlyArray<FilePreview>
+  readonly removed: ReadonlyArray<FilePreview>
 }
-
-const failWith =
-  (planId: string) =>
-  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, ApplicationFailure, R> =>
-    Effect.mapError(effect, (cause) => new ApplicationFailure({ planId, cause }))
-
-const safeTarget = (
-  plan: TransformationPlan,
-  workspaceRoot: string,
-  projectId: ProjectId.Type,
-  fileName: ProjectRelativePath.Type,
-): Effect.Effect<string, ApplicationFailure, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function* () {
-    const fail = failWith(plan.planId)
-    const path = yield* Path.Path
-    const fs = yield* FileSystem.FileSystem
-    const resolved = resolvePlanFilePath(path, plan, workspaceRoot, projectId, fileName)
-    if (resolved === undefined) {
-      return yield* new ApplicationFailure({
-        planId: plan.planId,
-        cause: unsafePlanFilePathMessage(projectId, fileName),
-      })
-    }
-    const root = path.resolve(workspaceRoot)
-    const { projectRoot, fileName: target } = resolved
-
-    const realProjectRoot = yield* fs.realPath(projectRoot).pipe(fail)
-    const realWorkspaceRoot = yield* fs.realPath(root).pipe(fail)
-    if (!isPathContained(path, realWorkspaceRoot, realProjectRoot, { includeRoot: true })) {
-      return yield* new ApplicationFailure({
-        planId: plan.planId,
-        cause: `Project root escapes workspace through symlink: ${projectId}`,
-      })
-    }
-    let existingParent = path.dirname(target)
-    while (!(yield* fs.exists(existingParent).pipe(fail)) && existingParent !== projectRoot) {
-      const parent = path.dirname(existingParent)
-      if (
-        parent === existingParent ||
-        !isPathContained(path, projectRoot, parent, { includeRoot: true })
-      ) {
-        return yield* new ApplicationFailure({
-          planId: plan.planId,
-          cause: `Path escapes project through parent: ${fileName}`,
-        })
-      }
-      existingParent = parent
-    }
-    const realParent = yield* fs.realPath(existingParent).pipe(fail)
-    if (!isPathContained(path, realProjectRoot, realParent, { includeRoot: true })) {
-      return yield* new ApplicationFailure({
-        planId: plan.planId,
-        cause: `Path escapes project through symlink: ${fileName}`,
-      })
-    }
-
-    const targetExists = yield* fs.exists(target).pipe(fail)
-    if (targetExists) {
-      const realTarget = yield* fs.realPath(target).pipe(fail)
-      if (!isPathContained(path, realProjectRoot, realTarget)) {
-        return yield* new ApplicationFailure({
-          planId: plan.planId,
-          cause: `Target escapes project through symlink: ${fileName}`,
-        })
-      }
-    }
-    return target
-  })
 
 export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(function* (
   verified: VerifiedPlan,
 ) {
-  const workspace = yield* Workspace
-  const workspaceRoot = workspace.root
-  const definition = workspace.definition
-  if (!isVerifiedPlan(verified)) {
+  if (!isIssued(verified)) {
     return yield* new ApplicationFailure({
       planId: "unissued",
       cause: "Verified plan was not issued by verification",
     })
   }
-  const plan = verified.plan
-  const fail = failWith(plan.planId)
-  yield* requireMatchingProjectIdentity(plan, definition.projects)
-
-  const preview = verified.preview
-
+  const { workspace, plan, preview } = verified
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
 
-  // Preflight state checks for all files in preview
-  for (const file of preview.files) {
-    const target = yield* safeTarget(plan, workspaceRoot, file.projectId, file.fileName)
-    const exists = yield* fs.exists(target).pipe(fail)
-    if (exists !== file.before.exists) {
-      return yield* new StalePlanError({
-        planId: plan.planId,
-        projectId: file.projectId,
-        fileName: file.fileName,
-      })
-    }
-    if (file.before.exists) {
-      const text = yield* fs.readFileString(target).pipe(fail)
-      if (Sha256.digest(text) !== file.before.hash) {
-        return yield* new StalePlanError({
-          planId: plan.planId,
-          projectId: file.projectId,
-          fileName: file.fileName,
-        })
-      }
-    }
+  const failed = (cause: unknown) => new ApplicationFailure({ planId: plan.planId, cause })
+
+  const isWithin = (directory: string, candidate: string): boolean => {
+    const relative = path.relative(directory, candidate)
+    return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
   }
 
-  for (const file of preview.files) {
-    const target = yield* safeTarget(plan, workspaceRoot, file.projectId, file.fileName)
-    if (!file.after.exists) {
-      yield* fs.remove(target, { force: true }).pipe(fail)
-    } else {
-      const parentDir = path.dirname(target)
-      yield* fs.makeDirectory(parentDir, { recursive: true }).pipe(fail)
+  const nearestExisting = (target: string): Effect.Effect<string, ApplicationFailure> =>
+    fs.exists(target).pipe(
+      Effect.mapError(failed),
+      Effect.flatMap((exists) =>
+        exists ? Effect.succeed(target) : nearestExisting(path.dirname(target)),
+      ),
+    )
 
-      const tempFile = `${target}.safemods-tmp-${randomUUID()}.tmp`
-      const text = file.after.text
-      yield* fs
-        .writeFileString(tempFile, text, { flag: "wx" })
-        .pipe(
-          Effect.andThen(fs.rename(tempFile, target)),
-          fail,
-          Effect.ensuring(fs.remove(tempFile, { force: true }).pipe(Effect.ignore)),
-        )
+  const confinedTarget = Effect.fn(function* (file: FilePreview) {
+    const target = workspace.absolutePath(file)
+    const realWorkspace = yield* fs.realPath(workspace.root).pipe(Effect.mapError(failed))
+    const realProject = yield* fs
+      .realPath(workspace.projectRoot(file.projectId))
+      .pipe(Effect.mapError(failed))
+    const anchor = yield* nearestExisting(target)
+    const realAnchor = yield* fs.realPath(anchor).pipe(Effect.mapError(failed))
+    if (!isWithin(realWorkspace, realProject) || !isWithin(realProject, realAnchor)) {
+      return yield* failed(`Path escapes its project through a symlink: ${file.fileName}`)
     }
+    return target
+  })
+
+  const requireUnchanged = Effect.fn(function* (file: FilePreview, target: string) {
+    const { projectId, fileName } = file
+    const stale = new StalePlanError({ planId: plan.planId, projectId, fileName })
+    const exists = yield* fs.exists(target).pipe(Effect.mapError(failed))
+    if (exists !== file.before.exists) return yield* stale
+    if (!file.before.exists) return { mode: undefined, byteOrderMark: "" }
+    const bytes = yield* fs.readFile(target).pipe(Effect.mapError(failed))
+    if (new TextDecoder().decode(bytes) !== file.before.text) return yield* stale
+    const { mode } = yield* fs.stat(target).pipe(Effect.mapError(failed))
+    const hasByteOrderMark = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf
+    return { mode, byteOrderMark: hasByteOrderMark ? "\uFEFF" : "" }
+  })
+
+  const write = (target: string, text: string, mode: number | undefined) => {
+    const temporary = `${target}.safemods-${randomUUID()}.tmp`
+    return fs
+      .makeDirectory(path.dirname(target), { recursive: true })
+      .pipe(
+        Effect.andThen(fs.writeFileString(temporary, text, { flag: "wx", mode })),
+        Effect.andThen(fs.rename(temporary, target)),
+        Effect.ensuring(Effect.ignore(fs.remove(temporary, { force: true }))),
+        Effect.mapError(failed),
+      )
   }
 
-  const outputs = []
+  const checked = []
   for (const file of preview.files) {
-    if (!file.after.exists) continue
-    outputs.push({
-      projectId: file.projectId,
-      fileName: file.fileName,
-      hash: file.after.hash,
-    })
+    const target = yield* confinedTarget(file)
+    checked.push({ file, target, existing: yield* requireUnchanged(file, target) })
+  }
+  for (const { file, target, existing } of checked) {
+    yield* file.after.exists
+      ? write(target, existing.byteOrderMark + file.after.text, existing.mode)
+      : fs.remove(target, { force: true }).pipe(Effect.mapError(failed))
   }
 
   const receipt: ApplicationReceipt = {
     planId: plan.planId,
-    snapshotHash: plan.snapshotHash,
-    outputs,
+    written: preview.files.filter((file) => file.after.exists),
+    removed: preview.files.filter((file) => !file.after.exists),
   }
   return receipt
 })

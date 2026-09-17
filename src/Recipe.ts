@@ -1,48 +1,29 @@
-/** Recipes: definition, input validation, workspace fingerprinting, and planning. */
-import { Data, Effect, FileSystem, Path, Schema } from "effect"
-import type { Draft } from "./Draft/index.ts"
+import { Data, Effect, FileSystem, Schema } from "effect"
+import type { Draft } from "./Draft.ts"
+import * as FileRef from "./FileRef.ts"
 import {
+  type FileOperation,
   finalizePlan,
   type PlanBuildError,
   type PlanPolicies,
-  type PlannedFileOperation,
   type SourceFingerprint,
   type TransformationPlan,
 } from "./Plan.ts"
-import {
-  type ProjectNotInSnapshot,
-  type SnapshotExpired,
-  type SnapshotTransition,
-  Workspace,
-  type WorkspaceCompilerError,
-  WorkspaceSnapshot,
-} from "./Workspace/index.ts"
-import {
-  type DraftEvidenceConflict,
-  type MissingDraftEvidence,
-  finalizeDraftEvidence,
-} from "./Evidence.ts"
 import * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import * as Sha256 from "./Sha256.ts"
-import { virtualFileKey } from "./VirtualFs.ts"
+import {
+  type ProjectNotInSnapshot,
+  type ProjectSnapshotError,
+  Workspace,
+  WorkspaceSnapshot,
+} from "./Workspace/index.ts"
 
-/**
- * A reusable transformation. The recipe body runs in a Workspace Snapshot
- * region and returns a Draft. It does not finalize or write the change.
- */
 export interface Recipe<Input = undefined, E = never, R = never> {
   readonly name: string
   readonly version: string
   readonly policies: PlanPolicies
-  readonly schema?: Schema.Codec<Input, unknown> | undefined
-  readonly run: (input: Input) => Effect.Effect<Draft, E, R | WorkspaceSnapshot | Workspace>
-}
-
-export interface RecipeDefinition<Input, E, R> {
-  readonly version: string
-  readonly schema?: Schema.Codec<Input, unknown>
-  readonly policies?: Partial<PlanPolicies>
-  readonly run: (input: Input) => Effect.Effect<Draft, E, R | WorkspaceSnapshot | Workspace>
+  readonly schema: Schema.Codec<Input, unknown> | undefined
+  readonly run: (input: Input) => Effect.Effect<Draft, E, R | WorkspaceSnapshot>
 }
 
 export class RecipeInputError extends Data.TaggedError("RecipeInputError")<{
@@ -50,159 +31,105 @@ export class RecipeInputError extends Data.TaggedError("RecipeInputError")<{
   readonly cause: unknown
 }> {}
 
-interface ValidatedRecipeInput<Input> {
-  readonly value: Input
-  readonly encoded: Schema.Json
-}
-
-/** Validate recipe input and encode the exact durable plan options. */
-export const validateRecipeInput = <Input, E, R>(
-  recipe: Recipe<Input, E, R>,
-  input: Input,
-): Effect.Effect<ValidatedRecipeInput<Input>, RecipeInputError> =>
-  Effect.gen(function* () {
-    const schema = recipe.schema
-    const candidate = input ?? null
-    if (schema === undefined) {
-      const encoded = yield* Schema.decodeUnknownEffect(Schema.Json)(candidate)
-      return { value: input, encoded }
-    }
-
-    const value = yield* Schema.decodeUnknownEffect(schema)(input)
-    const candidateEncoded = yield* Schema.encodeUnknownEffect(schema)(value)
-    const encoded = yield* Schema.decodeUnknownEffect(Schema.Json)(candidateEncoded ?? null)
-    return { value, encoded }
-  }).pipe(Effect.mapError((cause) => new RecipeInputError({ recipe: recipe.name, cause })))
-
 export const define = <Input = undefined, E = never, R = never>(
   name: string,
-  definition: RecipeDefinition<Input, E, R>,
-): Recipe<Input, E, R> => {
-  const overrides: Partial<PlanPolicies> = definition.policies ?? {}
-  const policies: PlanPolicies = {
-    ...overrides,
-    matchCount: overrides.matchCount ?? {},
-    diagnostics: overrides.diagnostics ?? "no-new-errors",
-    idempotence: overrides.idempotence ?? "not-promised",
-  }
-  return Object.freeze({
-    name,
-    version: definition.version,
-    schema: definition.schema,
-    policies,
-    run: definition.run,
-  })
-}
+  definition: {
+    readonly version: string
+    readonly schema?: Schema.Codec<Input, unknown>
+    readonly policies?: Partial<PlanPolicies>
+    readonly run: (input: Input) => Effect.Effect<Draft, E, R | WorkspaceSnapshot>
+  },
+): Recipe<Input, E, R> => ({
+  name,
+  version: definition.version,
+  schema: definition.schema,
+  policies: {
+    matchCount: {},
+    diagnostics: "no-new-errors",
+    idempotence: "not-promised",
+    ...definition.policies,
+  },
+  run: definition.run,
+})
 
-/** Record compiler inputs that verification can revalidate. */
-const fingerprintWorkspace = (
-  workspaceRoot: string,
-  snapshot: WorkspaceSnapshot["Service"],
-  fileOperations: ReadonlyArray<PlannedFileOperation>,
-): Effect.Effect<
-  ReadonlyArray<SourceFingerprint>,
-  WorkspaceCompilerError | ProjectNotInSnapshot | SnapshotExpired,
-  FileSystem.FileSystem | Path.Path
-> =>
+export const encodeInput = <Input, E, R>(
+  recipe: Recipe<Input, E, R>,
+  input: Input,
+): Effect.Effect<Schema.Json, RecipeInputError> =>
+  Effect.gen(function* () {
+    const encoded =
+      recipe.schema === undefined ? input : yield* Schema.encodeUnknownEffect(recipe.schema)(input)
+    return yield* Schema.decodeUnknownEffect(Schema.Json)(encoded ?? null)
+  }).pipe(Effect.mapError((cause) => new RecipeInputError({ recipe: recipe.name, cause })))
+
+const fingerprint = (file: FileRef.FileRef, content: string | undefined): SourceFingerprint =>
+  content === undefined
+    ? { ...file, kind: "missing" }
+    : { ...file, kind: "file", hash: Sha256.digest(content) }
+
+const fingerprintSources = (fileOperations: ReadonlyArray<FileOperation>) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
+    const workspace = yield* Workspace
+    const snapshot = yield* WorkspaceSnapshot
     const sources = new Map<string, SourceFingerprint>()
-    for (const configured of snapshot.projects) {
-      const project = yield* snapshot.project(configured)
-      const configFileName = ProjectRelativePath.schema.make(
-        configured.config.slice(configured.config.lastIndexOf("/") + 1),
-      )
-      const configContent = yield* fs
-        .readFileString(path.resolve(workspaceRoot, configured.config), "utf8")
-        .pipe(Effect.orElseSucceed(() => undefined))
-      const configFingerprint: SourceFingerprint =
-        configContent === undefined
-          ? { projectId: configured.id, fileName: configFileName, kind: "missing" }
-          : {
-              projectId: configured.id,
-              fileName: configFileName,
-              hash: Sha256.digest(configContent),
-              kind: "file",
-            }
-      sources.set(virtualFileKey(configured.id, configFileName), configFingerprint)
+    const record = (file: FileRef.FileRef, content: string | undefined) =>
+      sources.set(FileRef.key(file), fingerprint(file, content))
 
+    for (const configured of snapshot.projects) {
+      const config = {
+        projectId: configured.id,
+        fileName: ProjectRelativePath.schema.make(configured.config.split("/").at(-1)!),
+      }
+      const configText = yield* fs
+        .readFileString(workspace.absolutePath(config))
+        .pipe(Effect.orElseSucceed(() => undefined))
+      record(config, configText)
+      const project = yield* snapshot.project(configured)
       for (const file of yield* project.files) {
-        const content = yield* file.sourceText
-        sources.set(virtualFileKey(configured.id, file.path), {
-          projectId: configured.id,
-          fileName: file.path,
-          hash: Sha256.digest(content),
-          kind: "file",
-        })
+        record({ projectId: configured.id, fileName: file.fileName }, file.sourceFile.text)
       }
     }
     for (const operation of fileOperations) {
-      if (operation.kind === "delete") continue
-      const fileName = operation.kind === "move" ? operation.toPath : operation.path
-      const key = virtualFileKey(operation.projectId, fileName)
-      if (!sources.has(key)) {
-        sources.set(key, { projectId: operation.projectId, fileName, kind: "missing" })
+      const target = {
+        projectId: operation.projectId,
+        fileName: operation.kind === "move" ? operation.toFileName : operation.fileName,
+      }
+      if (operation.kind !== "delete" && !sources.has(FileRef.key(target))) {
+        const onDisk = yield* fs
+          .readFileString(workspace.absolutePath(target))
+          .pipe(Effect.orElseSucceed(() => undefined))
+        record(target, onDisk)
       }
     }
     return [...sources.values()]
   })
 
-/** Toolchain identity recorded in each Plan. */
-export const TOOLCHAIN = {
-  systemVersion: "0.2.0",
-  typescriptVersion: "7.0.2",
-  effectVersion: "4.0.0-rc.109",
-} as const
-
-/** Run a recipe through planning. This operation does not write project files. */
 export const run = <Input, E, R>(
   recipe: Recipe<Input, E, R>,
   input: Input,
-  transition: SnapshotTransition = {},
 ): Effect.Effect<
   TransformationPlan,
-  | E
-  | RecipeInputError
-  | PlanBuildError
-  | WorkspaceCompilerError
-  | ProjectNotInSnapshot
-  | SnapshotExpired
-  | DraftEvidenceConflict
-  | MissingDraftEvidence,
-  Workspace | FileSystem.FileSystem | Path.Path | Exclude<R, WorkspaceSnapshot>
+  E | RecipeInputError | PlanBuildError | ProjectSnapshotError | ProjectNotInSnapshot,
+  Workspace | FileSystem.FileSystem | Exclude<R, WorkspaceSnapshot>
 > =>
   Effect.gen(function* () {
-    const validatedInput = yield* validateRecipeInput(recipe, input)
+    const options = yield* encodeInput(recipe, input)
     const workspace = yield* Workspace
     return yield* workspace.withSnapshot(
-      transition,
       Effect.gen(function* () {
         const snapshot = yield* WorkspaceSnapshot
-        const draft = yield* recipe.run(validatedInput.value)
-        const completeDraft = yield* finalizeDraftEvidence(draft)
-        const fileOperations = completeDraft.fileOperations ?? []
-        const sources = yield* fingerprintWorkspace(workspace.root, snapshot, fileOperations)
-
-        const planInput = {
-          recipe: {
-            name: recipe.name,
-            version: recipe.version,
-            options: validatedInput.encoded,
-          },
-          toolchain: TOOLCHAIN,
-          projects: snapshot.projects.map((configured) => ({
-            id: configured.id,
-            configFileName: configured.config,
-          })),
-          sources,
-          edits: completeDraft.edits,
-          fileOperations,
-          evidence: completeDraft.evidence,
+        const draft = yield* recipe.run(input)
+        return yield* finalizePlan({
+          recipe: { name: recipe.name, version: recipe.version, options },
+          projects: snapshot.projects.map(({ id, config }) => ({ id, configFileName: config })),
+          sources: yield* fingerprintSources(draft.fileOperations),
+          edits: draft.edits,
+          fileOperations: draft.fileOperations,
+          evidence: draft.evidence,
           policies: recipe.policies,
-          measurements: { matches: completeDraft.matches },
-        }
-        return yield* finalizePlan(planInput)
+          measurements: { matches: draft.matches },
+        })
       }),
     )
   })

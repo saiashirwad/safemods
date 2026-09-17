@@ -3,9 +3,7 @@ import type * as ProjectRelativePath from "../../src/ProjectRelativePath.ts"
 import * as Sha256 from "../../src/Sha256.ts"
 import { projectId, projectPath } from "./domain.ts"
 
-// SAFETY: semantic-mutation tests deliberately send invalid values through the decode boundary.
 const uncheckedPath = (value: string) => value as ProjectRelativePath.Type
-// SAFETY: semantic-mutation tests deliberately send invalid values through the decode boundary.
 const uncheckedHash = (value: string) => value as Sha256.Type
 
 export const richInput: PlanInput = {
@@ -14,7 +12,6 @@ export const richInput: PlanInput = {
     version: "1",
     options: { enabled: true, nested: [null, 1, "x"] },
   },
-  toolchain: { systemVersion: "1", typescriptVersion: "7", effectVersion: "4" },
   projects: [{ id: projectId("app"), configFileName: projectPath("tsconfig.json") }],
   sources: [
     {
@@ -61,24 +58,23 @@ export const richInput: PlanInput = {
     {
       kind: "create",
       projectId: projectId("app"),
-      path: projectPath("src/created.ts"),
+      fileName: projectPath("src/created.ts"),
       content: "created",
       evidenceIds: ["create"],
     },
     {
       kind: "delete",
       projectId: projectId("app"),
-      path: projectPath("src/delete.ts"),
+      fileName: projectPath("src/delete.ts"),
       initialHash: Sha256.digest("delete"),
       evidenceIds: ["delete"],
     },
     {
       kind: "move",
       projectId: projectId("app"),
-      path: projectPath("src/move.ts"),
-      toPath: projectPath("src/moved.ts"),
+      fileName: projectPath("src/move.ts"),
+      toFileName: projectPath("src/moved.ts"),
       initialHash: Sha256.digest("move"),
-      content: "moved",
       evidenceIds: ["move"],
     },
   ],
@@ -108,7 +104,6 @@ const withOperation = (
   ),
 })
 
-/** Well-shaped inputs that finalizePlan must still reject. */
 export const semanticMutations: ReadonlyArray<{
   readonly name: string
   readonly mutate: (input: PlanInput) => PlanInput
@@ -145,13 +140,19 @@ export const semanticMutations: ReadonlyArray<{
       sources: value.sources.filter((source) => source.fileName !== fileName),
     }),
   })),
-  ...["src/delete.ts", "src/move.ts"].map((fileName) => ({
-    name: `edit conflicts with operation on ${fileName}`,
-    mutate: (value: PlanInput): PlanInput => ({
+  {
+    name: "edit conflicts with delete",
+    mutate: (value) => ({ ...value, edits: [{ ...value.edits[0]!, fileName: "src/delete.ts" }] }),
+  },
+  {
+    name: "one disk file changed through two projects",
+    mutate: (value) => ({
       ...value,
-      edits: [{ ...value.edits[0]!, fileName }],
+      projects: [...value.projects, { id: "other", configFileName: "other.json" }],
+      sources: [...value.sources, { ...value.sources[2]!, projectId: "other" }],
+      edits: [...value.edits, { ...value.edits[0]!, projectId: "other" }],
     }),
-  })),
+  },
   {
     name: "overlapping edits",
     mutate: (value) => ({ ...value, edits: [...value.edits, value.edits[0]!] }),
@@ -166,14 +167,14 @@ export const semanticMutations: ReadonlyArray<{
   {
     name: "create and move to the same target",
     mutate: (value) =>
-      withOperation(value, 0, (operation) => ({ ...operation, path: "src/moved.ts" })),
+      withOperation(value, 0, (operation) => ({ ...operation, fileName: "src/moved.ts" })),
   },
   {
     name: "delete and move the same source",
     mutate: (value) =>
       withOperation(value, 1, (operation) => ({
         ...operation,
-        path: "src/move.ts",
+        fileName: "src/move.ts",
         initialHash: Sha256.digest("move"),
       })),
   },
@@ -181,14 +182,14 @@ export const semanticMutations: ReadonlyArray<{
     name: "move to an existing source",
     mutate: (value) =>
       withOperation(value, 2, (operation) =>
-        operation.kind === "move" ? { ...operation, toPath: "src/index.ts" } : operation,
+        operation.kind === "move" ? { ...operation, toFileName: "src/index.ts" } : operation,
       ),
   },
   {
     name: "move to the same path",
     mutate: (value) =>
       withOperation(value, 2, (operation) =>
-        operation.kind === "move" ? { ...operation, toPath: operation.path } : operation,
+        operation.kind === "move" ? { ...operation, toFileName: operation.fileName } : operation,
       ),
   },
   {
@@ -218,13 +219,13 @@ export const semanticMutations: ReadonlyArray<{
   {
     name: "unsafe operation path",
     mutate: (value) =>
-      withOperation(value, 0, (operation) => ({ ...operation, path: uncheckedPath("C:/x") })),
+      withOperation(value, 0, (operation) => ({ ...operation, fileName: uncheckedPath("C:/x") })),
   },
   {
     name: "unsafe move target path",
     mutate: (value) =>
       withOperation(value, 2, (operation) =>
-        operation.kind === "move" ? { ...operation, toPath: uncheckedPath("../x") } : operation,
+        operation.kind === "move" ? { ...operation, toFileName: uncheckedPath("../x") } : operation,
       ),
   },
   {
@@ -267,7 +268,7 @@ export const semanticMutations: ReadonlyArray<{
     mutate: (value) =>
       withOperation(value, 0, (operation) => ({
         ...operation,
-        path: projectPath("src/index.ts"),
+        fileName: projectPath("src/index.ts"),
       })),
   },
   {
@@ -284,7 +285,7 @@ export const semanticMutations: ReadonlyArray<{
     mutate: (value) =>
       withOperation(value, 0, (operation) => ({
         ...operation,
-        path: projectPath("src/delete.ts"),
+        fileName: projectPath("src/delete.ts"),
       })),
   },
 ]

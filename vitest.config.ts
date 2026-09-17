@@ -1,7 +1,9 @@
 import { defineConfig } from "vitest/config"
 
 export default defineConfig({
+  resolve: { conditions: ["source"] },
+  ssr: { resolve: { conditions: ["source"] } },
   test: {
-    include: ["test/**/*.test.ts", "tools/check-boundaries.test.mjs"],
+    include: ["test/**/*.test.ts"],
   },
 })

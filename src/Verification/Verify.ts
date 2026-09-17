@@ -1,90 +1,85 @@
-/** Complete verification orchestration and VerifiedPlan issuance. */
-import { Effect, type FileSystem, type Path } from "effect"
+import { Effect, type FileSystem } from "effect"
 import {
+  canonicalJson,
+  type PlanDecodeError,
+  type TransformationPlan,
+  validatePlan,
+} from "../Plan.ts"
+import { encodeInput, type Recipe, type RecipeInputError } from "../Recipe.ts"
+import {
+  type Overlay,
   type ProjectNotInSnapshot,
-  type SnapshotExpired,
+  type ProjectSnapshotError,
   Workspace,
-  type WorkspaceCompilerError,
   type WorkspaceSnapshot,
 } from "../Workspace/index.ts"
-import { canonicalJson } from "../Evidence.ts"
-import { type PlanDecodeError, type TransformationPlan, validatePlan } from "../Plan.ts"
-import { type Recipe, type RecipeInputError, TOOLCHAIN, validateRecipeInput } from "../Recipe.ts"
-import type { VirtualFsSnapshot } from "../VirtualFs.ts"
-import { collectDiagnostics } from "./Diagnostics.ts"
+import { collectDiagnostics, type DiagnosticDiff, diffDiagnostics } from "./Diagnostics.ts"
 import {
-  PolicyMismatch,
   type ProjectIdentityMismatch,
-  RecipeInputMismatch,
   RecipeMismatch,
   type StalePlanError,
-  ToolchainMismatch,
   VerificationFailure,
 } from "./Errors.ts"
-import { previewValidatedPlan } from "./Preview.ts"
-import { computeDiagnosticDiff, evaluateBuiltInPolicies } from "./PolicyEvaluation.ts"
-import { absoluteTarget, requireMatchingProjectIdentity } from "./SourceRevalidation.ts"
-import { issueVerifiedPlan, type VerifiedPlan } from "./VerifiedPlan.ts"
+import { type PlanPreview, previewValidated, requireWorkspaceProjects } from "./Preview.ts"
+import { issue, type VerifiedPlan } from "./VerifiedPlan.ts"
 
-const validateRecipeForPlan = <Input, E, R>(
+const requireAuthoringRecipe = <Input, E, R>(
   plan: TransformationPlan,
   recipe: Recipe<Input, E, R>,
   input: Input,
-): Effect.Effect<
-  Input,
-  RecipeMismatch | RecipeInputError | RecipeInputMismatch | PolicyMismatch | ToolchainMismatch
-> =>
+): Effect.Effect<void, RecipeMismatch | RecipeInputError> =>
   Effect.gen(function* () {
-    const expectedIdentity = {
-      name: plan.recipe.name,
-      version: plan.recipe.version,
+    const options = yield* encodeInput(recipe, input)
+    const mismatches = {
+      name: recipe.name !== plan.recipe.name,
+      version: recipe.version !== plan.recipe.version,
+      input: canonicalJson(options) !== canonicalJson(plan.recipe.options),
+      policies: canonicalJson(recipe.policies) !== canonicalJson(plan.policies),
     }
-    const actualIdentity = {
-      name: recipe.name,
-      version: recipe.version,
+    for (const field of ["name", "version", "input", "policies"] as const) {
+      if (mismatches[field]) return yield* new RecipeMismatch({ planId: plan.planId, field })
     }
-    if (
-      expectedIdentity.name !== actualIdentity.name ||
-      expectedIdentity.version !== actualIdentity.version
-    ) {
-      return yield* new RecipeMismatch({
-        planId: plan.planId,
-        expected: expectedIdentity,
-        actual: actualIdentity,
-      })
-    }
-
-    const validated = yield* validateRecipeInput(recipe, input)
-    if (canonicalJson(validated.encoded) !== canonicalJson(plan.recipe.options)) {
-      return yield* new RecipeInputMismatch({
-        planId: plan.planId,
-        expected: plan.recipe.options,
-        actual: validated.encoded,
-      })
-    }
-
-    if (canonicalJson(recipe.policies) !== canonicalJson(plan.policies)) {
-      return yield* new PolicyMismatch({
-        planId: plan.planId,
-        expected: plan.policies,
-        actual: recipe.policies,
-      })
-    }
-
-    if (canonicalJson(TOOLCHAIN) !== canonicalJson(plan.toolchain)) {
-      return yield* new ToolchainMismatch({
-        planId: plan.planId,
-        expected: plan.toolchain,
-        actual: TOOLCHAIN,
-      })
-    }
-    return validated.value
   })
 
-/**
- * Verify a plan with fresh baseline and proposed compiler snapshots. This
- * operation evaluates policies and returns application authority on success.
- */
+const overlayOf = (workspace: Workspace["Service"], preview: PlanPreview): Overlay => {
+  const files = new Map<string, string>()
+  const deleted = new Set<string>()
+  for (const file of preview.files) {
+    if (file.after.exists) files.set(workspace.absolutePath(file), file.after.text)
+    else deleted.add(workspace.absolutePath(file))
+  }
+  return { files, deleted }
+}
+
+const policyFailure = (
+  plan: TransformationPlan,
+  preview: PlanPreview,
+  diff: DiagnosticDiff,
+  replayedChanges: number,
+): Pick<VerificationFailure, "policy" | "detail" | "diagnostics"> | undefined => {
+  const { matchCount, maxAffectedFiles, diagnostics, idempotence } = plan.policies
+  const matches = plan.measurements.matches
+  if (matches < (matchCount.min ?? 0) || matches > (matchCount.max ?? Infinity)) {
+    return { policy: "matches", detail: `Observed ${matches}` }
+  }
+  if (preview.files.length > (maxAffectedFiles ?? Infinity)) {
+    return { policy: "affected-files", detail: `Observed ${preview.files.length}` }
+  }
+  const errors = diff.introduced.filter((diagnostic) => diagnostic.category === "error")
+  if (diagnostics === "no-new-errors" && errors.length > 0) {
+    const summary = errors.map((error) => `TS${error.code}: ${error.message}`).join("; ")
+    return {
+      policy: "diagnostics",
+      detail: `Introduced ${errors.length} new error diagnostic(s): ${summary}`,
+      diagnostics: errors,
+    }
+  }
+  if (idempotence === "required" && replayedChanges > 0) {
+    return { policy: "idempotence", detail: `Second run proposed ${replayedChanges} change(s)` }
+  }
+  return undefined
+}
+
 export const verify = <Input, E, R>(
   plan: TransformationPlan,
   recipe: Recipe<Input, E, R>,
@@ -92,80 +87,42 @@ export const verify = <Input, E, R>(
 ): Effect.Effect<
   VerifiedPlan,
   | E
-  | VerificationFailure
-  | StalePlanError
-  | RecipeMismatch
-  | RecipeInputError
-  | RecipeInputMismatch
-  | PolicyMismatch
-  | ToolchainMismatch
   | PlanDecodeError
   | ProjectIdentityMismatch
-  | WorkspaceCompilerError
-  | ProjectNotInSnapshot
-  | SnapshotExpired,
-  Workspace | FileSystem.FileSystem | Path.Path | Exclude<R, WorkspaceSnapshot>
+  | RecipeMismatch
+  | RecipeInputError
+  | StalePlanError
+  | VerificationFailure
+  | ProjectSnapshotError
+  | ProjectNotInSnapshot,
+  Workspace | FileSystem.FileSystem | Exclude<R, WorkspaceSnapshot>
 > =>
   Effect.gen(function* () {
     const workspace = yield* Workspace
-    const validatedPlan = yield* validatePlan(plan)
-    yield* requireMatchingProjectIdentity(validatedPlan, workspace.definition.projects)
-    const validatedInput = yield* validateRecipeForPlan(validatedPlan, recipe, input)
-    const proposed = yield* previewValidatedPlan(validatedPlan, workspace.root)
+    const validated = yield* validatePlan(plan)
+    yield* requireWorkspaceProjects(validated)
+    yield* requireAuthoringRecipe(validated, recipe, input)
+    const preview = yield* previewValidated(validated)
 
-    const files = new Map<string, string>()
-    const created = new Set<string>()
-    const deleted = new Set<string>()
-    for (const file of proposed.files) {
-      const target = yield* absoluteTarget(
-        validatedPlan,
-        workspace.root,
-        file.projectId,
-        file.fileName,
-      )
-      if (file.after.exists) {
-        files.set(target, file.after.text)
-        if (!file.before.exists) created.add(target)
-      } else {
-        deleted.add(target)
-      }
-    }
-    const overlay: VirtualFsSnapshot = { files, created, deleted }
-
-    const baselineDiagnostics = yield* workspace.withIsolatedSnapshot(
-      { files: new Map(), created: new Set(), deleted: new Set() },
-      collectDiagnostics,
+    const replay =
+      validated.policies.idempotence === "required"
+        ? Effect.map(recipe.run(input), (draft) => draft.edits.length + draft.fileOperations.length)
+        : Effect.succeed(0)
+    const [baseline, [proposed, replayedChanges]] = yield* Effect.all(
+      [
+        workspace.withSnapshot(collectDiagnostics),
+        workspace.withSnapshot(
+          Effect.all([collectDiagnostics, replay]),
+          overlayOf(workspace, preview),
+        ),
+      ],
+      { concurrency: 2 },
     )
 
-    const proposedRun = yield* workspace.withIsolatedSnapshot(
-      overlay,
-      Effect.gen(function* () {
-        const diagnostics = yield* collectDiagnostics
-        if (validatedPlan.policies.idempotence !== "required") {
-          // SAFETY: no replay is requested, so this optional count is absent by construction.
-          return { diagnostics, replayChanges: undefined }
-        }
-        const replay = yield* recipe.run(validatedInput)
-        return {
-          diagnostics,
-          replayChanges: replay.edits.length + (replay.fileOperations?.length ?? 0),
-        }
-      }),
-    )
-
-    const diagnosticDiff = computeDiagnosticDiff(baselineDiagnostics, proposedRun.diagnostics)
-    const matches = validatedPlan.measurements.matches
-    const affectedFiles = proposed.files.length
-    const builtInFailure = evaluateBuiltInPolicies({
-      policies: validatedPlan.policies,
-      actualMatches: matches,
-      affectedFiles,
-      diagnosticDiff,
-      secondPlanChangeCount: proposedRun.replayChanges,
-    })
-    if (builtInFailure !== undefined) {
-      return yield* new VerificationFailure({ planId: validatedPlan.planId, ...builtInFailure })
+    const diff = diffDiagnostics(baseline, proposed)
+    const failure = policyFailure(validated, preview, diff, replayedChanges)
+    if (failure !== undefined) {
+      return yield* new VerificationFailure({ planId: validated.planId, ...failure })
     }
-
-    return issueVerifiedPlan(validatedPlan, proposed, diagnosticDiff)
+    return issue(workspace, validated, preview, diff)
   })

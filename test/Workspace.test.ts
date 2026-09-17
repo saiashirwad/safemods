@@ -1,129 +1,96 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect } from "effect"
-import { fileURLToPath } from "node:url"
-import {
-  ConfiguredProject,
-  DuplicateConfiguredProject,
-  SnapshotExpired,
-  Workspace,
-  WorkspaceDefinition,
-} from "../src/Workspace/index.ts"
-import { InvalidProjectRelativePath } from "../src/ProjectRelativePath.ts"
-import { InvalidProjectId } from "../src/ProjectId.ts"
-import { withFixture } from "./utils/declarative-fixture.ts"
-import { fixtureProject } from "./utils/project-fixture.ts"
+import { Effect, Schema } from "effect"
+import { SnapshotExpired, Workspace, WorkspaceDefinition } from "../src/Workspace/index.ts"
 import { projectPath } from "./utils/domain.ts"
+import { fixtureProject, withFixture, withProject, write } from "./utils/fixture.ts"
 
-describe("workspace path confinement, overlay FS, and symbol lookup", () => {
-  effect("rejects invalid project identities and duplicate workspace entries", () =>
-    withFixture((_, app) =>
-      Effect.gen(function* () {
-        for (const config of ["../tsconfig.json", "/tmp/tsconfig.json"]) {
-          const failure = yield* ConfiguredProject.make({ id: "escaped", config }).pipe(Effect.flip)
-          expect(failure).toBeInstanceOf(InvalidProjectRelativePath)
-        }
-        for (const id of ["", "app\0other"]) {
-          const failure = yield* ConfiguredProject.make({ id, config: "tsconfig.json" }).pipe(
-            Effect.flip,
-          )
-          expect(failure).toBeInstanceOf(InvalidProjectId)
-        }
+const libraryPath = projectPath("src/library.ts")
 
-        const duplicateId = yield* ConfiguredProject.make({ id: "app", config: "other.json" })
-        const duplicateConfig = yield* ConfiguredProject.make({ id: "other", config: app.config })
-        for (const projects of [[app, duplicateId] as const, [app, duplicateConfig] as const]) {
-          const failure = yield* WorkspaceDefinition.make({ projects }).pipe(Effect.flip)
-          expect(failure).toBeInstanceOf(DuplicateConfiguredProject)
-        }
-      }),
-    ),
+describe("workspace snapshots", () => {
+  effect("rejects unsafe, empty, and duplicate project definitions", () =>
+    Effect.gen(function* () {
+      const app = { id: "app", config: "tsconfig.json" }
+      for (const projects of [
+        [],
+        [{ id: "app", config: "../tsconfig.json" }],
+        [{ id: "app", config: "/tmp/tsconfig.json" }],
+        [{ id: "", config: "tsconfig.json" }],
+        [{ id: "app\0other", config: "tsconfig.json" }],
+        [app, { id: "app", config: "other.json" }],
+        [app, { id: "other", config: "tsconfig.json" }],
+      ]) {
+        const exit = yield* Effect.exit(
+          Schema.decodeUnknownEffect(WorkspaceDefinition.schema)({ projects }),
+        )
+        expect({ projects, outcome: exit._tag }).toEqual({ projects, outcome: "Failure" })
+      }
+      const valid = yield* WorkspaceDefinition.make({ projects: [app] })
+      expect(valid.projects).toEqual([app])
+    }),
   )
 
   effect(
-    "exposes portable paths and source files without host paths",
+    "exposes owned files by portable path",
     () =>
-      withFixture((_, app) =>
+      withProject({}, (project) =>
         Effect.gen(function* () {
-          const workspace = yield* Workspace
-          yield* workspace.withSnapshot(
-            {},
-            Effect.gen(function* () {
-              const project = yield* fixtureProject(app)
-              const libraryPath = projectPath("src/library.ts")
-              const library = yield* project.file(libraryPath)
-              const source = yield* library.sourceFile
-              expect(project.pathOf(source)).toBe(libraryPath)
-              expect(yield* library.sourceText).toContain("function target")
-              expect((yield* project.files).map((file) => file.path)).toContain(libraryPath)
-            }),
-          )
+          const library = yield* project.file(libraryPath)
+          expect(library?.sourceFile.text).toContain("function target")
+          expect(project.fileNameOf(library!.sourceFile)).toBe(libraryPath)
+          expect((yield* project.files).map((file) => file.fileName)).toContain(libraryPath)
         }),
       ),
     60_000,
   )
 
   effect(
-    "delegates isolated overlay reads to the caller filesystem",
-    () => {
-      const marker = "export const fromCallback = 1;\n"
-      const recipeFixture = fileURLToPath(new URL("../fixtures/recipe/", import.meta.url))
-      return withFixture(
-        (root, app) =>
-          Effect.gen(function* () {
-            const disk = yield* Effect.tryPromise(() =>
-              Fs.readFile(Path.join(root, "src/library.ts"), "utf8"),
-            )
-            const workspace = yield* Workspace
-            yield* workspace.withIsolatedSnapshot(
-              { files: new Map(), created: new Set(), deleted: new Set() },
-              Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                const text = yield* project.sourceText(projectPath("src/library.ts"))
-                expect(text).toBe(marker)
-                expect(disk).not.toBe(marker)
-              }),
-            )
-          }),
-        {
-          fixturePath: recipeFixture,
-          fs: {
-            readFile: (fileName) => {
-              const normalized = fileName.replaceAll("\\", "/")
-              return normalized.endsWith("src/library.ts") ? marker : undefined
-            },
-            fileExists: (fileName) => {
-              const normalized = fileName.replaceAll("\\", "/")
-              return normalized.endsWith("src/library.ts") ? true : undefined
-            },
-          },
-        },
-      )
-    },
-    60_000,
-  )
-
-  effect(
-    "exposes a file created in a new virtual directory through the isolated snapshot",
+    "every snapshot reads the current disk state",
     () =>
       withFixture((root, app) =>
         Effect.gen(function* () {
-          const createdPath = Path.join(root, "src/virtual-dir/created.ts")
-          const content = "export const created = 1;\n"
           const workspace = yield* Workspace
-          yield* workspace.withIsolatedSnapshot(
-            {
-              files: new Map([[createdPath, content]]),
-              created: new Set([createdPath]),
-              deleted: new Set(),
-            },
+          const libraryText = workspace.withSnapshot(
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
-              const created = yield* project.file(projectPath("src/virtual-dir/created.ts"))
-              expect(created.path).toBe("src/virtual-dir/created.ts")
-              expect(yield* created.sourceText).toBe(content)
+              return (yield* project.file(libraryPath))?.sourceFile.text
             }),
+          )
+          expect(yield* libraryText).toContain("function target")
+          yield* write(root, libraryPath, "export const rewritten = 1\n")
+          expect(yield* libraryText).toBe("export const rewritten = 1\n")
+        }),
+      ),
+    60_000,
+  )
+
+  effect(
+    "an overlay replaces, adds, and hides files without touching disk",
+    () =>
+      withFixture((root, app) =>
+        Effect.gen(function* () {
+          const workspace = yield* Workspace
+          const created = projectPath("src/virtual-dir/created.ts")
+          const overlay = {
+            files: new Map([
+              [Path.join(root, created), "export const created = 1\n"],
+              [Path.join(root, libraryPath), "export const replaced = 1\n"],
+            ]),
+            deleted: new Set([Path.join(root, "src/barrel.ts")]),
+          }
+          yield* workspace.withSnapshot(
+            Effect.gen(function* () {
+              const project = yield* fixtureProject(app)
+              expect((yield* project.file(created))?.sourceFile.text).toBe(
+                "export const created = 1\n",
+              )
+              expect((yield* project.file(libraryPath))?.sourceFile.text).toBe(
+                "export const replaced = 1\n",
+              )
+              expect(yield* project.file(projectPath("src/barrel.ts"))).toBeUndefined()
+            }),
+            overlay,
           )
         }),
       ),
@@ -131,57 +98,46 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
   )
 
   effect(
-    "resolves query-fixture aliases and re-exports with symbolNamed",
+    "an overlay snapshot still sees files behind symlinked directories",
     () =>
-      withFixture((_, app) =>
+      withFixture((root, app) =>
         Effect.gen(function* () {
+          yield* Effect.promise(async () => {
+            await Fs.mkdir(Path.join(root, "real"))
+            await Fs.writeFile(Path.join(root, "real/linked.ts"), "export const linked = 1\n")
+            await Fs.symlink(Path.join(root, "real"), Path.join(root, "src/link"), "dir")
+          })
           const workspace = yield* Workspace
-          yield* workspace.withSnapshot(
-            {},
-            Effect.gen(function* () {
-              const project = yield* fixtureProject(app)
-              const original = yield* project.symbolNamed("target", {
-                within: projectPath("src/library.ts"),
-              })
-              const aliased = yield* project.symbolNamed("renamed", {
-                within: projectPath("src/consumer.ts"),
-              })
-              const reexported = yield* project.symbolNamed("publicTarget", {
-                within: projectPath("src/barrel.ts"),
-              })
-              const throughBarrel = yield* project.symbolNamed("publicTarget", {
-                within: projectPath("src/reexport-consumer.ts"),
-              })
-              expect(aliased).toBe(original)
-              expect(reexported).toBe(original)
-              expect(throughBarrel).toBe(original)
-            }),
-          )
+          const fileNames = Effect.gen(function* () {
+            const project = yield* fixtureProject(app)
+            return (yield* project.files).map((file) => file.fileName).sort()
+          })
+          const onDisk = yield* workspace.withSnapshot(fileNames)
+          const overlaid = yield* workspace.withSnapshot(fileNames, {
+            files: new Map(),
+            deleted: new Set(),
+          })
+          expect(onDisk).toContain("src/link/linked.ts")
+          expect(overlaid).toEqual(onDisk)
         }),
       ),
     60_000,
   )
 
   effect(
-    "resolves batched symbols directly on project snapshot",
+    "symbolNamed resolves aliases and re-exports to one canonical symbol",
     () =>
-      withFixture((_, app) =>
+      withProject({}, (project) =>
         Effect.gen(function* () {
-          const workspace = yield* Workspace
-          yield* workspace.withSnapshot(
-            {},
-            Effect.gen(function* () {
-              const project = yield* fixtureProject(app)
-              const libraryPath = projectPath("src/library.ts")
-              const source = yield* project.sourceFile(libraryPath)
-              expect(source).toBeDefined()
-              if (source === undefined) return
+          const named = (name: string, within: string) =>
+            project.symbolNamed(name, { within: projectPath(within) })
+          const original = yield* named("target", "src/library.ts")
+          expect(yield* named("renamed", "src/consumer.ts")).toBe(original)
+          expect(yield* named("publicTarget", "src/barrel.ts")).toBe(original)
+          expect(yield* named("publicTarget", "src/reexport-consumer.ts")).toBe(original)
 
-              const positions = [source.getStart(source)]
-              const symbols = yield* project.symbolsAt(libraryPath, positions)
-              expect(symbols).toHaveLength(1)
-            }),
-          )
+          const missing = yield* Effect.flip(named("absent", "src/library.ts"))
+          expect(missing._tag).toBe("SymbolNotFound")
         }),
       ),
     60_000,
@@ -193,15 +149,11 @@ describe("workspace path confinement, overlay FS, and symbol lookup", () => {
       withFixture((_, app) =>
         Effect.gen(function* () {
           const workspace = yield* Workspace
-          const escaped = yield* workspace.withSnapshot({}, fixtureProject(app))
-          const sourceText = yield* escaped
-            .sourceText(projectPath("src/library.ts"))
-            .pipe(Effect.flip)
-          const symbol = yield* escaped
-            .symbolNamed("target", { within: projectPath("src/library.ts") })
-            .pipe(Effect.flip)
-          expect(sourceText).toBeInstanceOf(SnapshotExpired)
-          expect(symbol).toBeInstanceOf(SnapshotExpired)
+          const escaped = yield* workspace.withSnapshot(fixtureProject(app))
+          expect(yield* Effect.flip(escaped.files)).toBeInstanceOf(SnapshotExpired)
+          expect(
+            yield* Effect.flip(escaped.symbolNamed("target", { within: libraryPath })),
+          ).toBeInstanceOf(SnapshotExpired)
         }),
       ),
     60_000,

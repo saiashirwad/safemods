@@ -14,11 +14,10 @@ import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Console, Data, Effect, FileSystem, Option, Path } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
 import { applyVerifiedPlan } from "../src/Application.ts"
-import { layer as nodeLayer, workspaceLayerNode } from "../src/Node.ts"
 import { run, type Recipe } from "../src/Recipe.ts"
 import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
-import { verify } from "../src/Verification/index.ts"
-import { ConfiguredProject, WorkspaceDefinition } from "../src/Workspace/index.ts"
+import { type FilePreview, verify } from "../src/Verification/index.ts"
+import * as Workspace from "../src/Workspace/index.ts"
 import { defaultToNamed } from "./default-to-named.ts"
 import { moveModule } from "./move-module.ts"
 import { positionalToOptions } from "./positional-to-options.ts"
@@ -57,11 +56,11 @@ const defineExample = <Input, E, R>(example: {
   readonly id: string
   readonly fixture: string
   readonly recipe: Recipe<Input, E, R>
-  readonly input: (project: ConfiguredProject.Type) => Input
+  readonly input: (project: Workspace.ConfiguredProject.Type) => Input
 }) => ({
   id: example.id,
   fixture: example.fixture,
-  execute: (project: ConfiguredProject.Type) => {
+  execute: (project: Workspace.ConfiguredProject.Type) => {
     const input = example.input(project)
     return Effect.gen(function* () {
       const plan = yield* run(example.recipe, input)
@@ -176,6 +175,9 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
     catch: (cause) => new GitFailure({ cwd, args, cause }),
   })
 
+const actionOf = ({ before, after }: FilePreview): string =>
+  before.exists ? (after.exists ? "modify" : "delete") : "create"
+
 export const runExample = Effect.fn("runExample")(function* (
   id: string,
   destination?: string,
@@ -186,15 +188,17 @@ export const runExample = Effect.fn("runExample")(function* (
     return yield* new UnknownExample({ id })
   }
   const workspace = yield* copyFixture(example.fixture, destination)
-  const project = yield* ConfiguredProject.make({ id: "app", config: "tsconfig.json" })
-  const definition = yield* WorkspaceDefinition.make({ projects: [project] })
+  const definition = yield* Workspace.WorkspaceDefinition.make({
+    projects: [{ id: "app", config: "tsconfig.json" }],
+  })
+  const [project] = definition.projects
   const { plan, verified } = yield* Effect.gen(function* () {
     const executed = yield* example.execute(project)
     if (!preview) {
       yield* applyVerifiedPlan(executed.verified)
     }
     return executed
-  }).pipe(Effect.provide(workspaceLayerNode(definition, { cwd: workspace })))
+  }).pipe(Effect.provide(Workspace.layer(definition, workspace)))
   yield* git(workspace, ["add", "-A"])
   const diff = yield* git(workspace, ["--no-pager", "diff", "--no-color", "HEAD"])
   return {
@@ -205,11 +209,11 @@ export const runExample = Effect.fn("runExample")(function* (
     matches: plan.measurements.matches,
     files: verified.preview.files.map((file) => ({
       fileName: file.fileName,
-      action: file.action,
+      action: actionOf(file),
     })),
     diff,
   }
-}, Effect.provide(nodeLayer))
+}, Effect.provide(NodeServices.layer))
 
 const formatResult = (result: ExampleResult): string => {
   const lines = [

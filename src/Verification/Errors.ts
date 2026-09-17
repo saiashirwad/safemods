@@ -1,63 +1,26 @@
-/** Verification failures at plan, recipe, policy, and workspace boundaries. */
-import { Data, type Schema } from "effect"
-import type { TransformationPlan } from "../Plan.ts"
+import { Data } from "effect"
 import type * as ProjectId from "../ProjectId.ts"
 import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
-import type * as Sha256 from "../Sha256.ts"
 import type { DiagnosticRecord } from "./Diagnostics.ts"
-import type { ConfiguredProject } from "../Workspace/index.ts"
 
 export class StalePlanError extends Data.TaggedError("StalePlanError")<{
-  readonly planId: Sha256.Type
+  readonly planId: string
   readonly projectId: ProjectId.Type
   readonly fileName: ProjectRelativePath.Type
+}> {}
+
+export class ProjectIdentityMismatch extends Data.TaggedError("ProjectIdentityMismatch")<{
+  readonly planId: string
+}> {}
+
+export class RecipeMismatch extends Data.TaggedError("RecipeMismatch")<{
+  readonly planId: string
+  readonly field: "name" | "version" | "input" | "policies"
 }> {}
 
 export class VerificationFailure extends Data.TaggedError("VerificationFailure")<{
   readonly planId: string
   readonly policy: "edits" | "matches" | "affected-files" | "diagnostics" | "idempotence"
   readonly detail: string
-  /** Diagnostics relevant to the failed policy, including source locations. */
-  readonly diagnostics?: ReadonlyArray<DiagnosticRecord> | undefined
-}> {}
-
-/** A plan's project identities are not the live Workspace definition. */
-export class ProjectIdentityMismatch extends Data.TaggedError("ProjectIdentityMismatch")<{
-  readonly planId: string
-  readonly expected: ReadonlyArray<ConfiguredProject.Type>
-  readonly actual: ReadonlyArray<ConfiguredProject.Type>
-}> {}
-
-/** The supplied recipe is not the recipe that authored the durable plan. */
-export class RecipeMismatch extends Data.TaggedError("RecipeMismatch")<{
-  readonly planId: string
-  readonly expected: {
-    readonly name: string
-    readonly version: string
-  }
-  readonly actual: {
-    readonly name: string
-    readonly version: string
-  }
-}> {}
-
-/** The supplied recipe input does not match the canonical input in the plan. */
-export class RecipeInputMismatch extends Data.TaggedError("RecipeInputMismatch")<{
-  readonly planId: string
-  readonly expected: Schema.Json
-  readonly actual: Schema.Json
-}> {}
-
-/** The running toolchain is not the one that authored the durable plan. */
-export class ToolchainMismatch extends Data.TaggedError("ToolchainMismatch")<{
-  readonly planId: string
-  readonly expected: TransformationPlan["toolchain"]
-  readonly actual: TransformationPlan["toolchain"]
-}> {}
-
-/** The supplied recipe's durable policies differ from those in the plan. */
-export class PolicyMismatch extends Data.TaggedError("PolicyMismatch")<{
-  readonly planId: string
-  readonly expected: TransformationPlan["policies"]
-  readonly actual: TransformationPlan["policies"]
+  readonly diagnostics?: ReadonlyArray<DiagnosticRecord>
 }> {}

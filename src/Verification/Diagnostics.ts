@@ -1,16 +1,14 @@
-/** Compiler diagnostic collection and normalization. */
 import { Effect } from "effect"
 import { DiagnosticCategory, type Diagnostic } from "typescript/unstable/async"
-import { WorkspaceSnapshot } from "../Workspace/index.ts"
-import { nativeRequest } from "../Workspace/NativeRequest.ts"
+import { nativeRequest, WorkspaceSnapshot } from "../Workspace/index.ts"
 
 export interface DiagnosticRecord {
-  readonly code: number | string
+  readonly code: number
   readonly message: string
   readonly category: "error" | "warning" | "message" | "suggestion"
-  readonly fileName?: string | undefined
-  readonly start?: number | undefined
-  readonly length?: number | undefined
+  readonly fileName: string | undefined
+  readonly start: number
+  readonly length: number
 }
 
 export interface DiagnosticDiff {
@@ -19,69 +17,60 @@ export interface DiagnosticDiff {
   readonly unchanged: ReadonlyArray<DiagnosticRecord>
 }
 
-const normalizeDiagnostic = (diagnostic: Diagnostic): DiagnosticRecord => ({
+const categories = {
+  [DiagnosticCategory.Error]: "error",
+  [DiagnosticCategory.Warning]: "warning",
+  [DiagnosticCategory.Message]: "message",
+  [DiagnosticCategory.Suggestion]: "suggestion",
+} as const
+
+const record = (diagnostic: Diagnostic): DiagnosticRecord => ({
   code: diagnostic.code,
   message: diagnostic.text,
-  category:
-    diagnostic.category === DiagnosticCategory.Warning
-      ? "warning"
-      : diagnostic.category === DiagnosticCategory.Suggestion
-        ? "suggestion"
-        : diagnostic.category === DiagnosticCategory.Message
-          ? "message"
-          : "error",
+  category: categories[diagnostic.category],
   fileName: diagnostic.fileName,
   start: diagnostic.pos,
   length: diagnostic.end - diagnostic.pos,
 })
 
-const collectProjectDiagnostics = (nativeProject: {
-  readonly program: {
-    readonly getSyntacticDiagnostics: () => PromiseLike<ReadonlyArray<Diagnostic>>
-    readonly getBindDiagnostics: () => PromiseLike<ReadonlyArray<Diagnostic>>
-    readonly getSemanticDiagnostics: () => PromiseLike<ReadonlyArray<Diagnostic>>
-    readonly getProgramDiagnostics: () => PromiseLike<ReadonlyArray<Diagnostic>>
-    readonly getGlobalDiagnostics: () => PromiseLike<ReadonlyArray<Diagnostic>>
-    readonly getConfigFileParsingDiagnostics: () => PromiseLike<ReadonlyArray<Diagnostic>>
-  }
-}) =>
-  Effect.all([
-    nativeRequest("getSyntacticDiagnostics", () => nativeProject.program.getSyntacticDiagnostics()),
-    nativeRequest("getBindDiagnostics", () => nativeProject.program.getBindDiagnostics()),
-    nativeRequest("getSemanticDiagnostics", () => nativeProject.program.getSemanticDiagnostics()),
-    nativeRequest("getProgramDiagnostics", () => nativeProject.program.getProgramDiagnostics()),
-    nativeRequest("getGlobalDiagnostics", () => nativeProject.program.getGlobalDiagnostics()),
-    nativeRequest("getConfigFileParsingDiagnostics", () =>
-      nativeProject.program.getConfigFileParsingDiagnostics(),
-    ),
-  ])
+const diagnosticKinds = [
+  "getConfigFileParsingDiagnostics",
+  "getGlobalDiagnostics",
+  "getProgramDiagnostics",
+  "getSyntacticDiagnostics",
+  "getBindDiagnostics",
+  "getSemanticDiagnostics",
+] as const
 
 export const collectDiagnostics = Effect.gen(function* () {
   const snapshot = yield* WorkspaceSnapshot
-  const allDiagnostics: Array<DiagnosticRecord> = []
-  const seen = new Set<string>()
-
+  const diagnostics: Array<DiagnosticRecord> = []
   for (const configured of snapshot.projects) {
     const project = yield* snapshot.project(configured)
-    const lists = yield* project.unsafeNative((nativeProject) =>
-      collectProjectDiagnostics(nativeProject),
-    )
-    for (const list of lists) {
-      for (const diagnostic of list) {
-        const record = normalizeDiagnostic(diagnostic)
-        const key = JSON.stringify([
-          record.category,
-          record.code,
-          record.fileName ?? null,
-          record.start ?? null,
-          record.length ?? null,
-          record.message,
-        ])
-        if (seen.has(key)) continue
-        seen.add(key)
-        allDiagnostics.push(record)
-      }
+    for (const kind of diagnosticKinds) {
+      const found = yield* project.unsafeNative(({ program }) =>
+        nativeRequest(kind, () => program[kind]()),
+      )
+      diagnostics.push(...found.map(record))
     }
   }
-  return allDiagnostics
+  return diagnostics
 })
+
+const identity = ({ category, code, fileName, message }: DiagnosticRecord): string =>
+  JSON.stringify([category, code, fileName, message])
+
+export const diffDiagnostics = (
+  baseline: ReadonlyArray<DiagnosticRecord>,
+  proposed: ReadonlyArray<DiagnosticRecord>,
+): DiagnosticDiff => {
+  const remaining = Map.groupBy(baseline, identity)
+  const introduced: Array<DiagnosticRecord> = []
+  const unchanged: Array<DiagnosticRecord> = []
+  for (const diagnostic of proposed) {
+    const matched = remaining.get(identity(diagnostic))?.pop()
+    if (matched === undefined) introduced.push(diagnostic)
+    else unchanged.push(diagnostic)
+  }
+  return { introduced, unchanged, resolved: [...remaining.values()].flat() }
+}

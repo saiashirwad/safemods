@@ -1,67 +1,51 @@
-/**
- * The durable, content-addressed plan artifact.
- *
- * finalizePlan(input)  = decode → canonicalize → check semantics → stamp hashes
- * validatePlan(plan)   = decode → finalizePlan(content) → must reproduce the plan exactly
- * parsePlan(text)      = JSON → validatePlan → text must be the canonical serialization
- */
-import { Data, Effect, Order, Schema } from "effect"
-import { compareEdits, editsConflict, NonNegativeInt, TextEdit } from "./Edit.ts"
-import { canonicalJson, EvidenceRecord } from "./Evidence.ts"
+import { Data, Effect, Order, Predicate, Schema } from "effect"
+import { compareEdits, firstConflict, NonNegativeInt, TextEdit } from "./Edit.ts"
+import * as FileRef from "./FileRef.ts"
 import * as ProjectId from "./ProjectId.ts"
 import * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import * as Sha256 from "./Sha256.ts"
-import { virtualFileKey } from "./VirtualFs.ts"
 
 export type { TextEdit } from "./Edit.ts"
-export type { EvidenceRecord } from "./Evidence.ts"
 
-// ---------------------------------------------------------------------------
-// Schema
+const fileRef = { projectId: ProjectId.schema, fileName: ProjectRelativePath.schema }
 
 export const SourceFingerprint = Schema.Union([
-  Schema.Struct({
-    projectId: ProjectId.schema,
-    fileName: ProjectRelativePath.schema,
-    hash: Sha256.schema,
-    kind: Schema.Literal("file"),
-  }),
-  Schema.Struct({
-    projectId: ProjectId.schema,
-    fileName: ProjectRelativePath.schema,
-    kind: Schema.Literal("missing"),
-  }),
+  Schema.Struct({ ...fileRef, kind: Schema.Literal("file"), hash: Sha256.schema }),
+  Schema.Struct({ ...fileRef, kind: Schema.Literal("missing") }),
 ])
 export type SourceFingerprint = typeof SourceFingerprint.Type
 
 const EvidenceIds = Schema.Array(Schema.String)
 
-export const PlannedFileOperation = Schema.Union([
+export const FileOperation = Schema.Union([
   Schema.Struct({
+    ...fileRef,
     kind: Schema.Literal("create"),
-    projectId: ProjectId.schema,
-    path: ProjectRelativePath.schema,
     content: Schema.String,
     evidenceIds: EvidenceIds,
   }),
   Schema.Struct({
+    ...fileRef,
     kind: Schema.Literal("delete"),
-    projectId: ProjectId.schema,
-    path: ProjectRelativePath.schema,
     initialHash: Sha256.schema,
     evidenceIds: EvidenceIds,
   }),
   Schema.Struct({
+    ...fileRef,
     kind: Schema.Literal("move"),
-    projectId: ProjectId.schema,
-    path: ProjectRelativePath.schema,
-    toPath: ProjectRelativePath.schema,
-    content: Schema.optionalKey(Schema.String),
+    toFileName: ProjectRelativePath.schema,
     initialHash: Sha256.schema,
     evidenceIds: EvidenceIds,
   }),
 ])
-export type PlannedFileOperation = typeof PlannedFileOperation.Type
+export type FileOperation = typeof FileOperation.Type
+
+export const EvidenceRecord = Schema.Struct({
+  id: Schema.NonEmptyString,
+  kind: Schema.String,
+  facts: Schema.Record(Schema.String, Schema.Json),
+})
+export type EvidenceRecord = typeof EvidenceRecord.Type
 
 export const PlanPolicies = Schema.Struct({
   matchCount: Schema.Struct({
@@ -79,41 +63,30 @@ export const PlanPolicies = Schema.Struct({
 })
 export type PlanPolicies = typeof PlanPolicies.Type
 
-const planContentFields = {
-  recipe: Schema.Struct({
-    name: Schema.String,
-    version: Schema.String,
-    options: Schema.Json,
-  }),
-  toolchain: Schema.Struct({
-    systemVersion: Schema.String,
-    typescriptVersion: Schema.String,
-    effectVersion: Schema.String,
-  }),
+const contentFields = {
+  recipe: Schema.Struct({ name: Schema.String, version: Schema.String, options: Schema.Json }),
   projects: Schema.Array(
     Schema.Struct({ id: ProjectId.schema, configFileName: ProjectRelativePath.schema }),
   ),
   sources: Schema.Array(SourceFingerprint),
   edits: Schema.Array(TextEdit),
-  fileOperations: Schema.Array(PlannedFileOperation),
+  fileOperations: Schema.Array(FileOperation),
   evidence: Schema.Array(EvidenceRecord),
   policies: PlanPolicies,
   measurements: Schema.Struct({ matches: NonNegativeInt }),
 }
 
-export const PlanInput = Schema.Struct(planContentFields)
+export const PlanInput = Schema.Struct(contentFields)
 export type PlanInput = typeof PlanInput.Encoded
-type DecodedPlanInput = typeof PlanInput.Type
+type PlanContent = typeof PlanInput.Type
 
 export const TransformationPlan = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   planId: Sha256.schema,
-  ...planContentFields,
-  snapshotHash: Sha256.schema,
+  ...contentFields,
 })
 export type TransformationPlan = typeof TransformationPlan.Type
 
-/** A plan that passed validatePlan. Only this module can produce one. */
 declare const ValidatedPlanTypeId: unique symbol
 export type ValidatedPlan = TransformationPlan & { readonly [ValidatedPlanTypeId]: true }
 
@@ -125,144 +98,119 @@ export class PlanDecodeError extends Data.TaggedError("PlanDecodeError")<{
   readonly detail: string
 }> {}
 
-// ---------------------------------------------------------------------------
-// Canonical form and hashes
+export const canonicalJson = (value: Schema.Json): string =>
+  JSON.stringify(value, (_, nested: Schema.Json) =>
+    Predicate.isObject(nested)
+      ? Object.fromEntries(Object.entries(nested).sort(([a], [b]) => Order.String(a, b)))
+      : nested,
+  )
 
-const strict = { onExcessProperty: "error" } as const
+export const serializePlan = (plan: TransformationPlan): string => canonicalJson(plan)
 
-const canonical = (
-  value: DecodedPlanInput | TransformationPlan | Pick<DecodedPlanInput, "projects" | "sources">,
-): string => canonicalJson(value)
+export const planIdOf = (plan: Omit<TransformationPlan, "planId">): Sha256.Type =>
+  Sha256.digest(canonicalJson(plan))
 
-export const serializePlan = (plan: TransformationPlan): string => canonical(plan)
+const sortedIds = (ids: ReadonlyArray<string>): ReadonlyArray<string> =>
+  [...new Set(ids)].sort(Order.String)
 
-export const snapshotHashOf = ({
-  projects,
-  sources,
-}: Pick<DecodedPlanInput, "projects" | "sources">): Sha256.Type =>
-  Sha256.digest(canonical({ projects, sources }))
+const byFile = Order.Struct({ projectId: Order.String, fileName: Order.String })
 
-export const planHashOf = (plan: TransformationPlan): Sha256.Type => {
-  const { planId: _, ...content } = plan
-  return Sha256.digest(canonical(content))
-}
-
-/** Sort every collection into the durable plan order. */
-const canonicalize = (input: DecodedPlanInput): DecodedPlanInput => ({
+const canonicalize = (input: PlanContent): PlanContent => ({
   ...input,
   projects: [...input.projects].sort(Order.Struct({ id: Order.String })),
-  sources: [...input.sources].sort(
-    Order.Struct({ projectId: Order.String, fileName: Order.String, kind: Order.String }),
-  ),
+  sources: [...input.sources].sort(byFile),
   edits: input.edits
-    .map((edit) => ({
-      ...edit,
-      evidenceIds: [...new Set(edit.evidenceIds)].sort(Order.String),
-    }))
+    .map((edit) => ({ ...edit, evidenceIds: sortedIds(edit.evidenceIds) }))
     .sort(compareEdits),
-  evidence: [...input.evidence].sort(Order.Struct({ id: Order.String })),
   fileOperations: input.fileOperations
-    .map((operation) => ({
-      ...operation,
-      evidenceIds: [...new Set(operation.evidenceIds)].sort(Order.String),
-    }))
-    .sort(Order.Struct({ projectId: Order.String, path: Order.String, kind: Order.String })),
+    .map((operation) => ({ ...operation, evidenceIds: sortedIds(operation.evidenceIds) }))
+    .sort(byFile),
+  evidence: [...input.evidence].sort(Order.Struct({ id: Order.String })),
 })
 
-// ---------------------------------------------------------------------------
-// Semantic checks (run on canonical input)
+const duplicate = (values: ReadonlyArray<string>): string | undefined => {
+  const seen = new Set<string>()
+  return values.find((value) => seen.size === seen.add(value).size)
+}
 
-const checkSemantics = (input: DecodedPlanInput): PlanBuildError | undefined => {
-  if (input.projects.length === 0) {
-    return new PlanBuildError({ detail: "A plan must contain at least one project" })
-  }
-  const projectIds = new Set<string>()
-  const configFileNames = new Set<string>()
-  for (const project of input.projects) {
-    if (projectIds.has(project.id) || configFileNames.has(project.configFileName)) {
-      return new PlanBuildError({ detail: `Invalid project ${project.id}` })
-    }
-    projectIds.add(project.id)
-    configFileNames.add(project.configFileName)
-  }
+const semanticError = (plan: PlanContent): string | undefined => {
+  if (plan.projects.length === 0) return "A plan must contain at least one project"
+  const repeatedProject =
+    duplicate(plan.projects.map((project) => project.id)) ??
+    duplicate(plan.projects.map((project) => project.configFileName))
+  if (repeatedProject !== undefined) return `Duplicate project ${repeatedProject}`
 
+  const projectIds = new Set<string>(plan.projects.map((project) => project.id))
   const sources = new Map<string, SourceFingerprint>()
-  for (const source of input.sources) {
-    if (!projectIds.has(source.projectId))
-      return new PlanBuildError({ detail: `Unknown project ${source.projectId}` })
-    const identity = virtualFileKey(source.projectId, source.fileName)
-    if (sources.has(identity))
-      return new PlanBuildError({ detail: `Duplicate source ${source.fileName}` })
-    sources.set(identity, source)
+  for (const source of plan.sources) {
+    if (!projectIds.has(source.projectId)) return `Unknown project ${source.projectId}`
+    if (sources.has(FileRef.key(source))) return `Duplicate source ${source.fileName}`
+    sources.set(FileRef.key(source), source)
   }
 
-  const evidenceIds = new Set<string>()
-  for (const item of input.evidence) {
-    if (item.id.length === 0 || evidenceIds.has(item.id)) {
-      return new PlanBuildError({ detail: `Evidence IDs must be unique: ${item.id}` })
-    }
-    evidenceIds.add(item.id)
+  const repeatedEvidence = duplicate(plan.evidence.map((record) => record.id))
+  if (repeatedEvidence !== undefined) return `Duplicate evidence ${repeatedEvidence}`
+  const evidenceIds = new Set(plan.evidence.map((record) => record.id))
+  const unknownEvidence = [...plan.edits, ...plan.fileOperations]
+    .flatMap((change) => change.evidenceIds)
+    .find((id) => !evidenceIds.has(id))
+  if (unknownEvidence !== undefined) return `Unknown evidence ${unknownEvidence}`
+
+  if (firstConflict(plan.edits) !== undefined) return "Overlapping edits"
+  const edited = new Set<string>()
+  for (const edit of plan.edits) {
+    if (sources.get(FileRef.key(edit))?.kind !== "file") return `Missing source ${edit.fileName}`
+    edited.add(FileRef.key(edit))
   }
 
-  for (let index = 1; index < input.edits.length; index++) {
-    if (editsConflict(input.edits[index - 1]!, input.edits[index]!)) {
-      return new PlanBuildError({ detail: "Overlapping edits" })
-    }
-  }
-  const occupied = new Set<string>()
-  for (const edit of input.edits) {
-    const key = virtualFileKey(edit.projectId, edit.fileName)
-    if (sources.get(key)?.kind !== "file") {
-      return new PlanBuildError({ detail: `Missing source ${edit.fileName}` })
-    }
-    occupied.add(key)
-    const missing = edit.evidenceIds.find((id) => !evidenceIds.has(id))
-    if (missing !== undefined) return new PlanBuildError({ detail: `Unknown evidence ${missing}` })
+  const roots = new Map<string, string>(
+    plan.projects.map(({ id, configFileName }) => [
+      id,
+      configFileName.split("/").slice(0, -1).join("/"),
+    ]),
+  )
+  const owners = new Map<string, string>()
+  const moveTargets = plan.fileOperations.flatMap((operation) =>
+    operation.kind === "move"
+      ? [{ projectId: operation.projectId, fileName: operation.toFileName }]
+      : [],
+  )
+  for (const { projectId, fileName } of [...plan.edits, ...plan.fileOperations, ...moveTargets]) {
+    const diskPath = `${roots.get(projectId)}/${fileName}`
+    const owner = owners.get(diskPath) ?? projectId
+    if (owner !== projectId) return `${fileName} is changed through both ${owner} and ${projectId}`
+    owners.set(diskPath, owner)
   }
 
-  for (const operation of input.fileOperations) {
-    if (!projectIds.has(operation.projectId)) {
-      return new PlanBuildError({ detail: `Unknown project ${operation.projectId}` })
-    }
-    const missing = operation.evidenceIds.find((id) => !evidenceIds.has(id))
-    if (missing !== undefined) return new PlanBuildError({ detail: `Unknown evidence ${missing}` })
-    const key = virtualFileKey(operation.projectId, operation.path)
-    const source = sources.get(key)
-    const keys = [key]
+  const operated = new Set<string>()
+  for (const operation of plan.fileOperations) {
+    const from = FileRef.key(operation)
+    const source = sources.get(from)
+    const touched = [from]
     if (operation.kind === "create") {
-      if (source?.kind === "file")
-        return new PlanBuildError({ detail: `Create path already exists: ${operation.path}` })
-      if (source?.kind !== "missing")
-        return new PlanBuildError({ detail: `Missing absence fingerprint ${operation.path}` })
+      if (source?.kind !== "missing") return `Create needs an absent path: ${operation.fileName}`
     } else {
-      if (source?.kind !== "file")
-        return new PlanBuildError({ detail: `Missing source ${operation.path}` })
-      if (operation.initialHash !== source.hash) {
-        return new PlanBuildError({ detail: `Fingerprint mismatch ${operation.path}` })
-      }
-      if (operation.kind === "move") {
-        if (operation.toPath === operation.path) {
-          return new PlanBuildError({ detail: "Move source and target must differ" })
-        }
-        const target = virtualFileKey(operation.projectId, operation.toPath)
-        if (sources.get(target)?.kind === "file")
-          return new PlanBuildError({ detail: `Move target exists: ${operation.toPath}` })
-        if (sources.get(target)?.kind !== "missing")
-          return new PlanBuildError({ detail: `Missing absence fingerprint ${operation.toPath}` })
-        keys.push(target)
-      }
+      if (source?.kind !== "file") return `Missing source ${operation.fileName}`
+      if (source.hash !== operation.initialHash) return `Fingerprint mismatch ${operation.fileName}`
     }
-    for (const touched of keys) {
-      if (occupied.has(touched))
-        return new PlanBuildError({ detail: `Conflicting file operation ${touched}` })
-      occupied.add(touched)
+    if (operation.kind === "move") {
+      const to = FileRef.key({ projectId: operation.projectId, fileName: operation.toFileName })
+      if (sources.get(to)?.kind !== "missing") {
+        return `Move needs an absent target: ${operation.toFileName}`
+      }
+      touched.push(to)
+    } else if (edited.has(from)) {
+      return `Edit conflicts with ${operation.kind} of ${operation.fileName}`
+    }
+    for (const key of touched) {
+      if (operated.has(key)) return `Conflicting file operations on ${operation.fileName}`
+      operated.add(key)
     }
   }
   return undefined
 }
 
-// ---------------------------------------------------------------------------
-// Entry points
+const strict = { onExcessProperty: "error" } as const
 
 export const finalizePlan = (input: PlanInput): Effect.Effect<TransformationPlan, PlanBuildError> =>
   Effect.gen(function* () {
@@ -271,17 +219,12 @@ export const finalizePlan = (input: PlanInput): Effect.Effect<TransformationPlan
       strict,
     )(input).pipe(Effect.mapError(() => new PlanBuildError({ detail: "Plan shape is invalid" })))
     const content = canonicalize(decoded)
-    const error = checkSemantics(content)
-    if (error !== undefined) return yield* error
-    const provisional = {
-      schemaVersion: 1 as const,
-      ...content,
-      snapshotHash: snapshotHashOf(content),
-    }
-    return { ...provisional, planId: Sha256.digest(canonical(provisional)) }
+    const detail = semanticError(content)
+    if (detail !== undefined) return yield* new PlanBuildError({ detail })
+    const unsigned = { schemaVersion: 1 as const, ...content }
+    return { ...unsigned, planId: planIdOf(unsigned) }
   })
 
-/** A plan is valid iff re-finalizing its content reproduces it byte for byte. */
 export const validatePlan = (
   plan: TransformationPlan,
 ): Effect.Effect<ValidatedPlan, PlanDecodeError> =>
@@ -290,15 +233,14 @@ export const validatePlan = (
       TransformationPlan,
       strict,
     )(plan).pipe(Effect.mapError(() => new PlanDecodeError({ detail: "Plan shape is invalid" })))
-    const { schemaVersion: _, planId: __, snapshotHash: ___, ...content } = plan
+    const { schemaVersion: _, planId: __, ...content } = plan
     const rebuilt = yield* finalizePlan(content).pipe(
       Effect.mapError((error) => new PlanDecodeError({ detail: error.detail })),
     )
     if (serializePlan(rebuilt) !== serializePlan(plan)) {
-      return yield* new PlanDecodeError({ detail: "Plan is not canonical or its hashes are wrong" })
+      return yield* new PlanDecodeError({ detail: "Plan is not canonical or its hash is wrong" })
     }
-    // SAFETY: the plan is byte-for-byte what finalizePlan produces for its content.
-    return plan as ValidatedPlan
+    return rebuilt as ValidatedPlan
   })
 
 export const parsePlan = (text: string): Effect.Effect<ValidatedPlan, PlanDecodeError> =>
@@ -306,7 +248,6 @@ export const parsePlan = (text: string): Effect.Effect<ValidatedPlan, PlanDecode
     const json = yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Json))(text).pipe(
       Effect.mapError(() => new PlanDecodeError({ detail: "Plan is not valid JSON" })),
     )
-    // SAFETY: validatePlan decodes its argument before trusting it.
     const plan = yield* validatePlan(json as TransformationPlan)
     if (text !== serializePlan(plan)) {
       return yield* new PlanDecodeError({ detail: "Plan text is not canonical JSON" })
