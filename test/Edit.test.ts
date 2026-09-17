@@ -11,7 +11,6 @@ const edit = (start: number, end: number, newText: string): TextEdit => ({
   end,
   newText,
   expectedTextHash: Sha256.digest("abcdef".slice(start, end)),
-  evidenceIds: [],
 })
 
 describe("Edit", () => {

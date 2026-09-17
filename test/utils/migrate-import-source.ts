@@ -13,7 +13,7 @@ export interface MigrateImportSourceInput {
 
 export const migrateImportSource = Recipe.define("migrate-import-source", {
   version: "1.0.0",
-  policies: { matchCount: { min: 1 }, idempotence: "required" },
+  policies: { idempotence: "required" },
   run: (input: MigrateImportSourceInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
@@ -27,10 +27,12 @@ export const migrateImportSource = Recipe.define("migrate-import-source", {
         Query.collect,
       )
 
-      return Draft.replaceEach(declarations, ({ value }) => {
-        const specifier = value.moduleSpecifier
-        const quote = specifier.getText().startsWith("'") ? "'" : '"'
-        return { node: specifier, text: `${quote}${input.to}${quote}` }
-      })
+      return Draft.concat(
+        ...declarations.map(({ project, value }) => {
+          const specifier = value.moduleSpecifier
+          const quote = specifier.getText().startsWith("'") ? "'" : '"'
+          return Draft.replace(project, specifier, `${quote}${input.to}${quote}`)
+        }),
+      )
     }),
 })

@@ -25,7 +25,6 @@ describe("move-module", () => {
 
             const { plan, verified } = yield* executeRecipe(moveModule, input)
 
-            expect(plan.measurements.matches).toBe(5)
             expect(plan.edits).toHaveLength(4)
             expect(plan.fileOperations).toHaveLength(1)
             expect(plan.fileOperations[0]).toMatchObject({
@@ -99,7 +98,6 @@ describe("move-module", () => {
             const second = yield* Recipe.run(moveModule, input)
             expect(second.edits).toHaveLength(0)
             expect(second.fileOperations).toHaveLength(0)
-            expect(second.measurements.matches).toBe(0)
           }),
         { fixture },
       ),

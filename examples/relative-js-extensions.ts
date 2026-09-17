@@ -57,7 +57,7 @@ const isRewritableModuleSpecifier = (literal: StringLiteral): boolean => {
 
 export const relativeJsExtensions = Recipe.define("relative-js-extensions", {
   version: "1.0.0",
-  policies: { matchCount: { min: 1 }, idempotence: "required" },
+  policies: { idempotence: "required" },
   run: () =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
@@ -70,11 +70,9 @@ export const relativeJsExtensions = Recipe.define("relative-js-extensions", {
           )
           return Draft.replaceEach(specifiers, (selection) => {
             const next = toNodeNextSpecifier(selection.value.text)
-            if (next === undefined) {
-              return Draft.empty
-            }
+            if (next === undefined) throw new Error("Expected a rewritable module specifier")
             const quote = selection.value.getText().startsWith("'") ? "'" : '"'
-            return { node: selection.value, text: `${quote}${next}${quote}` }
+            return `${quote}${next}${quote}`
           })
         }),
       )

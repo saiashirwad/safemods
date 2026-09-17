@@ -14,7 +14,7 @@ export interface WrapTargetInput {
 
 export const wrapTargetInput = Recipe.define("wrap-target-input", {
   version: "1.0.0",
-  policies: { matchCount: { min: 1 }, idempotence: "required" },
+  policies: { idempotence: "required" },
   run: (input: WrapTargetInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
@@ -31,9 +31,11 @@ export const wrapTargetInput = Recipe.define("wrap-target-input", {
         Query.collect,
       )
 
-      return Draft.replaceEach(matches, ({ value: call }) => {
-        const argument = call.arguments[0]!
-        return { node: argument, text: `{ ${input.property}: ${argument.getText()} }` }
-      })
+      return Draft.concat(
+        ...matches.map(({ project, value: call }) => {
+          const argument = call.arguments[0]!
+          return Draft.replace(project, argument, `{ ${input.property}: ${argument.getText()} }`)
+        }),
+      )
     }),
 })

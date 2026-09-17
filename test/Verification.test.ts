@@ -120,20 +120,15 @@ describe("Verification.verify", () => {
   )
 
   effect(
-    "enforces match-count and affected-file policies",
+    "enforces affected-file policies",
     () =>
       withFixture((_, app) =>
         Effect.gen(function* () {
-          const commentImports = (
-            name: string,
-            policies: { readonly min?: number; readonly maxFiles?: number },
-          ) =>
+          const commentImports = (name: string, policies: { readonly maxFiles?: number }) =>
             Recipe.define(name, {
               version: "1.0.0",
-              policies: {
-                matchCount: policies.min === undefined ? {} : { min: policies.min },
-                ...(policies.maxFiles === undefined ? {} : { maxAffectedFiles: policies.maxFiles }),
-              },
+              policies:
+                policies.maxFiles === undefined ? {} : { maxAffectedFiles: policies.maxFiles },
               run: () =>
                 Effect.gen(function* () {
                   const project = yield* fixtureProject(app)
@@ -146,15 +141,8 @@ describe("Verification.verify", () => {
                 }),
             })
 
-          const passing = commentImports("passing", { min: 1 })
+          const passing = commentImports("passing", {})
           yield* Verification.verify(yield* Recipe.run(passing, undefined), passing, undefined)
-
-          const tooFew = commentImports("too-few", { min: 999 })
-          expect(
-            yield* Effect.flip(
-              Verification.verify(yield* Recipe.run(tooFew, undefined), tooFew, undefined),
-            ),
-          ).toMatchObject({ _tag: "VerificationFailure", policy: "matches" })
 
           const tooWide = commentImports("too-wide", { maxFiles: 1 })
           expect(

@@ -53,7 +53,6 @@ describe("run → verify → apply", () => {
           }
 
           const { plan, receipt, verified } = yield* executeRecipe(wrapTargetInput, input)
-          expect(plan.measurements.matches).toBe(2)
           expect(verified.diagnosticDiff.introduced).toEqual([])
           expect(receipt.written.map((file) => file.fileName)).toEqual([
             "src/consumer.ts",
@@ -74,7 +73,6 @@ describe("run → verify → apply", () => {
 
           const second = yield* Recipe.run(wrapTargetInput, input)
           expect(second.edits).toEqual([])
-          expect(second.measurements.matches).toBe(0)
         }),
       ),
     60_000,

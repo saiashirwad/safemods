@@ -53,7 +53,7 @@ const hasDefaultImport = refineKey("value", isDefaultImport)
 
 export const defaultToNamed = Recipe.define("default-to-named", {
   version: "1.0.0",
-  policies: { matchCount: { min: 1 }, idempotence: "required" },
+  policies: { idempotence: "required" },
   run: (input: DefaultToNamedInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
@@ -108,19 +108,21 @@ export const defaultToNamed = Recipe.define("default-to-named", {
         Draft.replaceEach(defaultFunctions, ({ value }) =>
           value.getText().replace(/^export\s+default\s+/, "export "),
         ),
-        Draft.replaceEach(defaultImports, ({ value }) => {
-          const clause = value.importClause
-          const binding = namedBinding(clause.name.text, input.exportName)
-          const namedBindings = clause.namedBindings
-          if (namedBindings !== undefined && isNamedImports(namedBindings)) {
-            const inner = namedBindings
-              .getText()
-              .replace(/^\{\s*/, "")
-              .replace(/\s*\}$/, "")
-            return { node: clause, text: `{ ${binding}, ${inner} }` }
-          }
-          return { node: clause, text: `{ ${binding} }` }
-        }),
+        Draft.concat(
+          ...defaultImports.map(({ project, value }) => {
+            const clause = value.importClause
+            const binding = namedBinding(clause.name.text, input.exportName)
+            const namedBindings = clause.namedBindings
+            if (namedBindings !== undefined && isNamedImports(namedBindings)) {
+              const inner = namedBindings
+                .getText()
+                .replace(/^\{\s*/, "")
+                .replace(/\s*\}$/, "")
+              return Draft.replace(project, clause, `{ ${binding}, ${inner} }`)
+            }
+            return Draft.replace(project, clause, `{ ${binding} }`)
+          }),
+        ),
         Draft.replaceEach(defaultReexports, ({ value }) =>
           rewriteDefaultReexport(value.getText(), input.exportName),
         ),

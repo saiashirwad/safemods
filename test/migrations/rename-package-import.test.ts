@@ -22,7 +22,6 @@ describe("rename-package-import", () => {
           Effect.gen(function* () {
             const { plan, verified } = yield* executeRecipe(renamePackageImport, undefined)
 
-            expect(plan.measurements.matches).toBe(7)
             expect(plan.edits).toHaveLength(7)
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
             expect(
@@ -75,7 +74,6 @@ describe("rename-package-import", () => {
             expect(yield* read(root, "src/webhooks/inbox.ts")).toContain("deliveryId: 4012")
             const second = yield* Recipe.run(renamePackageImport, undefined)
             expect(second.edits).toHaveLength(0)
-            expect(second.measurements.matches).toBe(0)
           }),
         { fixture },
       ),

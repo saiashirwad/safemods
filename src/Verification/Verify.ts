@@ -57,11 +57,7 @@ const policyFailure = (
   diff: DiagnosticDiff,
   replayedChanges: number,
 ): Pick<VerificationFailure, "policy" | "detail" | "diagnostics"> | undefined => {
-  const { matchCount, maxAffectedFiles, diagnostics, idempotence } = plan.policies
-  const matches = plan.measurements.matches
-  if (matches < (matchCount.min ?? 0) || matches > (matchCount.max ?? Infinity)) {
-    return { policy: "matches", detail: `Observed ${matches}` }
-  }
+  const { maxAffectedFiles, diagnostics, idempotence } = plan.policies
   if (preview.files.length > (maxAffectedFiles ?? Infinity)) {
     return { policy: "affected-files", detail: `Observed ${preview.files.length}` }
   }

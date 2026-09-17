@@ -34,7 +34,6 @@ describe("positional-to-options", () => {
             const { plan, verified, receipt } = yield* executeRecipe(positionalToOptions, input)
 
             expect(plan.recipe.name).toBe("positional-to-options")
-            expect(plan.measurements.matches).toBe(4)
             expect(verified.diagnosticDiff.introduced).toEqual([])
             expect(
               verified.diagnosticDiff.unchanged.some((diagnostic) => diagnostic.code === 2322),
@@ -89,7 +88,6 @@ describe("positional-to-options", () => {
             }
             const second = yield* Recipe.run(positionalToOptions, input)
             expect(second.edits).toHaveLength(0)
-            expect(second.measurements.matches).toBe(0)
           }),
         { fixture },
       ),

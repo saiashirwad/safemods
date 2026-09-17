@@ -26,7 +26,6 @@ describe("default-to-named", () => {
 
             const { plan, verified } = yield* executeRecipe(defaultToNamed, input)
 
-            expect(plan.measurements.matches).toBe(4)
             expect(plan.edits).toHaveLength(4)
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
 
@@ -73,7 +72,6 @@ describe("default-to-named", () => {
             )
             const second = yield* Recipe.run(defaultToNamed, input)
             expect(second.edits).toHaveLength(0)
-            expect(second.measurements.matches).toBe(0)
           }),
         { fixture },
       ),

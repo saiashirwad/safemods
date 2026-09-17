@@ -57,7 +57,6 @@ describe("plan validation", () => {
             projectId: "other",
             fileName: "src/index.ts",
             content: "",
-            evidenceIds: [],
           },
         ],
       })
@@ -105,7 +104,6 @@ describe("plan validation", () => {
       })
       const tampered: ReadonlyArray<TransformationPlan> = [
         { ...plan, planId: uncheckedHash("0".repeat(64)) },
-        rehash({ ...plan, evidence: [...plan.evidence].reverse() }),
         rehash({ ...plan, fileOperations: [...plan.fileOperations].reverse() }),
         rehash({ ...plan, sources: [...plan.sources].reverse() }),
         rehash({

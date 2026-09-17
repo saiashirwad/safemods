@@ -1,12 +1,6 @@
 import { matchesGlob } from "node:path"
 import { Effect, Order, Predicate, Stream } from "effect"
-import {
-  type CallExpression,
-  type Identifier,
-  type ImportDeclaration,
-  type Node,
-  SyntaxKind,
-} from "typescript/unstable/ast"
+import type { CallExpression, Identifier, ImportDeclaration, Node } from "typescript/unstable/ast"
 import { isCallExpression, isIdentifier, isImportDeclaration } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol, Type as NativeType } from "typescript/unstable/async"
 import * as FileRef from "./FileRef.ts"
@@ -20,15 +14,12 @@ import type {
 
 export type Facts = Readonly<Record<string, string | number | boolean | null>>
 
-export type Evidence = { readonly criterion: string; readonly facts: Facts }
-
 export interface Selection<A> {
   readonly value: A
   readonly project: ProjectSnapshot
   readonly fileName: ProjectRelativePath.Type
   readonly start: number
   readonly end: number
-  readonly evidence: ReadonlyArray<Evidence>
 }
 
 export type Query<A, E = never, R = never> = Stream.Stream<Selection<A>, E, R>
@@ -68,7 +59,6 @@ const selectionsIn = <A extends Node>(
         fileName: file.fileName,
         start: node.getStart(file.sourceFile),
         end: node.getEnd(),
-        evidence: [{ criterion: "syntax-kind", facts: { kind: SyntaxKind[node.kind] } }],
       })
     }
     node.forEachChild(visit)
@@ -122,14 +112,7 @@ export const where =
           }
           return batch.flatMap((selection, index) => {
             const admitted = facts[index]
-            return admitted === undefined
-              ? []
-              : [
-                  {
-                    ...selection,
-                    evidence: [...selection.evidence, { criterion: criterion.id, facts: admitted }],
-                  },
-                ]
+            return admitted === undefined ? [] : [selection]
           })
         }),
       ),

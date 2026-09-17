@@ -12,7 +12,6 @@ export const TextEdit = Schema.Struct({
   end: NonNegativeInt,
   expectedTextHash: Sha256.schema,
   newText: Schema.String,
-  evidenceIds: Schema.Array(Schema.String),
 }).check(
   Schema.makeFilter((edit) => edit.start <= edit.end, { expected: "edit.start <= edit.end" }),
 )
@@ -25,7 +24,6 @@ export const textEdit = (options: {
   readonly start: number
   readonly end: number
   readonly newText: string
-  readonly evidenceIds?: ReadonlyArray<string>
 }): TextEdit => ({
   projectId: options.projectId,
   fileName: options.fileName,
@@ -33,7 +31,6 @@ export const textEdit = (options: {
   end: options.end,
   expectedTextHash: Sha256.digest(options.sourceText.slice(options.start, options.end)),
   newText: options.newText,
-  evidenceIds: options.evidenceIds ?? [],
 })
 
 export class InvalidEdit extends Data.TaggedError("InvalidEdit")<{

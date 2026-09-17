@@ -13,7 +13,7 @@ const DECLARATION_FILE = ProjectRelativePath.schema.make("src/accounts/store.ts"
 
 export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
   version: "1.0.0",
-  policies: { matchCount: { min: 1 }, idempotence: "required" },
+  policies: { idempotence: "required" },
   run: () =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot

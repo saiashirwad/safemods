@@ -99,7 +99,7 @@ describe("queries", () => {
   )
 
   effect(
-    "where admits only selections the criterion gives facts, appending its evidence",
+    "where admits only selections the criterion gives facts",
     () =>
       withProject({ "src/tiny.ts": "export const alpha = 1\nexport const beta = 2\n" }, (project) =>
         Effect.gen(function* () {
@@ -118,10 +118,6 @@ describe("queries", () => {
             Query.collect,
           )
           expect(surviving.map((selection) => selection.value.text)).toEqual(["alpha"])
-          expect(surviving[0]!.evidence).toEqual([
-            { criterion: "syntax-kind", facts: { kind: "Identifier" } },
-            { criterion: "name-is-alpha", facts: { text: "alpha" } },
-          ])
         }),
       ),
     60_000,
@@ -195,7 +191,7 @@ describe("queries", () => {
   )
 
   effect(
-    "resolvesTo follows a symbol across files and records it as evidence",
+    "resolvesTo follows a symbol across files",
     () =>
       withProject(
         {
@@ -221,10 +217,6 @@ describe("queries", () => {
               "src/sem.ts:oldThing",
               "src/sem.ts:oldThing",
             ])
-            expect(references[0]!.evidence.at(-1)).toEqual({
-              criterion: "resolves-to-symbol",
-              facts: { symbol: "oldThing" },
-            })
           }),
       ),
     60_000,
@@ -241,10 +233,6 @@ describe("queries", () => {
             Query.collect,
           )
           expect(numbers.map((selection) => selection.value.text)).toEqual(["1", "1"])
-          expect(numbers[0]!.evidence.at(-1)).toEqual({
-            criterion: "type-assignable-to:number",
-            facts: { type: "1", assignableTo: "number" },
-          })
 
           const strings = yield* literals.pipe(
             Query.where(Query.typeAssignableTo("string")),

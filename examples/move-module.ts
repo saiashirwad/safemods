@@ -37,7 +37,7 @@ const isModuleReference = and(
 
 export const moveModule = Recipe.define("move-module", {
   version: "1.0.0",
-  policies: { matchCount: { min: 1 }, idempotence: "required" },
+  policies: { idempotence: "required" },
   run: (input: MoveModuleInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
@@ -70,12 +70,14 @@ export const moveModule = Recipe.define("move-module", {
 
       return Draft.concat(
         Draft.moveFile(moved, input.to),
-        Draft.replaceEach(references, ({ value, fileName }) => {
-          const specifier = value.moduleSpecifier
-          const quote = specifier.getText().startsWith("'") ? "'" : '"'
-          const next = specifierAfterMove(fileName, specifier.text)
-          return { node: specifier, text: `${quote}${next}${quote}` }
-        }),
+        Draft.concat(
+          ...references.map(({ project, value, fileName }) => {
+            const specifier = value.moduleSpecifier
+            const quote = specifier.getText().startsWith("'") ? "'" : '"'
+            const next = specifierAfterMove(fileName, specifier.text)
+            return Draft.replace(project, specifier, `${quote}${next}${quote}`)
+          }),
+        ),
       )
     }),
 })

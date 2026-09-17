@@ -22,7 +22,6 @@ describe("relative-js-extensions", () => {
           Effect.gen(function* () {
             const { plan, verified } = yield* executeRecipe(relativeJsExtensions, undefined)
 
-            expect(plan.measurements.matches).toBe(14)
             expect(plan.edits).toHaveLength(14)
             expect(verified.preview.files).toHaveLength(6)
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
@@ -88,7 +87,6 @@ describe("relative-js-extensions", () => {
             expect(logger).toContain('from "node:util"')
             const second = yield* Recipe.run(relativeJsExtensions, undefined)
             expect(second.edits).toHaveLength(0)
-            expect(second.measurements.matches).toBe(0)
           }),
         { fixture },
       ),

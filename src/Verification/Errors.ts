@@ -20,7 +20,7 @@ export class RecipeMismatch extends Data.TaggedError("RecipeMismatch")<{
 
 export class VerificationFailure extends Data.TaggedError("VerificationFailure")<{
   readonly planId: string
-  readonly policy: "edits" | "matches" | "affected-files" | "diagnostics" | "idempotence"
+  readonly policy: "edits" | "affected-files" | "diagnostics" | "idempotence"
   readonly detail: string
   readonly diagnostics?: ReadonlyArray<DiagnosticRecord>
 }> {}

@@ -26,7 +26,7 @@ const hasTwoArguments = refineKey("value", isBinaryCall)
 
 export const positionalToOptions = Recipe.define("positional-to-options", {
   version: "1.0.0",
-  policies: { matchCount: { min: 1 }, idempotence: "required" },
+  policies: { idempotence: "required" },
   run: (input: PositionalToOptionsInput) =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot

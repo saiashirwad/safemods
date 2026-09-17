@@ -15,48 +15,27 @@ export const SourceFingerprint = Schema.Union([
 ])
 export type SourceFingerprint = typeof SourceFingerprint.Type
 
-const EvidenceIds = Schema.Array(Schema.String)
-
 export const FileOperation = Schema.Union([
   Schema.Struct({
     ...fileRef,
     kind: Schema.Literal("create"),
     content: Schema.String,
-    evidenceIds: EvidenceIds,
   }),
   Schema.Struct({
     ...fileRef,
     kind: Schema.Literal("delete"),
     initialHash: Sha256.schema,
-    evidenceIds: EvidenceIds,
   }),
   Schema.Struct({
     ...fileRef,
     kind: Schema.Literal("move"),
     toFileName: ProjectRelativePath.schema,
     initialHash: Sha256.schema,
-    evidenceIds: EvidenceIds,
   }),
 ])
 export type FileOperation = typeof FileOperation.Type
 
-export const EvidenceRecord = Schema.Struct({
-  id: Schema.NonEmptyString,
-  kind: Schema.String,
-  facts: Schema.Record(Schema.String, Schema.Json),
-})
-export type EvidenceRecord = typeof EvidenceRecord.Type
-
 export const PlanPolicies = Schema.Struct({
-  matchCount: Schema.Struct({
-    min: Schema.optionalKey(NonNegativeInt),
-    max: Schema.optionalKey(NonNegativeInt),
-  }).check(
-    Schema.makeFilter(
-      (count) => count.min === undefined || count.max === undefined || count.min <= count.max,
-      { expected: "matchCount.min <= matchCount.max" },
-    ),
-  ),
   maxAffectedFiles: Schema.optionalKey(NonNegativeInt),
   diagnostics: Schema.Literals(["no-new-errors", "allow-new-errors"]),
   idempotence: Schema.Literals(["required", "not-promised"]),
@@ -71,9 +50,7 @@ const contentFields = {
   sources: Schema.Array(SourceFingerprint),
   edits: Schema.Array(TextEdit),
   fileOperations: Schema.Array(FileOperation),
-  evidence: Schema.Array(EvidenceRecord),
   policies: PlanPolicies,
-  measurements: Schema.Struct({ matches: NonNegativeInt }),
 }
 
 export const PlanInput = Schema.Struct(contentFields)
@@ -110,22 +87,14 @@ export const serializePlan = (plan: TransformationPlan): string => canonicalJson
 export const planIdOf = (plan: Omit<TransformationPlan, "planId">): Sha256.Type =>
   Sha256.digest(canonicalJson(plan))
 
-const sortedIds = (ids: ReadonlyArray<string>): ReadonlyArray<string> =>
-  [...new Set(ids)].sort(Order.String)
-
 const byFile = Order.Struct({ projectId: Order.String, fileName: Order.String })
 
 const canonicalize = (input: PlanContent): PlanContent => ({
   ...input,
   projects: [...input.projects].sort(Order.Struct({ id: Order.String })),
   sources: [...input.sources].sort(byFile),
-  edits: input.edits
-    .map((edit) => ({ ...edit, evidenceIds: sortedIds(edit.evidenceIds) }))
-    .sort(compareEdits),
-  fileOperations: input.fileOperations
-    .map((operation) => ({ ...operation, evidenceIds: sortedIds(operation.evidenceIds) }))
-    .sort(byFile),
-  evidence: [...input.evidence].sort(Order.Struct({ id: Order.String })),
+  edits: [...input.edits].sort(compareEdits),
+  fileOperations: [...input.fileOperations].sort(byFile),
 })
 
 const duplicate = (values: ReadonlyArray<string>): string | undefined => {
@@ -147,14 +116,6 @@ const semanticError = (plan: PlanContent): string | undefined => {
     if (sources.has(FileRef.key(source))) return `Duplicate source ${source.fileName}`
     sources.set(FileRef.key(source), source)
   }
-
-  const repeatedEvidence = duplicate(plan.evidence.map((record) => record.id))
-  if (repeatedEvidence !== undefined) return `Duplicate evidence ${repeatedEvidence}`
-  const evidenceIds = new Set(plan.evidence.map((record) => record.id))
-  const unknownEvidence = [...plan.edits, ...plan.fileOperations]
-    .flatMap((change) => change.evidenceIds)
-    .find((id) => !evidenceIds.has(id))
-  if (unknownEvidence !== undefined) return `Unknown evidence ${unknownEvidence}`
 
   if (firstConflict(plan.edits) !== undefined) return "Overlapping edits"
   const edited = new Set<string>()

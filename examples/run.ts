@@ -47,7 +47,6 @@ export interface ExampleResult {
   readonly fixture: string
   readonly workspace: string
   readonly applied: boolean
-  readonly matches: number
   readonly files: ReadonlyArray<{ readonly fileName: string; readonly action: string }>
   readonly diff: string
 }
@@ -192,7 +191,7 @@ export const runExample = Effect.fn("runExample")(function* (
     projects: [{ id: "app", config: "tsconfig.json" }],
   })
   const [project] = definition.projects
-  const { plan, verified } = yield* Effect.gen(function* () {
+  const { verified } = yield* Effect.gen(function* () {
     const executed = yield* example.execute(project)
     if (!preview) {
       yield* applyVerifiedPlan(executed.verified)
@@ -206,7 +205,6 @@ export const runExample = Effect.fn("runExample")(function* (
     fixture: NodePath.resolve(repoRoot, example.fixture),
     workspace,
     applied: !preview,
-    matches: plan.measurements.matches,
     files: verified.preview.files.map((file) => ({
       fileName: file.fileName,
       action: actionOf(file),
@@ -220,7 +218,6 @@ const formatResult = (result: ExampleResult): string => {
     `Example:    ${result.id}`,
     `Fixture:    ${result.fixture}  (unchanged)`,
     `Workspace:  ${result.workspace}`,
-    `Matches:    ${result.matches}`,
     `Applied:    ${result.applied ? "yes, to the copy" : "no (--preview)"}`,
     `Inspect:    git -C ${result.workspace} diff HEAD`,
     "Files:",

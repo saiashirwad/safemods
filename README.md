@@ -16,7 +16,7 @@ const store = ProjectRelativePath.schema.make("src/accounts/store.ts")
 
 export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
   version: "1.0.0",
-  policies: { matchCount: { min: 1 }, idempotence: "required" },
+  policies: { idempotence: "required" },
   run: () =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
@@ -67,7 +67,7 @@ Each module depends only on the ones above it.
 | `Edit`                                       | hash-guarded text edits and their application                        |
 | `Plan`                                       | the canonical, content-addressed plan: finalize, validate, parse     |
 | `Workspace`                                  | compiler snapshots; every snapshot is a fresh view of disk + overlay |
-| `Query`                                      | streams of selected nodes, each carrying the evidence that chose it  |
+| `Query`                                      | streams of selected syntax nodes                                     |
 | `Draft`                                      | pure values: proposed edits and file operations                      |
 | `Recipe`                                     | define a transformation; `run` turns its draft into a plan           |
 | `Verification`                               | preview exact bytes, diff diagnostics, replay, issue a verified plan |

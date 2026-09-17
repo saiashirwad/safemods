@@ -30,7 +30,6 @@ describe("drafts", () => {
             Draft.insertAfter(project, second!, " /* after */"),
             Draft.remove(project, third!),
           )
-          expect(draft.matches).toBe(4)
           expect(yield* applyFileEdits(ARGUMENTS_SOURCE, draft.edits)).toContain(
             "run(10, /* before */ 2 /* after */, )",
           )
@@ -40,7 +39,7 @@ describe("drafts", () => {
   )
 
   effect(
-    "replaceEach cites each selection's query evidence, even when nothing is edited",
+    "replaceEach replaces every selected node",
     () =>
       withProject({ "src/arguments.ts": ARGUMENTS_SOURCE }, (project) =>
         Effect.gen(function* () {
@@ -48,19 +47,9 @@ describe("drafts", () => {
             Query.within("src/arguments.ts"),
             Query.collect,
           )
-          const replaced = Draft.replaceEach(calls, () => "run()")
-          expect(replaced.matches).toBe(1)
-          expect(replaced.edits[0]!.evidenceIds).toEqual([replaced.evidence[0]!.id])
-          expect(replaced.evidence[0]!.facts.criteria).toEqual([
-            { criterion: "syntax-kind", facts: { kind: "CallExpression" } },
-          ])
-
-          const untouched = Draft.replaceEach(calls, () => Draft.empty)
-          expect(untouched.edits).toEqual([])
-          expect(untouched.matches).toBe(1)
-          expect(untouched.evidence).toEqual(replaced.evidence)
-
-          expect(Draft.concat(replaced, untouched).evidence).toEqual(replaced.evidence)
+          const draft = Draft.replaceEach(calls, () => "run()")
+          expect(draft.edits).toHaveLength(1)
+          expect(yield* applyFileEdits(ARGUMENTS_SOURCE, draft.edits)).toContain("result = run()")
         }),
       ),
     60_000,
@@ -81,7 +70,6 @@ describe("drafts", () => {
               projectId: "app",
               fileName: "src/library.ts",
               initialHash,
-              evidenceIds: [],
             },
           ])
           expect(Draft.moveFile(library, target).fileOperations).toEqual([
@@ -91,7 +79,6 @@ describe("drafts", () => {
               fileName: "src/library.ts",
               toFileName: target,
               initialHash,
-              evidenceIds: [],
             },
           ])
           expect(Draft.createFile(project, target, "export {}\n").fileOperations).toEqual([
@@ -100,7 +87,6 @@ describe("drafts", () => {
               projectId: "app",
               fileName: target,
               content: "export {}\n",
-              evidenceIds: [],
             },
           ])
         }),

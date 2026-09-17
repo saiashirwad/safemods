@@ -44,7 +44,6 @@ export const define = <Input = undefined, E = never, R = never>(
   version: definition.version,
   schema: definition.schema,
   policies: {
-    matchCount: {},
     diagnostics: "no-new-errors",
     idempotence: "not-promised",
     ...definition.policies,
@@ -126,9 +125,7 @@ export const run = <Input, E, R>(
           sources: yield* fingerprintSources(draft.fileOperations),
           edits: draft.edits,
           fileOperations: draft.fileOperations,
-          evidence: draft.evidence,
           policies: recipe.policies,
-          measurements: { matches: draft.matches },
         })
       }),
     )

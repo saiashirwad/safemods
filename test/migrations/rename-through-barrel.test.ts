@@ -207,7 +207,6 @@ describe("rename-through-barrel", () => {
             const { plan, verified } = yield* executeRecipe(renameThroughBarrel, undefined)
 
             expect(plan.recipe.name).toBe("rename-through-barrel")
-            expect(plan.measurements.matches).toBe(8)
             expect(verified.preview.files).toHaveLength(4)
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
 
@@ -222,7 +221,6 @@ describe("rename-through-barrel", () => {
             expect(yield* readSource(root, "src/audit/metrics.ts")).toBe(unchangedMetrics)
             const second = yield* Recipe.run(renameThroughBarrel, undefined)
             expect(second.edits).toHaveLength(0)
-            expect(second.measurements.matches).toBe(0)
           }),
         { fixture },
       ),

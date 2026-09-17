@@ -26,7 +26,7 @@ const rewriteSpecifier = (specifier: StringLiteral) => {
 
 export const renamePackageImport = Recipe.define("rename-package-import", {
   version: "1.0.0",
-  policies: { matchCount: { min: 1 }, idempotence: "required" },
+  policies: { idempotence: "required" },
   run: () =>
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
@@ -41,6 +41,9 @@ export const renamePackageImport = Recipe.define("rename-package-import", {
         Query.collect,
       )
 
-      return Draft.replaceEach(references, ({ value }) => rewriteSpecifier(value.moduleSpecifier))
+      return Draft.replaceEach(references, ({ value }) => {
+        const specifier = value.moduleSpecifier
+        return `${value.getText().slice(0, specifier.getStart() - value.getStart())}${rewriteSpecifier(specifier).text}${value.getText().slice(specifier.getEnd() - value.getStart())}`
+      })
     }),
 })

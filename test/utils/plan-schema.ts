@@ -51,7 +51,6 @@ export const richInput: PlanInput = {
       end: 0,
       expectedTextHash: Sha256.digest(""),
       newText: "x",
-      evidenceIds: ["edit"],
     },
   ],
   fileOperations: [
@@ -60,14 +59,12 @@ export const richInput: PlanInput = {
       projectId: projectId("app"),
       fileName: projectPath("src/created.ts"),
       content: "created",
-      evidenceIds: ["create"],
     },
     {
       kind: "delete",
       projectId: projectId("app"),
       fileName: projectPath("src/delete.ts"),
       initialHash: Sha256.digest("delete"),
-      evidenceIds: ["delete"],
     },
     {
       kind: "move",
@@ -75,22 +72,13 @@ export const richInput: PlanInput = {
       fileName: projectPath("src/move.ts"),
       toFileName: projectPath("src/moved.ts"),
       initialHash: Sha256.digest("move"),
-      evidenceIds: ["move"],
     },
   ],
-  evidence: [
-    { id: "edit", kind: "selection", facts: { nested: { valid: true } } },
-    { id: "create", kind: "operation", facts: {} },
-    { id: "delete", kind: "operation", facts: {} },
-    { id: "move", kind: "operation", facts: {} },
-  ],
   policies: {
-    matchCount: { min: 1, max: 3 },
     maxAffectedFiles: 4,
     diagnostics: "no-new-errors",
     idempotence: "required",
   },
-  measurements: { matches: 1 },
 }
 
 const withOperation = (
@@ -237,31 +225,11 @@ export const semanticMutations: ReadonlyArray<{
     mutate: (value) => ({ ...value, sources: [...value.sources, value.sources[0]!] }),
   },
   {
-    name: "duplicate evidence identity",
-    mutate: (value) => ({ ...value, evidence: [...value.evidence, value.evidence[0]!] }),
-  },
-  {
-    name: "inverted policy range",
-    mutate: (value) => ({
-      ...value,
-      policies: { ...value.policies, matchCount: { min: 4, max: 3 } },
-    }),
-  },
-  {
     name: "edit on a file that is not a source",
     mutate: (value) => ({
       ...value,
       edits: [{ ...value.edits[0]!, fileName: projectPath("src/other.ts") }],
     }),
-  },
-  {
-    name: "missing edit evidence link",
-    mutate: (value) => ({ ...value, edits: [{ ...value.edits[0]!, evidenceIds: ["unknown"] }] }),
-  },
-  {
-    name: "missing operation evidence link",
-    mutate: (value) =>
-      withOperation(value, 1, (operation) => ({ ...operation, evidenceIds: ["unknown"] })),
   },
   {
     name: "create over an existing source",
