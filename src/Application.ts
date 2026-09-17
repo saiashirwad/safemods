@@ -183,9 +183,9 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     temporaries.add(temporary)
     yield* fs.writeFile(temporary, bytes, { flag: "wx", mode }).pipe(Effect.mapError(failed))
     yield* confinedTarget(file)
+    written.add(target)
     yield* fs.rename(temporary, target).pipe(Effect.mapError(failed))
     temporaries.delete(temporary)
-    written.add(target)
   })
   const commit = Effect.gen(function* () {
     for (const { file, target } of targets) {

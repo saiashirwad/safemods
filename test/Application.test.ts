@@ -236,6 +236,34 @@ describe("Application.applyVerifiedPlan", () => {
     ),
   )
 
+  effect("rolls back a file whose temporary rename succeeds but reports failure", () =>
+    withFixture((root, app) =>
+      Effect.gen(function* () {
+        const recipe = createFile(app, "src/created.ts", "export const created = true\n")
+        const plan = yield* verified(recipe)
+        let injected = false
+
+        const exit = yield* Effect.exit(
+          Application.applyVerifiedPlan(plan).pipe(
+            withFaultyFileSystem((fs) => ({
+              ...fs,
+              rename: (from, to) =>
+                from.includes(".safemods-") && from.endsWith(".tmp") && !injected
+                  ? fs.rename(from, to).pipe(
+                      Effect.tap(() => Effect.sync(() => (injected = true))),
+                      Effect.andThen(Effect.fail(new Error("rename result was lost") as never)),
+                    )
+                  : fs.rename(from, to),
+            })),
+          ),
+        )
+
+        expect(exit._tag).toBe("Failure")
+        expect(yield* exists(root, "src/created.ts")).toBe(false)
+      }),
+    ),
+  )
+
   effect("restores an edited file when a later write dies", () =>
     withFixture((root, app) =>
       Effect.gen(function* () {
