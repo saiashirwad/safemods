@@ -16,13 +16,18 @@ export interface MoveModuleInput {
   readonly to: ProjectRelativePath.Type
 }
 
-const resolve = (fromFile: string, specifier: string): string =>
+const rebase = (fromFile: string, specifier: string): string =>
   normalize(`${dirname(fromFile)}/${specifier}`)
 
 const specifierTo = (fromFile: string, target: string): string => {
   const rel = relative(dirname(fromFile), target)
   return rel.startsWith(".") ? rel : `./${rel}`
 }
+
+const extensionOf = (path: string): string => /(?:\.d)?\.[cm]?[jt]sx?$/.exec(path)?.[0] ?? ""
+
+const withoutExtension = (path: string): string =>
+  path.slice(0, path.length - extensionOf(path).length)
 
 export const moveModule = Recipe.define("move-module", {
   version: "1.0.0",
@@ -34,39 +39,27 @@ export const moveModule = Recipe.define("move-module", {
       const moved = yield* project.file(input.from)
       if (moved === undefined) return Draft.empty
 
-      const pointsAtMoved = (fileName: string, specifier: string): boolean =>
-        resolve(fileName, specifier).replace(/\.js$/, ".ts") === input.from
-
-      const specifierAfterMove = (fileName: string, specifier: string): string =>
-        specifierTo(
-          fileName === input.from ? input.to : fileName,
-          pointsAtMoved(fileName, specifier)
-            ? input.to.replace(/\.ts$/, ".js")
-            : resolve(fileName, specifier),
-        )
-
-      const references = yield* Query.moduleReferences(project).pipe(
-        Query.filter(({ value, fileName }) => {
-          const specifier = value.specifier.text
-          return (
-            specifier.startsWith(".") &&
-            (fileName === input.from || pointsAtMoved(fileName, specifier)) &&
-            specifierAfterMove(fileName, specifier) !== specifier
-          )
-        }),
+      const references = yield* Query.resolvedModuleReferences(project).pipe(
+        Query.filter(({ value }) => value.specifier.text.startsWith(".")),
         Query.collect,
       )
 
       return Draft.concat(
         Draft.moveFile(moved, input.to),
-        Draft.concat(
-          ...references.map(({ project, value, fileName }) => {
-            const specifier = value.specifier
-            const quote = specifier.getText().startsWith("'") ? "'" : '"'
-            const next = specifierAfterMove(fileName, specifier.text)
-            return Draft.replace(project, specifier, `${quote}${next}${quote}`)
-          }),
-        ),
+        ...references.flatMap(({ project, value, fileName }) => {
+          const specifier = value.specifier
+          const pointsAtMoved = value.resolved?.fileName === input.from
+          if (fileName !== input.from && !pointsAtMoved) return []
+          const next = specifierTo(
+            fileName === input.from ? input.to : fileName,
+            pointsAtMoved
+              ? `${withoutExtension(input.to)}${extensionOf(specifier.text)}`
+              : rebase(fileName, specifier.text),
+          )
+          if (next === specifier.text) return []
+          const quote = specifier.getText().startsWith("'") ? "'" : '"'
+          return [Draft.replace(project, specifier, `${quote}${next}${quote}`)]
+        }),
       )
     }),
 })

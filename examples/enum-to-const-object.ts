@@ -59,21 +59,23 @@ export const enumToConstObject = Recipe.define("enum-to-const-object", {
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
       const project = yield* snapshot.project(input.project.id)
-      const declarations = yield* Query.nodes(project, isEnumDeclaration).pipe(
+      const [target] = yield* Query.nodes(project, isEnumDeclaration).pipe(
+        Query.within(input.declarationFile),
         Query.filter(({ value }) => value.name.text === input.enumName),
         Query.collect,
       )
-      if (declarations.length === 0) return Draft.empty
+      if (target === undefined) return Draft.empty
 
-      const reasons: Array<string> = []
-      if (declarations.length !== 1) reasons.push("merged enum declarations are unsupported")
-      const target = declarations.find(({ fileName }) => fileName === input.declarationFile)
-      if (target === undefined) reasons.push("enum declaration was not found in declarationFile")
-      for (const declaration of declarations) {
-        const reason = reasonFor(declaration.value)
-        if (reason !== undefined) reasons.push(reason)
-      }
-      if (reasons.length > 0 || target === undefined) {
+      const symbol = yield* project.symbolOf(target.value.name)
+      const declarations = symbol === undefined ? [] : yield* project.declarationsOf(symbol)
+      const reasons = [
+        ...(declarations.length > 1 ? ["merged enum declarations are unsupported"] : []),
+        ...declarations.filter(isEnumDeclaration).flatMap((declaration) => {
+          const reason = reasonFor(declaration)
+          return reason === undefined ? [] : [reason]
+        }),
+      ]
+      if (reasons.length > 0) {
         return yield* new UnsupportedEnum({
           enumName: input.enumName,
           reasons: [...new Set(reasons)],

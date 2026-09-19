@@ -2,7 +2,10 @@
 
 Type-directed codemods for TypeScript 7, built on Effect.
 
-Pre-alpha. Recipes query the checker, emit a draft, then plan → verify → apply. Verification refuses new diagnostics and can require idempotence. Apply writes only a verified plan.
+Pre-alpha. Two things run on the same compiler snapshot:
+
+- **Recipes** query the checker, emit a draft, then plan → verify → apply. Verification refuses new diagnostics and can require idempotence. Apply writes only a verified plan.
+- **Checks** query the checker and report findings. `safemods check` prints them as `path:line:column check message` and exits non-zero, so a coding agent gets a precise rejection without anyone spending tokens on it.
 
 ```ts
 import { Effect } from "effect"
@@ -23,8 +26,8 @@ export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
       const project = snapshot.projects[0]!
       const symbol = yield* project.symbolNamed("loadAccount", { within: store })
       const matches = yield* Query.identifiers(project).pipe(
-        Query.where(Query.resolvesTo(symbol)),
         Query.filter((selection) => selection.value.text === "loadAccount"),
+        Query.where(Query.resolvesTo(symbol)),
         Query.collect,
       )
       return Draft.replaceEach(matches, () => "findAccount")
@@ -57,6 +60,60 @@ export const main = Effect.gen(function* () {
 })
 ```
 
+Cheap syntactic filters go first. `Query.where` asks the checker, and questions asked about many nodes at once are sent as one request per file.
+
+## Checks
+
+A check is an Effect that returns reports. Questions about types go through the project snapshot, and `Type` reads Effect, Stream and Layer parameters off their variance structs.
+
+```ts
+import { Effect, Option } from "effect"
+import * as Check from "safemods/Check"
+import * as Query from "safemods/Query"
+import * as Type from "safemods/Type"
+import { WorkspaceSnapshot } from "safemods/Workspace"
+
+export const noUnknownFailures = Check.define(
+  "no-unknown-failures",
+  Effect.gen(function* () {
+    const snapshot = yield* WorkspaceSnapshot
+    const project = snapshot.projects[0]!
+    const failing = yield* Query.calls(project).pipe(
+      Query.typed,
+      Query.where(({ value }) =>
+        Effect.map(
+          Type.effect(project, value.type),
+          (parsed) => Option.isSome(parsed) && Type.isUnknown(parsed.value.error),
+        ),
+      ),
+      Query.collect,
+    )
+    return failing.map((call) => Check.report(call, "this Effect can fail with unknown"))
+  }),
+)
+```
+
+List projects and checks in `safemods.config.ts`:
+
+```ts
+import type * as Check from "safemods/Check"
+import { noUnknownFailures } from "./checks/no-unknown-failures.ts"
+
+export default {
+  projects: [{ id: "app", config: "tsconfig.json" }],
+  checks: [noUnknownFailures],
+} satisfies Check.Config
+```
+
+```sh
+safemods check                                         # exit 1 on findings, 2 if the run failed
+safemods check --format json
+safemods check --baseline known.json --update-baseline # accept what exists today
+safemods check --baseline known.json                   # fail only on findings that are new
+```
+
+`checks/` holds the checks this repository runs on itself as part of `pnpm lint`: the module order below (`layers`), no function whose resolved return type is `any` or `unknown` (`weak-returns`), and `unsafeNative` kept out of recipes and checks (`restricted-references`).
+
 ## Modules
 
 Each module depends only on the ones above it.
@@ -67,11 +124,12 @@ Each module depends only on the ones above it.
 | `Edit`                                       | hash-guarded text edits and their application                        |
 | `Plan`                                       | the canonical, content-addressed plan: finalize, validate, parse     |
 | `Workspace`                                  | compiler snapshots; every snapshot is a fresh view of disk + overlay |
-| `Query`                                      | streams of selected syntax nodes                                     |
-| `Draft`                                      | pure values: proposed edits and file operations                      |
+| `Query`, `Type`                              | streams of selected syntax nodes; predicates and parsers over types  |
+| `Draft`, `Check`                             | proposed edits and file operations; findings and their baseline      |
 | `Recipe`                                     | define a transformation; `run` turns its draft into a plan           |
 | `Verification`                               | preview exact bytes, diff diagnostics, replay, issue a verified plan |
 | `Application`                                | write a verified plan, refusing stale files and symlink escapes      |
+| `bin`                                        | the `safemods` command                                               |
 
 Application checks real paths immediately before each mutation. The portable filesystem API does not offer directory handles or atomic no-follow operations, so this confines normal symlink layouts but cannot guarantee safety against a hostile process swapping symlinks between a check and mutation.
 

@@ -33,8 +33,8 @@ export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
 
       const symbol = yield* project.symbolNamed("loadAccount", { within: DECLARATION_FILE })
       const matches = yield* Query.identifiers(project).pipe(
-        Query.where(Query.resolvesTo(symbol)),
         Query.filter((selection) => selection.value.text === "loadAccount"),
+        Query.where(Query.resolvesTo(symbol)),
         Query.collect,
       )
 

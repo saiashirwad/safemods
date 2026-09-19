@@ -1,7 +1,9 @@
 import * as Path from "node:path"
-import { Data, Effect, Option, Schema } from "effect"
-import type { CallExpression, SourceFile } from "typescript/unstable/ast"
+import { Data, Effect, Exit, Option, Request, RequestResolver, Schema } from "effect"
+import type { CallExpression, Expression, Node, SourceFile } from "typescript/unstable/ast"
 import {
+  type NodeHandle,
+  SignatureKind,
   SymbolFlags,
   type Project as NativeProject,
   type Signature as NativeSignature,
@@ -45,11 +47,8 @@ export interface TextFile {
   readonly text: string
 }
 
-export interface CallSignatureSummary {
-  readonly signature: NativeSignature
-  readonly parameters: ReadonlyArray<{ readonly name: string; readonly type: string }>
-  readonly returnType: string
-  readonly hasRestParameter: boolean
+interface NodeQuestion<A> extends Request.Request<A, ProjectSnapshotError> {
+  readonly node: Node
 }
 
 export interface ProjectSnapshot {
@@ -67,17 +66,52 @@ export interface ProjectSnapshot {
     name: string,
     options: { readonly within: ProjectRelativePath.Type },
   ) => Effect.Effect<NativeSymbol, SymbolNotFound | ProjectSnapshotError>
-  readonly symbolsAt: (
-    fileName: ProjectRelativePath.Type,
-    positions: ReadonlyArray<number>,
-  ) => Effect.Effect<ReadonlyArray<NativeSymbol | undefined>, ProjectSnapshotError>
+  readonly symbolOf: (node: Node) => Effect.Effect<NativeSymbol | undefined, ProjectSnapshotError>
   readonly canonicalSymbol: (
     symbol: NativeSymbol,
   ) => Effect.Effect<NativeSymbol, ProjectSnapshotError>
-  readonly typesAt: (
-    fileName: ProjectRelativePath.Type,
-    positions: ReadonlyArray<number>,
+  readonly declarationsOf: (
+    symbol: NativeSymbol,
+  ) => Effect.Effect<ReadonlyArray<Node>, ProjectSnapshotError>
+  readonly referencesTo: (node: Node) => Effect.Effect<ReadonlyArray<Node>, ProjectSnapshotError>
+  readonly typeOf: (node: Node) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
+  readonly typeOfSymbol: (
+    symbol: NativeSymbol,
+  ) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
+  readonly contextualTypeOf: (
+    expression: Expression,
+  ) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
+  readonly unionMembersOf: (
+    type: NativeType,
+  ) => Effect.Effect<ReadonlyArray<NativeType>, ProjectSnapshotError>
+  readonly typeArgumentsOf: (
+    type: NativeType,
+  ) => Effect.Effect<ReadonlyArray<NativeType>, ProjectSnapshotError>
+  readonly propertyOf: (
+    type: NativeType,
+    name: string,
+  ) => Effect.Effect<NativeSymbol | undefined, ProjectSnapshotError>
+  readonly propertiesOf: (
+    type: NativeType,
+  ) => Effect.Effect<ReadonlyArray<NativeSymbol>, ProjectSnapshotError>
+  readonly callSignaturesOf: (
+    type: NativeType,
+  ) => Effect.Effect<ReadonlyArray<NativeSignature>, ProjectSnapshotError>
+  readonly signatureOf: (
+    declaration: Node,
+  ) => Effect.Effect<NativeSignature | undefined, ProjectSnapshotError>
+  readonly resolvedSignature: (
+    call: CallExpression,
+  ) => Effect.Effect<NativeSignature | undefined, ProjectSnapshotError>
+  readonly signatureDeclaration: (
+    signature: NativeSignature,
+  ) => Effect.Effect<Node | undefined, ProjectSnapshotError>
+  readonly parameterTypesOf: (
+    signature: NativeSignature,
   ) => Effect.Effect<ReadonlyArray<NativeType | undefined>, ProjectSnapshotError>
+  readonly returnTypeOf: (
+    signature: NativeSignature,
+  ) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
   readonly typeToString: (type: NativeType) => Effect.Effect<string, ProjectSnapshotError>
   readonly isTypeAssignableTo: (
     source: NativeType,
@@ -86,12 +120,8 @@ export interface ProjectSnapshot {
   readonly intrinsicType: (
     name: IntrinsicTypeName,
   ) => Effect.Effect<NativeType, ProjectSnapshotError>
-  readonly resolvedCallSignature: (
-    call: CallExpression,
-  ) => Effect.Effect<CallSignatureSummary | undefined, ProjectSnapshotError>
   readonly resolvedModule: (
-    fileName: ProjectRelativePath.Type,
-    specifierPosition: number,
+    specifier: Node,
   ) => Effect.Effect<ProjectFile | undefined, ProjectSnapshotError>
   readonly unsafeNative: <A, E, R>(
     use: (project: NativeProject) => Effect.Effect<A, E, R>,
@@ -106,6 +136,17 @@ const anyMeaning =
   SymbolFlags.ExportValue
 
 const decodePath = Schema.decodeOption(ProjectRelativePath.schema)
+
+const memoize = <Key, A extends object>(load: (key: Key) => A): ((key: Key) => A) => {
+  const known = new Map<Key, A>()
+  return (key) => {
+    const found = known.get(key)
+    if (found !== undefined) return found
+    const loaded = load(key)
+    known.set(key, loaded)
+    return loaded
+  }
+}
 
 export const make = (options: {
   readonly configured: ConfiguredProject.Type
@@ -134,22 +175,64 @@ export const make = (options: {
     return fileName === undefined ? Option.none() : Option.some(fileName)
   }
 
-  const ownedFile = (absoluteName: string) =>
-    request("getSourceFile", async (): Promise<ProjectFile | undefined> => {
-      const fileName = Option.getOrUndefined(relative(absoluteName))
-      const sourceFile = await program.getSourceFile(absoluteName)
-      if (fileName === undefined || sourceFile === undefined) return undefined
-      const [isDefaultLibrary, isExternal] = await Promise.all([
-        program.isSourceFileDefaultLibrary(sourceFile),
-        program.isSourceFileFromExternalLibrary(sourceFile),
-      ])
-      return isDefaultLibrary || isExternal ? undefined : { project, fileName, sourceFile }
-    })
+  const ownedFileOf = memoize(async (absoluteName: string): Promise<ProjectFile | undefined> => {
+    const fileName = Option.getOrUndefined(relative(absoluteName))
+    const sourceFile = await program.getSourceFile(absoluteName)
+    if (fileName === undefined || sourceFile === undefined) return undefined
+    const [isDefaultLibrary, isExternal] = await Promise.all([
+      program.isSourceFileDefaultLibrary(sourceFile),
+      program.isSourceFileFromExternalLibrary(sourceFile),
+    ])
+    return isDefaultLibrary || isExternal ? undefined : { project, fileName, sourceFile }
+  })
 
-  const canonicalSymbolOf = (symbol: NativeSymbol): Promise<NativeSymbol> =>
+  const ownedFile = (absoluteName: string) =>
+    request("getSourceFile", () => ownedFileOf(absoluteName))
+
+  const ownedNodes = async (handles: ReadonlyArray<NodeHandle>): Promise<ReadonlyArray<Node>> => {
+    const nodes = await Promise.all(handles.map((handle) => handle.resolve(native)))
+    const owned = await Promise.all(
+      nodes.map(async (node) =>
+        node !== undefined && (await ownedFileOf(node.getSourceFile().fileName)) !== undefined
+          ? node
+          : undefined,
+      ),
+    )
+    return owned.filter((node) => node !== undefined)
+  }
+
+  const canonicalSymbolOf = memoize((symbol: NativeSymbol) =>
     (symbol.flags & SymbolFlags.Alias) === 0
       ? symbol.getExportSymbol()
-      : checker.getAliasedSymbol(symbol)
+      : checker.getAliasedSymbol(symbol),
+  )
+
+  const intrinsicTypeOf = memoize((name: IntrinsicTypeName) =>
+    checker[intrinsicTypeGetters[name]](),
+  )
+
+  const assignableTo = memoize((target: NativeType) =>
+    memoize((source: NativeType) => checker.isTypeAssignableTo(source, target)),
+  )
+
+  const perNode = <A>(
+    operation: string,
+    ask: (nodes: ReadonlyArray<Node>) => PromiseLike<ReadonlyArray<A>>,
+  ): ((node: Node) => Effect.Effect<A, ProjectSnapshotError>) => {
+    const question = Request.of<NodeQuestion<A>>()
+    const resolver = RequestResolver.makeGrouped<NodeQuestion<A>, string>({
+      key: (entry) => entry.request.node.getSourceFile().fileName,
+      resolver: (entries) =>
+        Effect.map(
+          request(operation, () => ask(entries.map((entry) => entry.request.node))),
+          (answers) =>
+            entries.forEach((entry, index) =>
+              entry.completeUnsafe(Exit.succeed(answers[index] as A)),
+            ),
+        ),
+    })
+    return (node) => Effect.request(question({ node }), resolver)
+  }
 
   const files = request("getSourceFileNames", () => program.getSourceFileNames()).pipe(
     Effect.flatMap((names) => Effect.forEach(names, ownedFile, { concurrency: 8 })),
@@ -194,68 +277,89 @@ export const make = (options: {
         return yield* project.canonicalSymbol(symbol)
       }),
 
-    symbolsAt: (fileName, positions) =>
-      positions.length === 0
-        ? Effect.as(ensureActive, [])
-        : request("getSymbolAtPosition", () =>
-            checker.getSymbolAtPosition(absolute(fileName), positions),
-          ),
+    symbolOf: perNode("getSymbolAtLocation", (nodes) => checker.getSymbolAtLocation(nodes)),
 
     canonicalSymbol: (symbol) => request("getCanonicalSymbol", () => canonicalSymbolOf(symbol)),
 
-    typesAt: (fileName, positions) =>
-      positions.length === 0
-        ? Effect.as(ensureActive, [])
-        : request("getTypeAtPosition", () =>
-            checker.getTypeAtPosition(absolute(fileName), positions),
-          ),
+    declarationsOf: (symbol) =>
+      request("resolveDeclarations", () => ownedNodes(symbol.declarations)),
+
+    referencesTo: (node) =>
+      request("getReferencedSymbolsForNode", async () => {
+        const entries = await checker.getReferencedSymbolsForNode(
+          node,
+          node.getStart(node.getSourceFile()),
+        )
+        return ownedNodes(entries.flatMap((entry) => entry.references))
+      }),
+
+    typeOf: perNode("getTypeAtLocation", (nodes) => checker.getTypeAtLocation(nodes)),
+
+    typeOfSymbol: (symbol) => request("getTypeOfSymbol", () => checker.getTypeOfSymbol(symbol)),
+
+    contextualTypeOf: (expression) =>
+      request("getContextualType", () => checker.getContextualType(expression)),
+
+    unionMembersOf: (type) =>
+      type.isUnionType()
+        ? request("getTypes", () => type.getTypes())
+        : Effect.as(ensureActive, [type]),
+
+    typeArgumentsOf: (type) =>
+      type.isTypeReference()
+        ? request("getTypeArguments", () => checker.getTypeArguments(type))
+        : Effect.as(ensureActive, []),
+
+    propertyOf: (type, name) =>
+      request("getPropertyOfType", () => checker.getPropertyOfType(type, name)),
+
+    propertiesOf: (type) => request("getPropertiesOfType", () => checker.getPropertiesOfType(type)),
+
+    callSignaturesOf: (type) =>
+      request("getSignaturesOfType", () => checker.getSignaturesOfType(type, SignatureKind.Call)),
+
+    signatureOf: (declaration) =>
+      request("getSignatureFromDeclaration", () =>
+        checker.getSignatureFromDeclaration(declaration),
+      ),
+
+    resolvedSignature: (call) =>
+      request("getResolvedSignature", () => checker.getResolvedSignature(call)),
+
+    signatureDeclaration: (signature) =>
+      request("resolveSignatureDeclaration", async () =>
+        signature.declaration === undefined ? undefined : signature.declaration.resolve(native),
+      ),
+
+    parameterTypesOf: (signature) =>
+      request("getParameterType", () =>
+        Promise.all(
+          signature.parameters.map((_, index) => checker.getParameterType(signature, index)),
+        ),
+      ),
+
+    returnTypeOf: (signature) =>
+      request("getReturnTypeOfSignature", () => checker.getReturnTypeOfSignature(signature)),
 
     typeToString: (type) => request("typeToString", () => checker.typeToString(type)),
 
     isTypeAssignableTo: (source, target) =>
-      request("isTypeAssignableTo", () => checker.isTypeAssignableTo(source, target)),
+      request("isTypeAssignableTo", () => assignableTo(target)(source)),
 
-    intrinsicType: (name) =>
-      request("getIntrinsicType", () => checker[intrinsicTypeGetters[name]]()),
+    intrinsicType: (name) => request("getIntrinsicType", () => intrinsicTypeOf(name)),
 
-    resolvedCallSignature: (call) =>
-      request("getResolvedSignature", async () => {
-        const signature = await checker.getResolvedSignature(call)
-        if (signature === undefined) return undefined
-        const parameters = await signature.getParameters()
-        const parameterTypes = await Promise.all(
-          parameters.map(async (parameter, index) => {
-            const type = await checker.getParameterType(signature, index)
-            return {
-              name: parameter.name,
-              type: type === undefined ? "unknown" : await checker.typeToString(type),
-            }
-          }),
-        )
-        const returnType = await checker.getReturnTypeOfSignature(signature)
-        return {
-          signature,
-          parameters: parameterTypes,
-          returnType: returnType === undefined ? "unknown" : await checker.typeToString(returnType),
-          hasRestParameter: signature.hasRestParameter,
-        }
-      }),
-
-    resolvedModule: (fileName, specifierPosition) =>
-      request("resolveModuleReference", async () => {
-        const sourceFile = await program.getSourceFile(absolute(fileName))
-        if (sourceFile === undefined) return undefined
-        const symbol = await checker.getSymbolAtPosition(absolute(fileName), specifierPosition)
+    resolvedModule: (specifier) =>
+      Effect.gen(function* () {
+        const symbol = yield* project.symbolOf(specifier)
         if (symbol === undefined) return undefined
-        const canonical = await canonicalSymbolOf(symbol)
+        const canonical = yield* project.canonicalSymbol(symbol)
         const handle = canonical.valueDeclaration ?? canonical.declarations[0]
-        const declaration = handle === undefined ? undefined : await handle.resolve(native)
-        return declaration?.getSourceFile().fileName
-      }).pipe(
-        Effect.flatMap((resolved) =>
-          resolved === undefined ? Effect.succeed(undefined) : ownedFile(resolved),
-        ),
-      ),
+        if (handle === undefined) return undefined
+        const declaration = yield* request("resolveModuleDeclaration", () => handle.resolve(native))
+        return declaration === undefined
+          ? undefined
+          : yield* ownedFile(declaration.getSourceFile().fileName)
+      }),
 
     unsafeNative: (use) =>
       Effect.andThen(

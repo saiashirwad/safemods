@@ -11,6 +11,40 @@ import { projectPath } from "../utils/domain.ts"
 const fixture = "migrations/move-module"
 
 describe("move-module", () => {
+  effect("asks the compiler which specifiers reach the moved file, whatever its extension", () =>
+    withFixture(
+      (root, app) =>
+        Effect.gen(function* () {
+          const input: MoveModuleInput = {
+            project: app,
+            from: projectPath("src/tools/clock.mts"),
+            to: projectPath("src/shared/clock.mts"),
+          }
+          const { verified } = yield* executeRecipe(moveModule, input)
+          expect(verified.diagnosticDiff.introduced).toHaveLength(0)
+
+          const user = yield* Effect.tryPromise(() =>
+            Fs.readFile(Path.join(root, "src/tools/user.mts"), "utf8"),
+          )
+          expect(user).toContain('from "../shared/clock.mjs"')
+          expect(user).toContain('from "./clock-utils.mjs"')
+        }),
+      {
+        fixture,
+        files: {
+          "src/tools/clock.mts": "export const now = (): number => Date.now()\n",
+          "src/tools/clock-utils.mts": "export const later = (ms: number): number => ms + 1\n",
+          "src/tools/user.mts": [
+            'import { now } from "./clock.mjs"',
+            'import { later } from "./clock-utils.mjs"',
+            "export const soon = later(now())",
+            "",
+          ].join("\n"),
+        },
+      },
+    ),
+  )
+
   effect("moves src/users/account.ts and rewrites relative importers", () =>
     withFixture(
       (root, app) =>

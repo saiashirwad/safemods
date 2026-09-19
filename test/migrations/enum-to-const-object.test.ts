@@ -42,6 +42,22 @@ describe("enum-to-const-object", () => {
     ),
   )
 
+  effect("ignores a same-named enum that is a different symbol", () =>
+    withFixture(
+      (root, app) =>
+        Effect.gen(function* () {
+          const { plan } = yield* executeRecipe(enumToConstObject, inputFor(app))
+          expect(plan.edits.map((edit) => edit.fileName)).toEqual(["src/status.ts"])
+          expect(
+            yield* Effect.tryPromise(() =>
+              Fs.readFile(Path.join(root, "src/other/status.ts"), "utf8"),
+            ),
+          ).toBe('export enum Status {\n  On = "on",\n}\n')
+        }),
+      { fixture, files: { "src/other/status.ts": 'export enum Status {\n  On = "on",\n}\n' } },
+    ),
+  )
+
   effect("rejects numeric, computed, and merged enums", () =>
     withFixture(
       (root, app) =>

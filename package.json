@@ -2,6 +2,9 @@
   "name": "safemods",
   "version": "0.2.0",
   "description": "Type-directed codemods for TypeScript 7+ projects, built on Effect.",
+  "bin": {
+    "safemods": "./dist/src/bin.js"
+  },
   "files": [
     "dist"
   ],
@@ -12,6 +15,11 @@
       "source": "./src/Application.ts",
       "types": "./dist/src/Application.d.ts",
       "default": "./dist/src/Application.js"
+    },
+    "./Check": {
+      "source": "./src/Check.ts",
+      "types": "./dist/src/Check.d.ts",
+      "default": "./dist/src/Check.js"
     },
     "./Draft": {
       "source": "./src/Draft.ts",
@@ -43,6 +51,11 @@
       "types": "./dist/src/Recipe.d.ts",
       "default": "./dist/src/Recipe.js"
     },
+    "./Type": {
+      "source": "./src/Type.ts",
+      "types": "./dist/src/Type.d.ts",
+      "default": "./dist/src/Type.js"
+    },
     "./Verification": {
       "source": "./src/Verification/index.ts",
       "types": "./dist/src/Verification/index.d.ts",
@@ -62,17 +75,18 @@
     "fmt": "oxfmt --disable-nested-config",
     "fmt:check": "oxfmt --check --disable-nested-config",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint && knip",
+    "lint": "oxlint && knip && pnpm safemods check",
     "prepare": "effect-tsgo patch --no-typescript --oxlint",
     "test": "vitest run",
-    "example": "node --conditions=source examples/run.ts"
+    "example": "node --conditions=source examples/run.ts",
+    "safemods": "node --conditions=source src/bin.ts"
   },
   "dependencies": {
+    "@effect/platform-node": "4.0.0-rc.109",
     "effect": "4.0.0-rc.109",
     "typescript": "7.0.2"
   },
   "devDependencies": {
-    "@effect/platform-node": "4.0.0-rc.109",
     "@effect/tsgo": "^0.36.5",
     "@effect/vitest": "4.0.0-rc.109",
     "@types/node": "26.2.0",

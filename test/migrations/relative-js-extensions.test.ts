@@ -14,6 +14,37 @@ const read = (root: string, relative: string) =>
   Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
 
 describe("relative-js-extensions", () => {
+  effect("names the project file a specifier reaches and reports the ones that reach none", () =>
+    withFixture(
+      (root) =>
+        Effect.gen(function* () {
+          const { plan, verified } = yield* executeRecipe(relativeJsExtensions, undefined)
+          expect(verified.diagnosticDiff.introduced).toHaveLength(0)
+
+          const extra = yield* read(root, "src/extra.ts")
+          expect(extra).toContain('from "./auth/index.js"')
+          expect(extra).toContain('from "./config.local.js"')
+          expect(extra).toContain('from "./missing"')
+          expect(plan.unsupported.map(({ fileName, reason }) => [fileName, reason])).toEqual([
+            ["src/extra.ts", "./missing names no project file"],
+          ])
+        }),
+      {
+        fixture,
+        files: {
+          "src/config.local.ts": "export const local = 1\n",
+          "src/extra.ts": [
+            'import { createSession } from "./auth"',
+            'import { local } from "./config.local"',
+            'import { gone } from "./missing"',
+            "export const extra = [createSession, local, gone]",
+            "",
+          ].join("\n"),
+        },
+      },
+    ),
+  )
+
   effect("adds .js extensions to relative import specifiers and is a no-op on rerun", () =>
     withFixture(
       (root) =>

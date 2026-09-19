@@ -3,7 +3,7 @@
  * Unsupported CommonJS-shaped statements are reported rather than guessed at.
  */
 import { Effect } from "effect"
-import { SyntaxKind, type Node, type Statement } from "typescript/unstable/ast"
+import { type CallExpression, SyntaxKind, type Node, type Statement } from "typescript/unstable/ast"
 import {
   isBinaryExpression,
   isCallExpression,
@@ -12,7 +12,6 @@ import {
   isIdentifier,
   isObjectBindingPattern,
   isPropertyAccessExpression,
-  isSourceFile,
   isStringLiteral,
   isVariableStatement,
 } from "typescript/unstable/ast/is"
@@ -37,15 +36,11 @@ const requireCall = (node: Node) =>
     ? node.arguments[0]
     : undefined
 
-const requireIsGlobal = (node: Node): boolean => {
-  let scope: Node = node
-  for (;;) {
-    const locals = (scope as Node & { readonly locals?: Map<string, unknown> }).locals
-    if (locals?.has("require")) return false
-    if (isSourceFile(scope)) return true
-    scope = scope.parent
-  }
-}
+const isGlobalRequire = ({ project, value }: Query.Selection<CallExpression>) =>
+  Effect.gen(function* () {
+    const symbol = yield* project.symbolOf(value.expression)
+    return symbol === undefined || (yield* project.declarationsOf(symbol)).length === 0
+  })
 
 const propertyName = (node: Node): string | undefined => {
   if (isPropertyAccessExpression(node)) return node.name.text
@@ -55,7 +50,10 @@ const propertyName = (node: Node): string | undefined => {
   return undefined
 }
 
-const importFor = (statement: Statement): string | undefined => {
+const importFor = (
+  statement: Statement,
+  requireIsGlobal: (node: Node) => boolean,
+): string | undefined => {
   if (isExpressionStatement(statement)) {
     const specifier = requireCall(statement.expression)
     return specifier !== undefined && requireIsGlobal(statement.expression)
@@ -149,17 +147,19 @@ export const commonJsToEsm = Recipe.define("commonjs-to-esm", {
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
       const project = yield* snapshot.project(input.project.id)
-      const moduleReferences = yield* Query.moduleReferences(project).pipe(Query.collect)
-      const globalRequires = new Set(
-        moduleReferences
-          .filter(({ value }) => value.kind === "require" && requireIsGlobal(value.node))
-          .map(({ value }) => value.node),
+      const globalRequires = new Set<Node>(
+        (yield* Query.calls(project).pipe(
+          Query.filter(({ value }) => requireCall(value) !== undefined),
+          Query.where(isGlobalRequire),
+          Query.collect,
+        )).map(({ value }) => value),
       )
+      const requireIsGlobal = (node: Node): boolean => globalRequires.has(node)
       const files = yield* project.files
       const drafts: Array<Draft.Draft> = []
       for (const file of files) {
         for (const statement of file.sourceFile.statements) {
-          const replacement = importFor(statement) ?? exportFor(statement)
+          const replacement = importFor(statement, requireIsGlobal) ?? exportFor(statement)
           if (replacement !== undefined) {
             drafts.push(Draft.replace(project, statement, replacement))
           } else if (

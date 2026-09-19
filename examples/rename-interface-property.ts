@@ -1,9 +1,13 @@
-/** Safely rename Account.displayName to Account.label using checker-resolved references. */
+/**
+ * Rename Account.displayName to Account.label. The checker decides which identifiers refer to
+ * the property, so same-named properties on other types are left alone.
+ */
 import { Effect } from "effect"
+import type { Identifier } from "typescript/unstable/ast"
 import {
   isBindingElement,
   isElementAccessExpression,
-  isPropertyAssignment,
+  isIdentifier,
   isPropertySignatureDeclaration,
   isShorthandPropertyAssignment,
   isStringLiteral,
@@ -18,6 +22,12 @@ const DECLARATION_FILE = ProjectRelativePath.schema.make("src/account.ts")
 const OLD_NAME = "displayName"
 const NEW_NAME = "label"
 
+const keepsLocalBinding = (node: Identifier): boolean =>
+  isShorthandPropertyAssignment(node.parent) ||
+  (isBindingElement(node.parent) &&
+    node.parent.name === node &&
+    node.parent.propertyName === undefined)
+
 export const renameInterfaceProperty = Recipe.define("rename-interface-property", {
   version: "1.0.0",
   policies: { idempotence: "required" },
@@ -27,96 +37,39 @@ export const renameInterfaceProperty = Recipe.define("rename-interface-property"
       const project = snapshot.projects[0]
       if (project === undefined) return Draft.empty
 
-      const declarations = yield* Query.identifiers(project).pipe(
+      const [declaration] = yield* Query.identifiers(project).pipe(
         Query.within(DECLARATION_FILE),
         Query.filter(
           ({ value }) => value.text === OLD_NAME && isPropertySignatureDeclaration(value.parent),
         ),
         Query.collect,
       )
-      const declaration = declarations[0]
       if (declaration === undefined) return Draft.empty
 
-      const [symbol] = yield* project.symbolsAt(DECLARATION_FILE, [declaration.start])
-      if (symbol === undefined) return Draft.empty
-      const references = yield* Query.semanticReferences(project).pipe(
-        Query.filter(({ value }) => value.node.text === OLD_NAME),
-        Query.where({
-          id: "resolves-to-property",
-          select: (selections) =>
-            Query.resolvesTo(symbol).select(
-              selections.map((selection) => ({ ...selection, value: selection.value.node })),
-            ),
-        }),
+      const references = yield* Query.referencesTo(declaration).pipe(
+        Query.filter((selection): selection is Query.Selection<Identifier> =>
+          isIdentifier(selection.value),
+        ),
         Query.collect,
       )
-      const contextual = yield* Query.semanticReferences(project).pipe(
-        Query.filter((selection) => {
-          const { value } = selection
-          if (value.node.text !== OLD_NAME) return false
-          const parent = value.node.parent
-          return (
-            isPropertyAssignment(parent) ||
-            isShorthandPropertyAssignment(parent) ||
-            isBindingElement(parent)
-          )
-        }),
+      const computed = yield* Query.nodes(project, isElementAccessExpression).pipe(
+        Query.filter(
+          ({ value }) =>
+            isStringLiteral(value.argumentExpression) && value.argumentExpression.text === OLD_NAME,
+        ),
         Query.collect,
       )
-      const selected = [
-        ...new Map(
-          [...references, ...contextual].map((selection) => [
-            `${selection.fileName}:${selection.start}`,
-            selection,
-          ]),
-        ).values(),
-      ]
 
       return Draft.concat(
-        ...selected.map((selection) => {
-          const node = selection.value.node
-          const parent = node.parent
-          const nodeSelection = { ...selection, value: node }
-
-          if (
-            isBindingElement(parent) &&
-            parent.name === node &&
-            parent.propertyName === undefined
-          ) {
-            return Draft.replaceSelection(nodeSelection, `${NEW_NAME}: ${OLD_NAME}`)
-          }
-          if (isShorthandPropertyAssignment(parent)) {
-            return Draft.replaceSelection(nodeSelection, `${NEW_NAME}: ${OLD_NAME}`)
-          }
-          if (
-            isPropertySignatureDeclaration(parent) ||
-            isPropertyAssignment(parent) ||
-            (isBindingElement(parent) && parent.propertyName === node) ||
-            selection.value.role === "property-name"
-          ) {
-            return Draft.replaceSelection(nodeSelection, NEW_NAME)
-          }
-          return Draft.unsupported(
-            nodeSelection,
-            `Account.${OLD_NAME} has an unsupported syntax shape`,
-          )
-        }),
-        ...(yield* Query.nodes(project, isElementAccessExpression).pipe(
-          Query.filter(
-            ({ value }) =>
-              isStringLiteral(value.argumentExpression) &&
-              value.argumentExpression.text === OLD_NAME,
+        Draft.replaceEach(references, ({ value }) =>
+          keepsLocalBinding(value) ? `${NEW_NAME}: ${OLD_NAME}` : NEW_NAME,
+        ),
+        ...computed.map((selection) =>
+          Draft.unsupported(
+            selection,
+            `Computed Account[${JSON.stringify(OLD_NAME)}] access requires manual review`,
           ),
-          Query.collect,
-          Effect.map((computed) =>
-            computed.map((selection) =>
-              Draft.unsupported(
-                selection,
-                `Computed Account[${JSON.stringify(OLD_NAME)}] access requires manual review`,
-              ),
-            ),
-          ),
-        )),
+        ),
       )
     }),
 })

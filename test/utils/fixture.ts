@@ -21,13 +21,23 @@ export const fixtureProject = (app: ConfiguredProject.Type) =>
 
 export const withFixture = <A, E, R>(
   use: (root: string, app: ConfiguredProject.Type) => Effect.Effect<A, E, R>,
-  options: { readonly fixture?: string; readonly files?: Record<string, string> } = {},
+  options: {
+    readonly fixture?: string
+    readonly files?: Record<string, string>
+    readonly dependencies?: boolean
+  } = {},
 ): Effect.Effect<A, unknown, Exclude<R, Workspace | NodeServices.NodeServices>> =>
   Effect.acquireUseRelease(
     Effect.tryPromise(async () => {
       const root = await Fs.mkdtemp(Path.join(Os.tmpdir(), "safemods-test-"))
       if (options.fixture !== "empty") {
         await Fs.cp(fixturePath(options.fixture ?? "recipe"), root, { recursive: true })
+      }
+      if (options.dependencies === true) {
+        await Fs.symlink(
+          fileURLToPath(new URL("../../node_modules", import.meta.url)),
+          Path.join(root, "node_modules"),
+        )
       }
       await Promise.all(
         Object.entries(options.files ?? {}).map(async ([fileName, content]) => {
@@ -52,13 +62,14 @@ export const withFixture = <A, E, R>(
 export const withProject = <A, E, R>(
   files: Record<string, string>,
   use: (project: ProjectSnapshot) => Effect.Effect<A, E, R>,
+  options: { readonly dependencies?: boolean } = {},
 ) =>
   withFixture(
     (_, app) =>
       Workspace.use((workspace) =>
         workspace.withSnapshot(Effect.flatMap(fixtureProject(app), use)),
       ),
-    { files },
+    { files, ...options },
   )
 
 export const read = (root: string, fileName: string): Effect.Effect<string> =>

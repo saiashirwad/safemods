@@ -1,11 +1,11 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Predicate } from "effect"
 import { and, refineKey } from "is-kit"
-import { SyntaxKind, type Expression, type Identifier } from "typescript/unstable/ast"
+import { SyntaxKind, type Expression, type Node } from "typescript/unstable/ast"
 import {
   isCallExpression,
   isFunctionDeclaration,
-  isNumericLiteral,
+  isPropertySignatureDeclaration,
 } from "typescript/unstable/ast/is"
 import * as Query from "../src/Query.ts"
 import { projectPath } from "./utils/domain.ts"
@@ -92,42 +92,15 @@ describe("queries", () => {
     ),
   )
 
-  effect("where admits only selections that satisfy the criterion", () =>
+  effect("where keeps the selections whose effectful test holds", () =>
     withProject({ "src/tiny.ts": "export const alpha = 1\nexport const beta = 2\n" }, (project) =>
       Effect.gen(function* () {
-        const isAlpha: Query.Criterion<Identifier> = {
-          id: "name-is-alpha",
-          select: (selections) =>
-            Effect.succeed(selections.map((selection) => selection.value.text === "alpha")),
-        }
         const surviving = yield* Query.identifiers(project).pipe(
           Query.within("src/tiny.ts"),
-          Query.where(isAlpha),
+          Query.where((selection) => Effect.succeed(selection.value.text === "alpha")),
           Query.collect,
         )
         expect(surviving.map((selection) => selection.value.text)).toEqual(["alpha"])
-      }),
-    ),
-  )
-
-  effect("where reports malformed criterion output as a typed error", () =>
-    withProject({}, (project) =>
-      Effect.gen(function* () {
-        const misaligned: Query.Criterion<Identifier> = {
-          id: "misaligned",
-          select: () => Effect.succeed([]),
-        }
-        const failure = yield* Query.identifiers(project).pipe(
-          Query.where(misaligned),
-          Query.collect,
-          Effect.flip,
-        )
-        expect(failure).toMatchObject({
-          _tag: "CriterionOutputError",
-          criterionId: "misaligned",
-          expected: expect.any(Number),
-          actual: 0,
-        })
       }),
     ),
   )
@@ -219,7 +192,7 @@ describe("queries", () => {
             Query.filter(({ value }) => value.text === "localThing"),
             Query.collect,
           ))[0]!
-          const [alias] = yield* project.symbolsAt(localThing.fileName, [localThing.start])
+          const alias = yield* project.symbolOf(localThing.value)
           const references = yield* Query.identifiers(project).pipe(
             Query.where(Query.resolvesTo(alias!)),
             Query.collect,
@@ -347,55 +320,170 @@ describe("queries", () => {
     ),
   )
 
-  effect("summarizes the overload selected for a call", () =>
+  const OVERLOAD_SOURCE = [
+    "export function parse(value: string): string",
+    "export function parse(value: number, radix: number): number",
+    "export function parse(value: string | number, radix?: number): string | number {",
+    '  return typeof value === "string" ? value : Number(value.toString(radix))',
+    "}",
+    "export const api = { parse }",
+    "",
+  ].join("\n")
+
+  effect("describes the overload the checker selected for a call", () =>
+    withProject(
+      { "src/overload.ts": `${OVERLOAD_SOURCE}export const result = parse(10, 16)\n` },
+      (project) =>
+        Effect.gen(function* () {
+          const [call] = yield* Query.calls(project).pipe(
+            Query.within("src/overload.ts"),
+            Query.filter(({ value }) => value.expression.getText() === "parse"),
+            Query.collect,
+          )
+          const signature = yield* project.resolvedSignature(call!.value)
+          const parameters = yield* project.parameterTypesOf(signature!)
+          const returned = yield* project.returnTypeOf(signature!)
+          expect(yield* Effect.forEach(parameters, (type) => project.typeToString(type!))).toEqual([
+            "number",
+            "number",
+          ])
+          expect(yield* project.typeToString(returned!)).toBe("number")
+        }),
+    ),
+  )
+
+  effect(
+    "resolvesToSignature matches calls by the overload they select, through any receiver",
+    () =>
+      withProject(
+        {
+          "src/overload.ts": OVERLOAD_SOURCE,
+          "src/overload-consumer.ts": [
+            'import { api, api as renamed, parse } from "./overload.js"',
+            'parse("text")',
+            "parse(10, 16)",
+            "api.parse(11, 2)",
+            "renamed.parse(12, 8)",
+            'api.parse("other")',
+            "const lookalike = { parse: (value: number, radix: number) => value + radix }",
+            "lookalike.parse(1, 2)",
+            "",
+          ].join("\n"),
+        },
+        (project) =>
+          Effect.gen(function* () {
+            const overloads = yield* Query.nodes(project, isFunctionDeclaration).pipe(
+              Query.within("src/overload.ts"),
+              Query.filter(
+                ({ value }) => value.body === undefined && value.parameters.length === 2,
+              ),
+              Query.collect,
+            )
+            expect(overloads).toHaveLength(1)
+            const calls = yield* Query.calls(project).pipe(
+              Query.where(Query.resolvesToSignature(overloads.map(({ value }) => value))),
+              Query.collect,
+            )
+            expect(calls.map(({ value }) => value.getText())).toEqual([
+              "parse(10, 16)",
+              "api.parse(11, 2)",
+              "renamed.parse(12, 8)",
+            ])
+          }),
+      ),
+  )
+
+  effect("typeAssignableTo judges the node itself, not its first token", () =>
     withProject(
       {
-        "src/overload.ts": [
-          "function parse(value: string): string",
-          "function parse(value: number, radix: number): number",
-          "function parse(value: string | number, radix?: number): string | number {",
-          '  return typeof value === "string" ? value : Number(value.toString(radix))',
-          "}",
-          "export const result = parse(10, 16)",
+        "src/typed.ts": [
+          'const label = "abc" as string',
+          "export const a = Number(label)",
+          "export const b = label.toUpperCase()",
+          'export const c = label.indexOf("b")',
           "",
         ].join("\n"),
       },
       (project) =>
         Effect.gen(function* () {
-          const calls = yield* Query.calls(project).pipe(
-            Query.within("src/overload.ts"),
-            Query.filter(({ value }) => value.expression.getText() === "parse"),
-            Query.collect,
-          )
-          const summary = yield* project.resolvedCallSignature(calls[0]!.value)
-          expect(summary).toMatchObject({
-            parameters: [
-              { name: "value", type: "number" },
-              { name: "radix", type: "number" },
-            ],
-            returnType: "number",
-            hasRestParameter: false,
-          })
+          const callsAssignableTo = (target: "number" | "string") =>
+            Query.calls(project).pipe(
+              Query.within("src/typed.ts"),
+              Query.where(Query.typeAssignableTo(target)),
+              Query.collect,
+              Effect.map((calls) => calls.map(({ value }) => value.getText())),
+            )
+          expect(yield* callsAssignableTo("number")).toEqual([
+            "Number(label)",
+            'label.indexOf("b")',
+          ])
+          expect(yield* callsAssignableTo("string")).toEqual(["label.toUpperCase()"])
         }),
     ),
   )
 
-  effect("typeAssignableTo admits nodes by their checked type", () =>
-    withProject({ "src/sem.ts": SEM_SOURCE }, (project) =>
-      Effect.gen(function* () {
-        const literals = Query.nodes(project, isNumericLiteral).pipe(Query.within("src/sem.ts"))
-        const numbers = yield* literals.pipe(
-          Query.where(Query.typeAssignableTo("number")),
-          Query.collect,
-        )
-        expect(numbers.map((selection) => selection.value.text)).toEqual(["1", "1"])
+  effect("typed pairs each node with its checked type", () =>
+    withProject(
+      { "src/typed.ts": 'export const parsed = JSON.parse("1")\nexport const size = "x".length\n' },
+      (project) =>
+        Effect.gen(function* () {
+          const calls = yield* Query.calls(project).pipe(
+            Query.within("src/typed.ts"),
+            Query.typed,
+            Query.collect,
+          )
+          expect(
+            yield* Effect.forEach(calls, ({ value }) =>
+              Effect.map(project.typeToString(value.type), (type) => [value.node.getText(), type]),
+            ),
+          ).toEqual([['JSON.parse("1")', "any"]])
+        }),
+    ),
+  )
 
-        const strings = yield* literals.pipe(
-          Query.where(Query.typeAssignableTo("string")),
-          Query.collect,
-        )
-        expect(strings).toEqual([])
-      }),
+  effect("referencesTo follows the checker, not the spelling", () =>
+    withProject(
+      {
+        "src/account.ts": [
+          "export interface Account { readonly displayName: string }",
+          "/** See {@link Account.displayName}. */",
+          'export const primary: Account = { displayName: "Ada" }',
+          "",
+        ].join("\n"),
+        "src/account-consumer.ts": [
+          'import { type Account, primary } from "./account.js"',
+          "export const direct = primary.displayName",
+          "export const destructured = ({ displayName }: Account) => displayName",
+          "interface Other { displayName: string }",
+          'export const other: Other = { displayName: "unrelated" }',
+          'export const headers: Record<string, string> = { displayName: "unrelated" }',
+          "export const read = headers.displayName",
+          "",
+        ].join("\n"),
+      },
+      (project) =>
+        Effect.gen(function* () {
+          const [declaration] = yield* Query.identifiers(project).pipe(
+            Query.within("src/account.ts"),
+            Query.filter(
+              ({ value }) =>
+                value.text === "displayName" && isPropertySignatureDeclaration(value.parent),
+            ),
+            Query.collect,
+          )
+          const references = yield* Query.referencesTo(declaration!).pipe(Query.collect)
+          const lineOf = (selection: Query.Selection<Node>) =>
+            selection.value.getSourceFile().text.slice(0, selection.start).split("\n").length
+          expect(
+            references.map((selection) => `${selection.fileName}:${lineOf(selection)}`),
+          ).toEqual([
+            "src/account-consumer.ts:2",
+            "src/account-consumer.ts:3",
+            "src/account.ts:1",
+            "src/account.ts:2",
+            "src/account.ts:3",
+          ])
+        }),
     ),
   )
 })

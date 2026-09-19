@@ -45,6 +45,9 @@ describe("overloaded-method", () => {
           expect(actual).toContain('client.lookup("already-promise")')
           expect(actual).toContain("client.lookup(...keys, done)")
           expect(actual).toContain('unrelated.lookup("unrelated", done)')
+          expect(yield* read(root, "src/lookalike.ts")).toBe(
+            yield* read(fixturePath(fixture), "src/lookalike.ts"),
+          )
 
           const second = yield* Recipe.run(overloadedMethod, input)
           expect(second.edits).toHaveLength(0)

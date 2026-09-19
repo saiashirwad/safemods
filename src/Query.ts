@@ -1,5 +1,5 @@
 import { matchesGlob } from "node:path"
-import { Data, Effect, Order, Predicate, Stream } from "effect"
+import { Effect, Option, Order, Predicate, Stream } from "effect"
 import {
   type CallExpression,
   type Identifier,
@@ -52,28 +52,6 @@ export interface Selection<A> {
 export type Query<A, E = never, R = never> = Stream.Stream<Selection<A>, E, R>
 
 export type Scope = ProjectSnapshot | ReadonlyArray<ProjectFile>
-
-export interface Criterion<A, E = never, R = never> {
-  readonly id: string
-  readonly select: (
-    selections: ReadonlyArray<Selection<A>>,
-  ) => Effect.Effect<ReadonlyArray<boolean>, E, R>
-}
-
-export class CriterionOutputError extends Data.TaggedError("CriterionOutputError")<{
-  readonly criterionId: string
-  readonly expected: number
-  readonly actual: number
-}> {}
-
-const validateAnswers = (
-  criterionId: string,
-  expected: number,
-  answers: ReadonlyArray<boolean>,
-): Effect.Effect<ReadonlyArray<boolean>, CriterionOutputError> =>
-  answers.length === expected
-    ? Effect.succeed(answers)
-    : Effect.fail(new CriterionOutputError({ criterionId, expected, actual: answers.length }))
 
 const isFiles = (scope: Scope): scope is ReadonlyArray<ProjectFile> => Array.isArray(scope)
 
@@ -206,11 +184,10 @@ export const resolvedModuleReferences = (
 ): Query<ResolvedModuleReference, ProjectSnapshotError> =>
   moduleReferences(scope).pipe(
     Stream.mapEffect((selection) =>
-      selection.project
-        .resolvedModule(selection.fileName, selection.value.specifier.getStart())
-        .pipe(
-          Effect.map((resolved) => ({ ...selection, value: { ...selection.value, resolved } })),
-        ),
+      Effect.map(selection.project.resolvedModule(selection.value.specifier), (resolved) => ({
+        ...selection,
+        value: { ...selection.value, resolved },
+      })),
     ),
   )
 
@@ -300,18 +277,16 @@ export const within =
     )
 
 export const where =
-  <A, E2, R2>(criterion: Criterion<A, E2, R2>) =>
-  <E, R>(self: Query<A, E, R>): Query<A, E | E2 | CriterionOutputError, R | R2> =>
+  <A, E2, R2>(test: (selection: Selection<A>) => Effect.Effect<boolean, E2, R2>) =>
+  <E, R>(self: Query<A, E, R>): Query<A, E | E2, R | R2> =>
     self.pipe(
-      Stream.grouped(128),
-      Stream.mapEffect((batch) =>
-        Effect.gen(function* () {
-          const matches = yield* criterion.select(batch)
-          yield* validateAnswers(criterion.id, batch.length, matches)
-          return batch.filter((_, index) => matches[index])
-        }),
+      Stream.mapEffect(
+        (selection) =>
+          Effect.map(test(selection), (keep) => (keep ? Option.some(selection) : Option.none())),
+        { concurrency: "unbounded" },
       ),
-      Stream.flatMap(Stream.fromIterable),
+      Stream.filter(Option.isSome),
+      Stream.map((kept) => kept.value),
     )
 
 export const collect = <A, E, R>(
@@ -327,82 +302,86 @@ export const collect = <A, E, R>(
     ),
   )
 
-const perFile =
-  <A extends Node, E>(
-    criterionId: string,
-    selectFile: (
-      project: ProjectSnapshot,
-      fileName: ProjectRelativePath.Type,
-      values: ReadonlyArray<A>,
-    ) => Effect.Effect<ReadonlyArray<boolean>, E>,
-  ): Criterion<A, E | CriterionOutputError>["select"] =>
-  (selections) =>
+const selectionOf = <A extends Node>(
+  project: ProjectSnapshot,
+  node: A,
+): Option.Option<Selection<A>> =>
+  Option.map(project.fileNameOf(node.getSourceFile()), (fileName) => ({
+    value: node,
+    project,
+    fileName,
+    start: node.getStart(node.getSourceFile()),
+    end: node.getEnd(),
+  }))
+
+export const referencesTo = (selection: Selection<Node>): Query<Node, ProjectSnapshotError> =>
+  Stream.fromIterableEffect(
+    Effect.map(selection.project.referencesTo(selection.value), (nodes) =>
+      nodes.flatMap((node) => Option.toArray(selectionOf(selection.project, node))),
+    ),
+  )
+
+export interface TypedNode<A extends Node> {
+  readonly node: A
+  readonly type: NativeType
+}
+
+export const typed = <A extends Node, E, R>(
+  self: Query<A, E, R>,
+): Query<TypedNode<A>, E | ProjectSnapshotError, R> =>
+  self.pipe(
+    Stream.mapEffect(
+      (selection) =>
+        Effect.map(selection.project.typeOf(selection.value), (type) =>
+          type === undefined
+            ? Option.none()
+            : Option.some({ ...selection, value: { node: selection.value, type } }),
+        ),
+      { concurrency: "unbounded" },
+    ),
+    Stream.filter(Option.isSome),
+    Stream.map((kept) => kept.value),
+  )
+
+export const resolvesTo =
+  <A extends Node>(
+    symbol: NativeSymbol,
+    options?: { readonly location?: (candidate: A) => Node },
+  ) =>
+  ({ project, value }: Selection<A>): Effect.Effect<boolean, ProjectSnapshotError> =>
     Effect.gen(function* () {
-      const matches = new Map<Selection<A>, boolean>()
-      const groups = Map.groupBy(selections, (selection) => selection.project)
-      for (const [project, inProject] of groups) {
-        for (const [fileName, group] of Map.groupBy(inProject, (selection) => selection.fileName)) {
-          const answers = yield* selectFile(
-            project,
-            fileName,
-            group.map((selection) => selection.value),
-          )
-          yield* validateAnswers(criterionId, group.length, answers)
-          group.forEach((selection, index) => matches.set(selection, answers[index]!))
-        }
-      }
-      return selections.map((selection) => matches.get(selection)!)
+      const candidate = yield* project.symbolOf(options?.location?.(value) ?? value)
+      if (candidate === undefined) return false
+      return (
+        (yield* project.canonicalSymbol(candidate)) === (yield* project.canonicalSymbol(symbol))
+      )
     })
 
-const startOf = (node: Node): number => node.getStart(node.getSourceFile())
+const sameNode = (left: Node, right: Node): boolean =>
+  left.pos === right.pos &&
+  left.end === right.end &&
+  left.kind === right.kind &&
+  left.getSourceFile().fileName === right.getSourceFile().fileName
 
-export const resolvesTo = <A extends Node>(
-  symbol: NativeSymbol,
-  options?: { readonly location?: (candidate: A) => Node },
-): Criterion<A, ProjectSnapshotError | CriterionOutputError> => {
-  const targets = new Map<ProjectSnapshot, NativeSymbol>()
-  return {
-    id: "resolves-to-symbol",
-    select: perFile("resolves-to-symbol", (project, fileName, values) =>
-      Effect.gen(function* () {
-        let target = targets.get(project)
-        if (target === undefined) {
-          target = yield* project.canonicalSymbol(symbol)
-          targets.set(project, target)
-        }
-        const located = values.map((value) => options?.location?.(value) ?? value)
-        const symbols = yield* project.symbolsAt(fileName, located.map(startOf))
-        const canonical = new Map<NativeSymbol, NativeSymbol>()
-        for (const candidate of new Set(symbols)) {
-          if (candidate !== undefined) {
-            canonical.set(candidate, yield* project.canonicalSymbol(candidate))
-          }
-        }
-        return symbols.map(
-          (candidate) => candidate !== undefined && canonical.get(candidate) === target,
-        )
-      }),
-    ),
-  }
-}
+export const resolvesToSignature =
+  (declarations: ReadonlyArray<Node>) =>
+  ({ project, value }: Selection<CallExpression>): Effect.Effect<boolean, ProjectSnapshotError> =>
+    Effect.gen(function* () {
+      const signature = yield* project.resolvedSignature(value)
+      if (signature === undefined) return false
+      const resolved = yield* project.signatureDeclaration(signature)
+      return (
+        resolved !== undefined &&
+        declarations.some((declaration) => sameNode(declaration, resolved))
+      )
+    })
 
-export const typeAssignableTo = <A extends Node>(
-  target: NativeType | IntrinsicTypeName,
-): Criterion<A, ProjectSnapshotError | CriterionOutputError> => {
-  const label = Predicate.isString(target) ? target : "custom-type"
-  return {
-    id: `type-assignable-to:${label}`,
-    select: perFile(`type-assignable-to:${label}`, (project, fileName, values) =>
-      Effect.gen(function* () {
-        const expected = Predicate.isString(target) ? yield* project.intrinsicType(target) : target
-        const types = yield* project.typesAt(fileName, values.map(startOf))
-        return yield* Effect.forEach(types, (type) =>
-          Effect.gen(function* () {
-            if (type === undefined) return false
-            return yield* project.isTypeAssignableTo(type, expected)
-          }),
-        )
-      }),
-    ),
-  }
-}
+export const typeAssignableTo =
+  <A extends Node>(target: NativeType | IntrinsicTypeName) =>
+  ({ project, value }: Selection<A>): Effect.Effect<boolean, ProjectSnapshotError> =>
+    Effect.gen(function* () {
+      const type = yield* project.typeOf(value)
+      if (type === undefined) return false
+      const expected = Predicate.isString(target) ? yield* project.intrinsicType(target) : target
+      return yield* project.isTypeAssignableTo(type, expected)
+    })

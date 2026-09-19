@@ -32,7 +32,11 @@ describe("rename-interface-property", () => {
           expect(consumer).toContain("({ label: label }: Account) => label")
           expect(consumer).toContain("{ label: account.label, id: account.id }")
           expect(consumer).toContain('({ label: displayName, id: "acc_3" })')
+          expect(consumer).toContain('const unrelated: Other = { displayName: "unrelated" }')
           expect(consumer).toContain("unrelated.displayName")
+          expect(consumer).toContain("({ displayName }: Other) => displayName")
+          expect(consumer).toContain('Record<string, string> = { displayName: "header" }')
+          expect(consumer).toContain("headers.displayName")
           expect(consumer).toContain('["displayName"]')
 
           const second = yield* Recipe.run(renameInterfaceProperty, undefined)

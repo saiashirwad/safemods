@@ -21,6 +21,68 @@ const exists = (root: string, relative: string) =>
   )
 
 describe("split-module", () => {
+  effect("derives the split from the source and keeps everything else in its consumers", () =>
+    withFixture(
+      (root, project) =>
+        Effect.gen(function* () {
+          const { verified } = yield* executeRecipe(splitModule, { project })
+          expect(verified.diagnosticDiff.introduced).toHaveLength(0)
+
+          expect(yield* read(root, "src/accounts/model.ts")).toContain("export interface Plan {")
+          const service = yield* read(root, "src/accounts/service.ts")
+          expect(service).toContain('import type { Account, AccountId } from "./model.js"')
+          expect(service).toContain("export const countAccounts = (): number => accounts.size")
+          expect(yield* read(root, "src/accounts/index.ts")).toBe(
+            'export type { Account, AccountId, Plan } from "./model.js"\n' +
+              'export { findAccount, saveAccount, countAccounts } from "./service.js"\n',
+          )
+          expect(yield* read(root, "src/reports/usage.ts")).toBe(
+            [
+              "import type { Plan as AccountPlan } from '../accounts/model.js';",
+              "import { countAccounts } from '../accounts/service.js';",
+              "",
+              "export const usage = (plan: AccountPlan): string => `${plan.name}: ${countAccounts()}`",
+              "",
+            ].join("\n"),
+          )
+        }),
+      {
+        fixture,
+        files: {
+          "src/accounts.ts": [
+            "export interface Account {",
+            "  readonly id: string",
+            "  readonly email: string",
+            "}",
+            "",
+            'export type AccountId = Account["id"]',
+            "",
+            "export interface Plan {",
+            "  readonly name: string",
+            "}",
+            "",
+            "const accounts = new Map<AccountId, Account>()",
+            "",
+            "export const findAccount = (id: AccountId): Account | undefined => accounts.get(id)",
+            "",
+            "export const saveAccount = (account: Account): void => {",
+            "  accounts.set(account.id, account)",
+            "}",
+            "",
+            "export const countAccounts = (): number => accounts.size",
+            "",
+          ].join("\n"),
+          "src/reports/usage.ts": [
+            "import { type Plan as AccountPlan, countAccounts } from '../accounts.js';",
+            "",
+            "export const usage = (plan: AccountPlan): string => `${plan.name}: ${countAccounts()}`",
+            "",
+          ].join("\n"),
+        },
+      },
+    ),
+  )
+
   effect("splits a mixed module and coordinates its consumers", () =>
     withFixture(
       (root, project) =>
@@ -28,7 +90,7 @@ describe("split-module", () => {
           const input: SplitModuleInput = { project }
           const { plan, verified } = yield* executeRecipe(splitModule, input)
 
-          expect(plan.edits).toHaveLength(3)
+          expect(plan.edits).toHaveLength(4)
           expect(plan.fileOperations).toHaveLength(4)
           expect(verified.diagnosticDiff.introduced).toHaveLength(0)
           expect(verified.diagnosticDiff.resolved).toHaveLength(0)

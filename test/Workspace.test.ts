@@ -11,6 +11,8 @@ import {
   WorkspaceSnapshot,
   layer as workspaceLayer,
 } from "../src/Workspace/index.ts"
+import { isObjectLiteralExpression } from "typescript/unstable/ast/is"
+import * as Query from "../src/Query.ts"
 import { projectPath } from "./utils/domain.ts"
 import { fixturePath, fixtureProject, withFixture, withProject, write } from "./utils/fixture.ts"
 
@@ -223,6 +225,48 @@ describe("workspace snapshots", () => {
         const missing = yield* Effect.flip(named("absent", "src/library.ts"))
         expect(missing._tag).toBe("SymbolNotFound")
       }),
+    ),
+  )
+
+  effect("answers what an expression is expected to be and where a symbol is declared", () =>
+    withProject(
+      {
+        "src/expected.ts": [
+          "interface Row { readonly id: string; readonly label: string }",
+          "const save = (row: Row): string => row.id",
+          'export const saved = save({ id: "1", label: "first" })',
+          "export const parsed = JSON.parse",
+          "",
+        ].join("\n"),
+      },
+      (project) =>
+        Effect.gen(function* () {
+          const [literal] = yield* Query.nodes(project, isObjectLiteralExpression).pipe(
+            Query.within("src/expected.ts"),
+            Query.collect,
+          )
+          const expected = yield* project.contextualTypeOf(literal!.value)
+          expect(yield* project.typeToString(expected!)).toBe("Row")
+          expect((yield* project.propertiesOf(expected!)).map((property) => property.name)).toEqual(
+            ["id", "label"],
+          )
+
+          const declaredIn = (name: string) =>
+            Effect.gen(function* () {
+              const uses = yield* Query.identifiers(project).pipe(
+                Query.within("src/expected.ts"),
+                Query.filter(({ value }) => value.text === name),
+                Query.collect,
+              )
+              const symbol = yield* project.symbolOf(uses.at(-1)!.value)
+              const declarations = yield* project.declarationsOf(symbol!)
+              return declarations.map((declaration) =>
+                Option.getOrUndefined(project.fileNameOf(declaration.getSourceFile())),
+              )
+            })
+          expect(yield* declaredIn("save")).toEqual(["src/expected.ts"])
+          expect(yield* declaredIn("JSON")).toEqual([])
+        }),
     ),
   )
 

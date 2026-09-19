@@ -12,6 +12,39 @@ const fixture = "migrations/default-to-named"
 const fixturePath = fixtureDirectory(fixture)
 
 describe("default-to-named", () => {
+  effect("rewrites re-exports by where they resolve, not by how the specifier is spelled", () =>
+    withFixture(
+      (root, app) =>
+        Effect.gen(function* () {
+          const input: DefaultToNamedInput = {
+            project: app,
+            declarationFile: projectPath("src/auth/authenticate.ts"),
+            exportName: "authenticate",
+          }
+          const { verified } = yield* executeRecipe(defaultToNamed, input)
+          expect(verified.diagnosticDiff.introduced).toHaveLength(0)
+
+          const read = (relative: string) =>
+            Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
+          expect(yield* read("src/auth/aliased.ts")).toBe(
+            'export { authenticate as signIn } from "./authenticate.js"\n',
+          )
+          expect(yield* read("src/legacy/index.ts")).toBe(
+            'export { default as authenticate } from "./authenticate.js"\n',
+          )
+        }),
+      {
+        fixture,
+        files: {
+          "src/auth/aliased.ts": 'export { default as signIn } from "./authenticate.js"\n',
+          "src/legacy/authenticate.ts":
+            'export default function legacy(): string {\n  return "legacy"\n}\n',
+          "src/legacy/index.ts": 'export { default as authenticate } from "./authenticate.js"\n',
+        },
+      },
+    ),
+  )
+
   effect("converts authenticate from a default export to a named export", () =>
     withFixture(
       (root, app) =>

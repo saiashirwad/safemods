@@ -13,7 +13,6 @@ import {
   isImportDeclaration,
   isNamedExports,
   isNamedImports,
-  isStringLiteral,
 } from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
 import type * as ProjectRelativePath from "safemods/ProjectRelativePath"
@@ -28,21 +27,8 @@ export interface DefaultToNamedInput {
   readonly exportName: string
 }
 
-const pointsAtDeclaration = (specifier: string, declarationFile: string): boolean => {
-  const modulePath = declarationFile.replace(/\.ts$/, ".js")
-  const baseName = modulePath.slice(modulePath.lastIndexOf("/") + 1)
-  return (
-    specifier === `./${baseName}` || specifier === modulePath || specifier.endsWith(`/${baseName}`)
-  )
-}
-
 const namedBinding = (localName: string, exportName: string): string =>
   localName === exportName ? exportName : `${exportName} as ${localName}`
-
-const rewriteDefaultReexport = (source: string, exportName: string): string => {
-  const aliased = source.replace(`default as ${exportName}`, exportName)
-  return aliased === source ? source.replace("{ default }", `{ ${exportName} }`) : aliased
-}
 
 const isDefaultImport = and(
   isImportDeclaration,
@@ -83,26 +69,21 @@ export const defaultToNamed = Recipe.define("default-to-named", {
         Query.collect,
       )
 
-      const defaultReexports = yield* Query.nodes(project, isExportDeclaration).pipe(
-        Query.filter(({ value }) => {
-          if (
-            value.moduleSpecifier === undefined ||
-            !isStringLiteral(value.moduleSpecifier) ||
-            !pointsAtDeclaration(value.moduleSpecifier.text, input.declarationFile)
-          ) {
-            return false
-          }
-          const clause = value.exportClause
-          return (
-            clause !== undefined &&
-            isNamedExports(clause) &&
-            clause.elements.some(
-              (element) => (element.propertyName ?? element.name).getText() === "default",
-            )
-          )
-        }),
+      const reexports = yield* Query.resolvedModuleReferences(project).pipe(
+        Query.filter(
+          ({ value }) =>
+            value.kind === "export" && value.resolved?.fileName === input.declarationFile,
+        ),
         Query.collect,
       )
+      const defaultSpecifiers = reexports.flatMap(({ project, value }) => {
+        const clause = isExportDeclaration(value.node) ? value.node.exportClause : undefined
+        return clause === undefined || !isNamedExports(clause)
+          ? []
+          : clause.elements
+              .filter((element) => (element.propertyName ?? element.name).getText() === "default")
+              .map((element) => ({ project, element }))
+      })
 
       return Draft.concat(
         Draft.replaceEach(defaultFunctions, ({ value }) =>
@@ -123,8 +104,14 @@ export const defaultToNamed = Recipe.define("default-to-named", {
             return Draft.replace(project, clause, `{ ${binding} }`)
           }),
         ),
-        Draft.replaceEach(defaultReexports, ({ value }) =>
-          rewriteDefaultReexport(value.getText(), input.exportName),
+        ...defaultSpecifiers.map(({ project, element }) =>
+          Draft.replace(
+            project,
+            element,
+            element.propertyName === undefined
+              ? input.exportName
+              : namedBinding(element.name.getText(), input.exportName),
+          ),
         ),
       )
     }),

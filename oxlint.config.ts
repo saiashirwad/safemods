@@ -28,7 +28,7 @@ export default defineConfig({
   },
   overrides: [
     {
-      files: ["examples/**/*.ts", "test/**/*.ts"],
+      files: ["examples/**/*.ts", "checks/**/*.ts", "safemods.config.ts", "test/**/*.ts"],
       rules: {
         "import/namespace": "off",
       },
