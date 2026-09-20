@@ -136,10 +136,27 @@ A check listed under `comparisons` sees both versions at once. `--since` gives i
 | `unusedOptionalParameters` | an optional parameter no caller passes; silent when the function is used other than by calling it, since not every caller is visible then              |
 | `ignoredReturns`           | a function whose return value every caller drops                                                                                                       |
 | `duplicatedFunctions`      | the same function body written out in more than one file                                                                                               |
+| `importCycles`             | an import that leads back to its own file; `typeImports` decides whether `import type` edges count                                                     |
+| `oversized`                | a function over a line or parameter limit, a file over a line limit                                                                                    |
+| `anyInPublicApi`           | a public export whose type contains `any`, followed through namespace re-exports                                                                       |
+| `suppressions`             | `@ts-ignore`, `@ts-expect-error`, lint-disable comments and `!` assertions                                                                             |
 
 `apiCompatibility` stays quiet about an export whose own printed shape is unchanged: that is ripple from a type it mentions, and the type itself is reported. For an interface the message names the members that were removed, changed and added. It cannot see a change confined to a call signature or to a class's instance members.
 
 This repository runs all of them on itself in `pnpm lint` (see `safemods.config.ts`), against the six deliberate casts recorded in `safemods.known.json`, and runs `apiCompatibility` with `pnpm safemods check --since main`.
+
+## Asking the compiler
+
+The same config answers questions, for a person or an agent that would otherwise grep and read files:
+
+```sh
+safemods map                         # every file: lines, exports, how many files import it
+safemods deps src/Query.ts           # what it imports and what imports it
+safemods exports src/Query.ts        # its exports with their types
+safemods type src/Query.ts:279:14    # the type and declaration of what is there
+safemods refs src/Query.ts:279:14    # every reference, through aliases and re-exports
+safemods calls src/Query.ts:279:14   # every direct call, and whether other uses exist
+```
 
 ## Reading the code
 
@@ -171,6 +188,7 @@ Each module depends only on the ones above it.
 | `Recipe`                                     | define a transformation; `run` turns its draft into a plan           |
 | `Verification`                               | preview exact bytes, diff diagnostics, replay, issue a verified plan |
 | `Application`                                | write a verified plan, refusing stale files and symlink escapes      |
+| `Inspect`                                    | answers for `map`, `deps`, `exports`, `type`, `refs` and `calls`     |
 | `bin`                                        | the `safemods` command                                               |
 
 Application checks real paths immediately before each mutation. The portable filesystem API does not offer directory handles or atomic no-follow operations, so this confines normal symlink layouts but cannot guarantee safety against a hostile process swapping symlinks between a check and mutation.

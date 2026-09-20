@@ -83,10 +83,9 @@ const policyFailure = (
   }
   const errors = diff.introduced.filter((diagnostic) => diagnostic.category === "error")
   if (diagnostics === "no-new-errors" && errors.length > 0) {
-    const summary = errors.map((error) => `TS${error.code}: ${error.message}`).join("; ")
     return {
       policy: "diagnostics",
-      detail: `Introduced ${errors.length} new error diagnostic(s): ${summary}`,
+      detail: `Introduced ${errors.length} new error diagnostic(s)`,
       diagnostics: errors,
     }
   }

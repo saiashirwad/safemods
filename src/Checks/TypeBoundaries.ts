@@ -9,7 +9,7 @@ import type {
   ProjectSnapshot,
   ProjectSnapshotError,
 } from "../Workspace/index.ts"
-import { declarationIn, filesWithin, typeOf } from "./Exported.ts"
+import { declarationIn, filesWithin } from "./Exported.ts"
 
 interface Forbidden {
   readonly files?: ReadonlyArray<string> | undefined
@@ -68,7 +68,7 @@ const reportsIn = (project: ProjectSnapshot, file: ProjectFile, place: Place) =>
       ({ name, symbol }) =>
         Effect.gen(function* () {
           const at = yield* declarationIn(project, symbol, file)
-          const type = yield* typeOf(project, symbol)
+          const type = yield* Type.ofSymbol(project, symbol)
           if (at === undefined || type === undefined) return []
           const leaked = yield* Type.mentions(project, type, (candidate) =>
             Effect.map(place(candidate), Option.isSome),

@@ -6,10 +6,11 @@ import {
   type Type as NativeType,
 } from "typescript/unstable/async"
 import * as Check from "../Check.ts"
+import * as Type from "../Type.ts"
 import { Comparison, previousMarker } from "../Comparison.ts"
 import * as ProjectRelativePath from "../ProjectRelativePath.ts"
 import type { ProjectFile, ProjectSnapshot } from "../Workspace/index.ts"
-import { declarationIn, typeOf } from "./Exported.ts"
+import { declarationIn } from "./Exported.ts"
 
 const withoutIds = (printed: string): string =>
   printed.replaceAll(/@\d+/g, "").replaceAll(previousMarker, "")
@@ -93,7 +94,7 @@ const changeIn = (
   Effect.gen(function* () {
     const at = yield* declarationIn(project, now, file)
     if (at === undefined) return []
-    const types = yield* Effect.all([typeOf(project, was), typeOf(project, now)], {
+    const types = yield* Effect.all([Type.ofSymbol(project, was), Type.ofSymbol(project, now)], {
       concurrency: "unbounded",
     })
     const [wasType, nowType] = types

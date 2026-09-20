@@ -3,6 +3,7 @@ import { Context, Data, Effect, FileSystem, Layer, type PlatformError } from "ef
 import { API } from "typescript/unstable/async"
 import * as FileRef from "../FileRef.ts"
 import type * as ProjectId from "../ProjectId.ts"
+import * as ProjectRelativePath from "../ProjectRelativePath.ts"
 import { nativeRequest, WorkspaceCompilerError } from "./NativeRequest.ts"
 import * as Overlay from "./Overlay.ts"
 import * as ProjectSnapshot from "./ProjectSnapshot.ts"
@@ -169,7 +170,10 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
               const configFile = configFiles.get(configured.id)!
               FileRef.set(
                 captured,
-                { projectId: configured.id, fileName: configured.config },
+                {
+                  projectId: configured.id,
+                  fileName: ProjectRelativePath.schema.make(Path.basename(configFile)),
+                },
                 yield* fs.readFile(configFile),
               )
               for (const file of yield* project.files) {

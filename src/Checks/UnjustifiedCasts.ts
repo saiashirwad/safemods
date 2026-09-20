@@ -22,6 +22,15 @@ export const unjustifiedCasts = (options: { readonly within: string }) =>
             const from = yield* project.typeOf(cast.value.expression)
             const to = yield* project.typeOf(cast.value)
             if (from === undefined || to === undefined) return []
+            if (Type.isAny(to) && !isUntyped(from)) {
+              const erased = brief(yield* project.typeToString(from))
+              return [
+                Check.report(
+                  cast,
+                  `erases ${erased} to any: keep the type, or fix the signature that rejects it`,
+                ),
+              ]
+            }
             if (isUntyped(from) ? isUntyped(to) : yield* project.isTypeAssignableTo(from, to)) {
               return []
             }

@@ -34,6 +34,8 @@ const diagnostic = (overrides: Partial<DiagnosticRecord>): DiagnosticRecord => (
   fileName: "a.ts",
   start: 10,
   length: 3,
+  line: 1,
+  column: 11,
   ...overrides,
 })
 

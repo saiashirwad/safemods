@@ -8,4 +8,5 @@ export type {
   PublicPlanPreview,
   VerifiedPlan,
 } from "./VerifiedPlan.ts"
+export { actionOf } from "./VerifiedPlan.ts"
 export { verify } from "./Verify.ts"

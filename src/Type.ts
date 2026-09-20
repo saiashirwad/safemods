@@ -1,6 +1,20 @@
 import { Effect, Option } from "effect"
-import { ObjectFlags, TypeFlags, type Type as NativeType } from "typescript/unstable/async"
+import {
+  ObjectFlags,
+  SymbolFlags,
+  type Symbol as NativeSymbol,
+  TypeFlags,
+  type Type as NativeType,
+} from "typescript/unstable/async"
 import type { ProjectSnapshot, ProjectSnapshotError } from "./Workspace/index.ts"
+
+export const ofSymbol = (
+  project: ProjectSnapshot,
+  symbol: NativeSymbol,
+): Effect.Effect<NativeType | undefined, ProjectSnapshotError> =>
+  (symbol.flags & SymbolFlags.Value) === 0
+    ? project.declaredTypeOfSymbol(symbol)
+    : project.typeOfSymbol(symbol)
 
 export const isAny = (type: NativeType): boolean =>
   (type.flags & TypeFlags.Any) !== 0 && !type.isErrorType()

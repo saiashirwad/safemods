@@ -1,21 +1,9 @@
 import { Effect, Option } from "effect"
 import type { Node } from "typescript/unstable/ast"
-import {
-  SymbolFlags,
-  type Symbol as NativeSymbol,
-  type Type as NativeType,
-} from "typescript/unstable/async"
+import { SymbolFlags, type Symbol as NativeSymbol } from "typescript/unstable/async"
 import { matchesGlob } from "node:path"
 import * as Query from "../Query.ts"
-import type { ProjectFile, ProjectSnapshot, ProjectSnapshotError } from "../Workspace/index.ts"
-
-export const typeOf = (
-  project: ProjectSnapshot,
-  symbol: NativeSymbol,
-): Effect.Effect<NativeType | undefined, ProjectSnapshotError> =>
-  (symbol.flags & SymbolFlags.Value) === 0
-    ? project.declaredTypeOfSymbol(symbol)
-    : project.typeOfSymbol(symbol)
+import type { ProjectFile, ProjectSnapshot } from "../Workspace/index.ts"
 
 export const declarationIn = (project: ProjectSnapshot, symbol: NativeSymbol, file: ProjectFile) =>
   Effect.map(project.declarationsOf(symbol), (declarations) =>
@@ -37,9 +25,28 @@ export const filesWithin = (project: ProjectSnapshot, patterns: ReadonlyArray<st
 
 export const publicSymbols = (project: ProjectSnapshot, publicApi: ReadonlyArray<string>) =>
   Effect.gen(function* () {
-    const entries = yield* filesWithin(project, publicApi)
-    const exported = yield* Effect.forEach(entries, (file) => project.exportsOf(file), {
-      concurrency: "unbounded",
-    })
-    return new Set(exported.flat().map(({ symbol }) => symbol))
+    const published = new Set<NativeSymbol>()
+    const visited = new Set<string>()
+    let files = yield* filesWithin(project, publicApi)
+    while (files.length > 0) {
+      for (const file of files) visited.add(file.fileName)
+      const exported = (yield* Effect.forEach(files, (file) => project.exportsOf(file), {
+        concurrency: "unbounded",
+      })).flat()
+      for (const { symbol } of exported) published.add(symbol)
+      const namespaces = exported.filter(
+        ({ symbol }) => (symbol.flags & SymbolFlags.ValueModule) !== 0,
+      )
+      const sites = (yield* Effect.forEach(namespaces, ({ symbol }) => project.declaredIn(symbol), {
+        concurrency: "unbounded",
+      })).flat()
+      const reached = [
+        ...new Set(sites.flatMap(({ fileName }) => (fileName === undefined ? [] : [fileName]))),
+      ]
+      files = (yield* Effect.forEach(
+        reached.filter((fileName) => !visited.has(fileName)),
+        (fileName) => project.file(fileName),
+      )).filter((file) => file !== undefined)
+    }
+    return published
   })

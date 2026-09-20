@@ -14,7 +14,7 @@ import {
 } from "safemods/Checks"
 
 const publicApi = [
-  "src/{Application,Check,Comparison,Draft,Plan,ProjectId,ProjectRelativePath,Query,Recipe,Type,bin}.ts",
+  "src/{Application,Check,Comparison,Draft,Inspect,Plan,ProjectId,ProjectRelativePath,Query,Recipe,Type,bin}.ts",
   "src/{Checks,Verification,Workspace}/index.ts",
 ]
 
@@ -36,7 +36,7 @@ export default {
         ["src/Workspace/"],
         ["src/Query.ts", "src/Type.ts"],
         ["src/Comparison.ts"],
-        ["src/Draft.ts", "src/Check.ts"],
+        ["src/Draft.ts", "src/Check.ts", "src/Inspect.ts"],
         ["src/Checks/"],
         ["src/Recipe.ts"],
         ["src/Verification/"],

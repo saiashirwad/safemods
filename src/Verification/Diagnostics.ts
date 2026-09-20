@@ -10,6 +10,8 @@ export interface DiagnosticRecord {
   readonly fileName: string | undefined
   readonly start: number
   readonly length: number
+  readonly line: number
+  readonly column: number
 }
 
 export interface DiagnosticDiff {
@@ -25,14 +27,19 @@ const categories = {
   [DiagnosticCategory.Suggestion]: "suggestion",
 } as const
 
-const record = (diagnostic: Diagnostic): DiagnosticRecord => ({
-  code: diagnostic.code,
-  message: diagnostic.text,
-  category: categories[diagnostic.category],
-  fileName: diagnostic.fileName,
-  start: diagnostic.pos,
-  length: diagnostic.end - diagnostic.pos,
-})
+const record = (diagnostic: Diagnostic, text: string | undefined): DiagnosticRecord => {
+  const before = (text ?? "").slice(0, diagnostic.pos)
+  return {
+    code: diagnostic.code,
+    message: diagnostic.text,
+    category: categories[diagnostic.category],
+    fileName: diagnostic.fileName,
+    start: diagnostic.pos,
+    length: diagnostic.end - diagnostic.pos,
+    line: before.split("\n").length,
+    column: before.length - before.lastIndexOf("\n"),
+  }
+}
 
 const diagnosticKinds = [
   "getConfigFileParsingDiagnostics",
@@ -47,14 +54,31 @@ export const collectDiagnostics = Effect.gen(function* () {
   const snapshot = yield* WorkspaceSnapshot
   const diagnostics: Array<DiagnosticRecord> = []
   for (const project of snapshot.projects) {
+    const texts = new Map(
+      (yield* project.files).map(({ sourceFile }) => [sourceFile.fileName, sourceFile.text]),
+    )
     for (const kind of diagnosticKinds) {
       const found = yield* project.unsafeNative(({ program }) =>
         nativeRequest(kind, () => program[kind]()),
       )
-      diagnostics.push(...found.map(record))
+      diagnostics.push(
+        ...found.map((diagnostic) => record(diagnostic, texts.get(diagnostic.fileName ?? ""))),
+      )
     }
   }
-  return diagnostics
+  return [
+    ...new Map(
+      diagnostics.map((diagnostic) => [
+        JSON.stringify([
+          diagnostic.fileName,
+          diagnostic.start,
+          diagnostic.code,
+          diagnostic.message,
+        ]),
+        diagnostic,
+      ]),
+    ).values(),
+  ]
 })
 
 const identity = ({ category, code, fileName }: DiagnosticRecord): string =>
