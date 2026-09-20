@@ -40,17 +40,19 @@ const safemods = (cwd: string, args: ReadonlyArray<string>) =>
   )
 
 describe("checks", () => {
-  effect("locates findings by workspace path with one-based lines and columns, in order", () =>
-    Effect.gen(function* () {
-      const findings = yield* findingsOf(flagged("beta"), {
-        "src/zeta.ts": "export const beta = 1\n",
-        "src/alpha.ts": "export const alpha = 1\n\n  export const beta = alpha\n",
-      })
-      expect(findings).toEqual([
-        "src/alpha.ts:3:16 flagged:beta beta is flagged",
-        "src/zeta.ts:1:14 flagged:beta beta is flagged",
-      ])
-    }),
+  effect(
+    "locates findings by workspace path with one-based lines and columns, in order",
+    () =>
+      Effect.gen(function* () {
+        const findings = yield* findingsOf(flagged("beta"), {
+          "src/zeta.ts": "export const beta = 1\n",
+          "src/alpha.ts": "export const alpha = 1\n\n  export const beta = alpha\n",
+        })
+        expect(findings).toEqual([
+          "src/alpha.ts:3:16 flagged:beta beta is flagged",
+          "src/zeta.ts:1:14 flagged:beta beta is flagged",
+        ])
+      }),
   )
 
   effect(

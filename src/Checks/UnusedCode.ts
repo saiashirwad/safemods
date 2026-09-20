@@ -13,8 +13,9 @@ export const unusedCode = (options: {
     Effect.gen(function* () {
       const isPublic = yield* publicSymbols(project, options.publicApi)
       const isTest = (node: Node): boolean =>
-        Option.exists(project.fileNameOf(node.getSourceFile()), (fileName) =>
-          matchesGlob(fileName, options.tests),
+        Option.exists(
+          project.fileNameOf(node.getSourceFile()),
+          (fileName) => matchesGlob(fileName, options.tests),
         )
       return yield* Check.each(
         yield* filesWithin(project, [options.within]),
@@ -31,18 +32,16 @@ export const unusedCode = (options: {
                   if (uses.length === 0) {
                     return [Check.report(declaration, `${name} is never used: delete it`)]
                   }
-                  return uses.every(isTest)
-                    ? [
-                        Check.report(
-                          declaration,
-                          `${name} is used only by tests: delete it with its tests, or make it part of the public API`,
-                        ),
-                      ]
-                    : []
+                  return uses.every(isTest) ?
+                    [
+                      Check.report(
+                        declaration,
+                        `${name} is used only by tests: delete it with its tests, or make it part of the public API`,
+                      ),
+                    ] :
+                    []
                 }),
-            ),
-          ),
+            )),
         8,
       )
-    }),
-  )
+    }))

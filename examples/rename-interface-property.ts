@@ -55,7 +55,7 @@ export const renameInterfaceProperty = Recipe.define("rename-interface-property"
 
       const references = yield* Query.referencesTo(declaration).pipe(
         Query.filter((selection): selection is Query.Selection<Identifier> =>
-          isIdentifier(selection.value),
+          isIdentifier(selection.value)
         ),
         Query.collect,
       )
@@ -63,13 +63,12 @@ export const renameInterfaceProperty = Recipe.define("rename-interface-property"
 
       return Draft.concat(
         Draft.replaceEach(references, ({ value }) =>
-          keepsLocalBinding(value) ? `${NEW_NAME}: ${OLD_NAME}` : NEW_NAME,
-        ),
+          keepsLocalBinding(value) ? `${NEW_NAME}: ${OLD_NAME}` : NEW_NAME),
         ...computed.map((selection) =>
           Draft.unsupported(
             selection,
             `Computed Account[${JSON.stringify(OLD_NAME)}] access requires manual review`,
-          ),
+          )
         ),
       )
     }),

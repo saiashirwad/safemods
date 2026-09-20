@@ -11,8 +11,7 @@ const safemods = (cwd: string, ...args: ReadonlyArray<string>) =>
     () =>
       new Promise<ReadonlyArray<string>>((resolve) =>
         execFile(process.execPath, ["--conditions=source", bin, ...args], { cwd }, (_, stdout) =>
-          resolve(stdout.trimEnd().split("\n")),
-        ),
+          resolve(stdout.trimEnd().split("\n")))
       ),
   )
 

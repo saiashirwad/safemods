@@ -25,7 +25,7 @@ export const renamePackageImport = Recipe.define("rename-package-import", {
 
       return Draft.concat(
         ...references.map(({ project, value }) =>
-          Draft.replaceStringLiteral(project, value.specifier, TO_PACKAGE),
+          Draft.replaceStringLiteral(project, value.specifier, TO_PACKAGE)
         ),
       )
     }),

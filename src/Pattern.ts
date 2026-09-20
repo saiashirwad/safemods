@@ -20,31 +20,27 @@ type FieldKeys<A> = {
 type FieldPattern<T> =
   | Capture<string>
   | (undefined extends T ? undefined : never)
-  | ([NonNullable<T>] extends [ReadonlyArray<infer E>]
-      ? ReadonlyArray<FieldPattern<E>>
-      : [NonNullable<T>] extends [Node]
-        ? Pattern<Node, unknown>
-        : T | ((value: T) => boolean))
+  | ([NonNullable<T>] extends [ReadonlyArray<infer E>] ? ReadonlyArray<FieldPattern<E>> :
+    [NonNullable<T>] extends [Node] ? Pattern<Node, unknown> :
+    T | ((value: T) => boolean))
 
 export type Fields<A> = { readonly [K in FieldKeys<A>]?: FieldPattern<A[K]> }
 
 type Captured<T, P> =
-  P extends Capture<infer Name>
-    ? { readonly [K in Name]: NonNullable<T> }
-    : P extends Pattern<Node, infer C>
-      ? C
-      : P extends readonly [infer Head, ...infer Tail]
-        ? Captured<ElementOf<T>, Head> & Captured<T, Tail>
-        : {}
+    P extends Capture<infer Name> ? { readonly [K in Name]: NonNullable<T> }
+  : P extends Pattern<Node, infer C> ? C
+  : P extends readonly [infer Head, ...infer Tail] ? 
+    & Captured<ElementOf<T>, Head>
+    & Captured<T, Tail>
+  : {}
 
 type ElementOf<T> = NonNullable<T> extends ReadonlyArray<infer E> ? E : never
 
 export type CapturesOf<A, F> = Simplify<
   {
     [K in keyof F]: (captures: Captured<A[K & keyof A], F[K]>) => void
-  }[keyof F] extends (captures: infer C) => void
-    ? C
-    : never
+  }[keyof F] extends (captures: infer C) => void ? C :
+    never
 >
 
 type Captures = Readonly<Record<string, unknown>>
@@ -73,9 +69,9 @@ const matchField = (pattern: unknown, value: unknown): Captures | undefined => {
   if (isCapture(pattern)) return value === undefined ? undefined : { [pattern.name]: value }
   if (isPattern(pattern)) return isNode(value) ? pattern.match(value) : undefined
   if (Array.isArray(pattern)) {
-    return Array.isArray(value) && value.length === pattern.length
-      ? matchAll(pattern.map((element, index) => [element, value[index]] as const))
-      : undefined
+    return Array.isArray(value) && value.length === pattern.length ?
+      matchAll(pattern.map((element, index) => [element, value[index]] as const)) :
+      undefined
   }
   if (typeof pattern === "function") return pattern(value) === true ? {} : undefined
   return Object.is(pattern, value) ? {} : undefined
@@ -104,15 +100,15 @@ export const bind = <const Name extends string, A extends Node, C>(
     return captures === undefined ? undefined : { ...captures, [name]: candidate }
   })
 
-const matchFields = (fields: object): ((candidate: Node) => Captures | undefined) => {
+const matchFields = (fields: object): (candidate: Node) => Captures | undefined => {
   const entries = Object.entries(fields)
   return (candidate) =>
     matchAll(entries.map(([key, pattern]) => [pattern, Reflect.get(candidate, key)] as const))
 }
 
-export type FieldsError<A, F> = [keyof F] extends [FieldKeys<A>]
-  ? [F] extends [Fields<A>]
-    ? unknown
+export type FieldsError<A, F> =
+    [keyof F] extends [FieldKeys<A>] ?
+      [F] extends [Fields<A>] ? unknown
     : { readonly wrongFieldType: never }
   : { readonly unknownField: Exclude<keyof F, FieldKeys<A>> }
 
@@ -142,16 +138,16 @@ export interface Matched<Tag extends string, A extends Node, C> {
 }
 
 export type MatchedOf<Patterns> = {
-  [Tag in keyof Patterns & string]: Patterns[Tag] extends Pattern<infer A, infer C>
-    ? Matched<Tag, A, C>
-    : never
+  [Tag in keyof Patterns & string]: Patterns[Tag] extends Pattern<infer A, infer C> ?
+    Matched<Tag, A, C> :
+    never
 }[keyof Patterns & string]
 
 export type Tagged = Readonly<Record<string, Pattern<Node, unknown>>>
 
 export const tagged = <const Patterns extends Tagged>(
   patterns: Patterns,
-): ((candidate: Node) => MatchedOf<Patterns> | undefined) => {
+): (candidate: Node) => MatchedOf<Patterns> | undefined => {
   const entries = Object.entries(patterns)
   return (candidate) => {
     for (const [tag, pattern] of entries) {

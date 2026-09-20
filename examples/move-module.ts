@@ -27,9 +27,9 @@ const sameExtensionAs = (path: string, specifier: string): string => {
   const target = ModuleSpecifier.parse(path)
   const stem = target._tag === "Source" || target._tag === "Runtime" ? target.stem : path
   const written = ModuleSpecifier.parse(specifier)
-  return written._tag === "Source" || written._tag === "Runtime"
-    ? `${stem}${written.extension}`
-    : stem
+  return written._tag === "Source" || written._tag === "Runtime" ?
+    `${stem}${written.extension}` :
+    stem
 }
 
 const rewrite =
@@ -42,9 +42,9 @@ const rewrite =
     if (!insideMoved && !pointsAtMoved) return []
 
     const from = insideMoved ? input.to : fileName
-    const next = pointsAtMoved
-      ? sameExtensionAs(ModuleSpecifier.between(from, input.to), specifier.text)
-      : ModuleSpecifier.between(from, pathNamedBy(fileName, specifier.text))
+    const next = pointsAtMoved ?
+      sameExtensionAs(ModuleSpecifier.between(from, input.to), specifier.text) :
+      ModuleSpecifier.between(from, pathNamedBy(fileName, specifier.text))
     if (next === specifier.text) return []
     return [Draft.replaceStringLiteral(project, specifier, next)]
   }

@@ -25,31 +25,32 @@ export const oversized = (options: {
             Check.reportAt(
               project,
               file.fileName,
-              `${linesOf(file.sourceFile.text)} lines, over the limit of ${options.fileLines}: split it by responsibility`,
-            ),
+              `${
+                linesOf(file.sourceFile.text)
+              } lines, over the limit of ${options.fileLines}: split it by responsibility`,
+            )
           ),
         ...functions.flatMap((selection) => {
           const { node, name } = selection.value
           const lines = linesOf(node.getText())
           return [
-            ...(lines > options.functionLines
-              ? [
-                  Check.report(
-                    selection,
-                    `${name.text} is ${lines} lines, over the limit of ${options.functionLines}: extract named steps`,
-                  ),
-                ]
-              : []),
-            ...(node.parameters.length > options.parameters
-              ? [
-                  Check.report(
-                    selection,
-                    `${name.text} takes ${node.parameters.length} parameters, over the limit of ${options.parameters}: pass one options object`,
-                  ),
-                ]
-              : []),
+            ...(lines > options.functionLines ?
+              [
+                Check.report(
+                  selection,
+                  `${name.text} is ${lines} lines, over the limit of ${options.functionLines}: extract named steps`,
+                ),
+              ] :
+              []),
+            ...(node.parameters.length > options.parameters ?
+              [
+                Check.report(
+                  selection,
+                  `${name.text} takes ${node.parameters.length} parameters, over the limit of ${options.parameters}: pass one options object`,
+                ),
+              ] :
+              []),
           ]
         }),
       ]
-    }),
-  )
+    }))

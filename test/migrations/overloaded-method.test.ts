@@ -49,6 +49,5 @@ describe("overloaded-method", () => {
           expect(second.unsupported).toHaveLength(1)
         }),
       { fixture },
-    ),
-  )
+    ))
 })

@@ -58,7 +58,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     fs.exists(target).pipe(
       Effect.mapError(failed),
       Effect.flatMap((exists) =>
-        exists ? Effect.succeed(target) : nearestExisting(path.dirname(target)),
+        exists ? Effect.succeed(target) : nearestExisting(path.dirname(target))
       ),
     )
   const confinedTarget = Effect.fn(function* (file: FilePreview) {
@@ -111,17 +111,17 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
   }> = []
   for (const file of preview.files) {
     const target = yield* confinedTarget(file)
-    const modeSource = file.movedFrom
-      ? checkedSources.find(
-          ({ file: source }) =>
-            source.projectId === file.projectId && source.fileName === file.movedFrom,
-        )?.target
-      : file.before.exists
-        ? target
-        : undefined
-    const mode = modeSource
-      ? (yield* fs.stat(modeSource).pipe(Effect.mapError(failed))).mode
-      : undefined
+    const modeSource = file.movedFrom ?
+      checkedSources.find(
+        ({ file: source }) =>
+          source.projectId === file.projectId && source.fileName === file.movedFrom,
+      )?.target :
+      file.before.exists ?
+      target :
+      undefined
+    const mode = modeSource ?
+      (yield* fs.stat(modeSource).pipe(Effect.mapError(failed))).mode :
+      undefined
     targets.push({ file, target, mode })
   }
 
@@ -188,7 +188,9 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     yield* confinedTarget(file)
     yield* fs.makeDirectory(path.dirname(target), { recursive: true }).pipe(Effect.mapError(failed))
     yield* confinedTarget(file)
-    const temporary = `${target}.safemods-${yield* crypto.randomUUIDv4.pipe(Effect.mapError(failed))}.tmp`
+    const temporary = `${target}.safemods-${yield* crypto.randomUUIDv4.pipe(
+      Effect.mapError(failed),
+    )}.tmp`
     temporaries.add(temporary)
     yield* fs.writeFile(temporary, bytes, { flag: "wx", mode }).pipe(Effect.mapError(failed))
     yield* confinedTarget(file)
@@ -201,7 +203,9 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       yield* confinedTarget(file)
       yield* requireUnchanged(file, target)
       if (!file.before.exists) continue
-      const backup = `${target}.safemods-${yield* crypto.randomUUIDv4.pipe(Effect.mapError(failed))}.backup`
+      const backup = `${target}.safemods-${yield* crypto.randomUUIDv4.pipe(
+        Effect.mapError(failed),
+      )}.backup`
       yield* fs.rename(target, backup).pipe(Effect.mapError(failed))
       backups.push({ target, backup })
     }
@@ -238,7 +242,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
           }
         }),
       ),
-    ),
+    )
   )
 
   return {

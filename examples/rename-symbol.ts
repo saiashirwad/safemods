@@ -53,8 +53,8 @@ const unresolvedMentions = (
             Draft.unsupported(
               { value: sourceFile, project, fileName, start: index, end: index + name.length },
               `mentions ${name} in a comment or string the compiler cannot resolve`,
-            ),
-          ),
+            )
+          )
       ),
     )
   })
@@ -79,23 +79,21 @@ export const renameSymbol = Recipe.define("rename-symbol", {
             Query.referencesTo(declaration).pipe(
               Query.filter(({ value }) => isIdentifier(value) && value.text === name),
               Query.collect,
-            ),
-          )
+            ))
           const references = Arr.dedupeWith(
             found.flat(),
-            (left, right) => left.fileName === right.fileName && left.start === right.start,
+            (left, right) =>
+              left.fileName === right.fileName && left.start === right.start,
           )
           const resolved = new Set(
             [...spelled, ...references].map(({ fileName, start }) => at(fileName, start)),
           )
           return Draft.concat(
             Draft.replaceEach(references, ({ value }) =>
-              isShorthandPropertyAssignment(value.parent) ? `${name}: ${to}` : to,
-            ),
+              isShorthandPropertyAssignment(value.parent) ? `${name}: ${to}` : to),
             yield* unresolvedMentions(project, name, references, resolved),
           )
-        }),
-      )
+        }))
       return Draft.concat(...drafts)
     }),
 })

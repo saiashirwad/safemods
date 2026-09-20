@@ -84,7 +84,7 @@ export const noUnknownFailures = Check.define(
         Effect.map(
           Type.effect(project, value.type),
           (parsed) => Option.isSome(parsed) && Type.isUnknown(parsed.value.error),
-        ),
+        )
       ),
       Query.collect,
     )

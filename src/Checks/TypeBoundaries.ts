@@ -19,14 +19,14 @@ interface Forbidden {
 const placeOf = (forbidden: Forbidden, site: DeclarationSite): string | undefined => {
   const fileName = site.fileName
   if (fileName !== undefined) {
-    return forbidden.files?.some((pattern) => matchesGlob(fileName, pattern)) === true
-      ? fileName
-      : undefined
+    return forbidden.files?.some((pattern) => matchesGlob(fileName, pattern)) === true ?
+      fileName :
+      undefined
   }
   const inPackage = forbidden.packages?.find((name) => site.path.includes(`/node_modules/${name}/`))
-  return inPackage === undefined
-    ? undefined
-    : site.path.slice(site.path.lastIndexOf("/node_modules/") + 1)
+  return inPackage === undefined ?
+    undefined :
+    site.path.slice(site.path.lastIndexOf("/node_modules/") + 1)
 }
 
 const forbiddenPlace = (
@@ -70,20 +70,21 @@ const reportsIn = (project: ProjectSnapshot, file: ProjectFile, place: Place) =>
           const at = yield* declarationIn(project, symbol, file)
           const type = yield* Type.ofSymbol(project, symbol)
           if (type === undefined) return []
-          const leaked = yield* Type.mentions(project, type, (candidate) =>
-            Effect.map(place(candidate), Option.isSome),
+          const leaked = yield* Type.mentions(
+            project,
+            type,
+            (candidate) => Effect.map(place(candidate), Option.isSome),
           )
           if (Option.isNone(leaked)) return []
           return Option.toArray(yield* place(leaked.value)).map((found) => {
             const message = `exports ${name} with a type mentioning ${found}`
-            return at === undefined
-              ? Check.reportAt(project, file.fileName, message)
-              : Check.report(at, message)
+            return at === undefined ?
+              Check.reportAt(project, file.fileName, message) :
+              Check.report(at, message)
           })
         }),
       8,
-    ),
-  )
+    ))
 
 export const typeBoundaries = (options: {
   readonly within: string
@@ -92,6 +93,5 @@ export const typeBoundaries = (options: {
   Check.perProject("type-boundaries", (project) => {
     const place = memoized(project, options.forbidden)
     return Effect.flatMap(filesWithin(project, [options.within]), (files) =>
-      Check.each(files, (file) => reportsIn(project, file, place), 8),
-    )
+      Check.each(files, (file) => reportsIn(project, file, place), 8))
   })

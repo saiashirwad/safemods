@@ -35,9 +35,9 @@ export const parse = (text: string): Written => {
   const source = split(text, sourceExtensions)
   if (source !== undefined) return { _tag: "Source", ...source }
   const runtime = split(text, runtimeExtensions)
-  return runtime === undefined
-    ? { _tag: "Extensionless", path: text }
-    : { _tag: "Runtime", ...runtime }
+  return runtime === undefined ?
+    { _tag: "Extensionless", path: text } :
+    { _tag: "Runtime", ...runtime }
 }
 
 export const between = (fromFile: string, targetFile: string): string => {
@@ -57,6 +57,6 @@ export const fileNamedBy = (
 ): string | undefined => {
   const path = normalize(`${dirname(fromFile)}/${specifier}`).replace(/\/$/, "")
   return [path, `${path}.ts`, `${path}.tsx`, `${path}/index.ts`, `${path}/index.tsx`].find((file) =>
-    files.has(file),
+    files.has(file)
   )
 }

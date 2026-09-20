@@ -14,9 +14,9 @@ const diskEntries = (path: Path.Path, directory: string) => {
   try {
     const entries = Fs.readdirSync(directory, { withFileTypes: true }).map((entry) => ({
       name: entry.name,
-      kind: entry.isSymbolicLink()
-        ? Fs.statSync(path.join(directory, entry.name), { throwIfNoEntry: false })
-        : entry,
+      kind: entry.isSymbolicLink() ?
+        Fs.statSync(path.join(directory, entry.name), { throwIfNoEntry: false }) :
+        entry,
     }))
     return {
       files: entries.filter(({ kind }) => kind?.isFile()).map(({ name }) => name),
@@ -68,9 +68,9 @@ export const fileSystem = (overlay: Overlay, path: Path.Path): FileSystem => {
         if (rest.length === 0) fileNames.add(first!)
         else directories.add(first!)
       }
-      return disk === undefined && fileNames.size === 0 && directories.size === 0
-        ? undefined
-        : { files: [...fileNames], directories: [...directories] }
+      return disk === undefined && fileNames.size === 0 && directories.size === 0 ?
+        undefined :
+        { files: [...fileNames], directories: [...directories] }
     },
   }
 }

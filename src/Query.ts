@@ -121,23 +121,22 @@ export interface Shaped<A extends Node, C> {
   readonly captures: C
 }
 
-export const shape =
-  <const F extends object>(fields: F) =>
-  <A extends Node, E, R>(
-    self: Query<A, E, R> & Pattern.FieldsError<A, F>,
-  ): Query<Shaped<A, Pattern.CapturesOf<A, F>>, E, R> => {
-    const pattern = Pattern.unguarded<A, F>(fields)
-    return self.pipe(
-      Stream.map((selection) => ({
-        ...selection,
-        value: { node: selection.value, captures: pattern.match(selection.value) },
-      })),
-      Stream.filter(
-        (selection): selection is Selection<Shaped<A, Pattern.CapturesOf<A, F>>> =>
-          selection.value.captures !== undefined,
-      ),
-    )
-  }
+export const shape = <const F extends object>(fields: F) =>
+<A extends Node, E, R>(
+  self: Query<A, E, R> & Pattern.FieldsError<A, F>,
+): Query<Shaped<A, Pattern.CapturesOf<A, F>>, E, R> => {
+  const pattern = Pattern.unguarded<A, F>(fields)
+  return self.pipe(
+    Stream.map((selection) => ({
+      ...selection,
+      value: { node: selection.value, captures: pattern.match(selection.value) },
+    })),
+    Stream.filter(
+      (selection): selection is Selection<Shaped<A, Pattern.CapturesOf<A, F>>> =>
+        selection.value.captures !== undefined,
+    ),
+  )
+}
 
 export const calls = (scope: Scope): Query<CallExpression, ProjectSnapshotError> =>
   nodes(scope, isCallExpression)
@@ -216,7 +215,7 @@ export const moduleReferences = (scope: Scope): Query<ModuleReference, ProjectSn
     Stream.flatMap((file) =>
       Stream.fromIterable(
         selectionsIn(file, (node): node is Node => moduleReferenceOf(node) !== undefined),
-      ),
+      )
     ),
     Stream.map((selection) => ({ ...selection, value: moduleReferenceOf(selection.value)! })),
   )
@@ -233,7 +232,7 @@ export const resolvedModuleReferences = (
       Effect.map(selection.project.resolvedModule(selection.value.specifier), (resolved) => ({
         ...selection,
         value: { ...selection.value, resolved },
-      })),
+      }))
     ),
   )
 
@@ -282,8 +281,9 @@ const roleOf = (node: Identifier): ReferenceRole => {
   if (hasTypeAncestor(node)) return "type"
   if (isBinaryExpression(parent) && parent.left === node) {
     const operator = parent.operatorToken.kind
-    if (operator >= SyntaxKind.FirstAssignment && operator <= SyntaxKind.LastAssignment)
+    if (operator >= SyntaxKind.FirstAssignment && operator <= SyntaxKind.LastAssignment) {
       return "write"
+    }
   }
   if (
     (isPrefixUnaryExpression(parent) || isPostfixUnaryExpression(parent)) &&
@@ -313,14 +313,11 @@ export const filter: {
   ): <E, R>(self: Query<A, E, R>) => Query<A, E, R>
 } = Stream.filter
 
-export const within =
-  (pattern: string) =>
-  <A, E, R>(self: Query<A, E, R>): Query<A, E, R> =>
-    Stream.filter(self, ({ fileName }) =>
-      pattern.includes("*")
-        ? matchesGlob(fileName, pattern.replaceAll("\\", "/"))
-        : fileName === pattern,
-    )
+export const within = (pattern: string) => <A, E, R>(self: Query<A, E, R>): Query<A, E, R> =>
+  Stream.filter(self, ({ fileName }) =>
+    pattern.includes("*") ?
+      matchesGlob(fileName, pattern.replaceAll("\\", "/")) :
+      fileName === pattern)
 
 export const where =
   <A, E2, R2>(test: (selection: Selection<A>) => Effect.Effect<boolean, E2, R2>) =>
@@ -345,8 +342,7 @@ export const collect = <A, E, R>(
         Order.String(left.fileName, right.fileName) ||
         left.start - right.start ||
         left.end - right.end,
-    ),
-  )
+    ))
 
 export const selectionOf = <A extends Node>(
   project: ProjectSnapshot,
@@ -362,8 +358,9 @@ export const selectionOf = <A extends Node>(
 
 export const referencesTo = (selection: Selection<Node>): Query<Node, ProjectSnapshotError> =>
   Stream.fromIterableEffect(
-    Effect.map(selection.project.referencesTo(selection.value), (nodes) =>
-      nodes.flatMap((node) => Option.toArray(selectionOf(selection.project, node))),
+    Effect.map(
+      selection.project.referencesTo(selection.value),
+      (nodes) => nodes.flatMap((node) => Option.toArray(selectionOf(selection.project, node))),
     ),
   )
 
@@ -381,16 +378,15 @@ export const usesOf = (selection: Selection<Node>): Effect.Effect<Uses, ProjectS
         value === selection.value ||
         isImportSpecifier(value.parent) ||
         (isImportClause(value.parent) && value.parent.name === value)
-      )
+      ) {
         continue
-      const callee =
-        isPropertyAccessExpression(value.parent) && value.parent.name === value
-          ? value.parent
-          : value
-      const call =
-        isCallExpression(callee.parent) && callee.parent.expression === callee
-          ? selectionOf(project, callee.parent)
-          : Option.none()
+      }
+      const callee = isPropertyAccessExpression(value.parent) && value.parent.name === value ?
+        value.parent :
+        value
+      const call = isCallExpression(callee.parent) && callee.parent.expression === callee ?
+        selectionOf(project, callee.parent) :
+        Option.none()
       if (Option.isSome(call)) calls.push(call.value)
       else escapes = true
     }
@@ -441,10 +437,9 @@ export const typed = <A extends Node, E, R>(
     Stream.mapEffect(
       (selection) =>
         Effect.map(selection.project.typeOf(selection.value), (type) =>
-          type === undefined
-            ? Option.none()
-            : Option.some({ ...selection, value: { node: selection.value, type } }),
-        ),
+          type === undefined ?
+            Option.none() :
+            Option.some({ ...selection, value: { node: selection.value, type } })),
       { concurrency: "unbounded" },
     ),
     Stream.filter(Option.isSome),
@@ -455,9 +450,9 @@ type CaptureTypes<C> = {
   readonly [K in keyof C as C[K] extends Node ? K : never]: NativeType | undefined
 }
 
-export type WithTypes<M> = M extends { readonly captures: infer C }
-  ? M & { readonly types: CaptureTypes<C> }
-  : never
+export type WithTypes<M> = M extends { readonly captures: infer C } ?
+  M & { readonly types: CaptureTypes<C> } :
+  never
 
 export const typedCaptures = <M extends { readonly captures: object }, E, R>(
   self: Query<M, E, R>,
@@ -468,7 +463,7 @@ export const typedCaptures = <M extends { readonly captures: object }, E, R>(
       Effect.map(
         Effect.forEach(
           Object.entries(selection.value.captures).filter(([, captured]) =>
-            Pattern.isNode(captured),
+            Pattern.isNode(captured)
           ),
           ([name, captured]) =>
             Effect.map(selection.project.typeOf(captured), (type) => [name, type] as const),
@@ -483,19 +478,18 @@ export const typedCaptures = <M extends { readonly captures: object }, E, R>(
     { concurrency: "unbounded" },
   )
 
-export const resolvesTo =
-  <A extends Node>(
-    symbol: NativeSymbol,
-    options?: { readonly location?: (candidate: A) => Node },
-  ) =>
-  ({ project, value }: Selection<A>): Effect.Effect<boolean, ProjectSnapshotError> =>
-    Effect.gen(function* () {
-      const candidate = yield* project.symbolOf(options?.location?.(value) ?? value)
-      if (candidate === undefined) return false
-      return (
-        (yield* project.canonicalSymbol(candidate)) === (yield* project.canonicalSymbol(symbol))
-      )
-    })
+export const resolvesTo = <A extends Node>(
+  symbol: NativeSymbol,
+  options?: { readonly location?: (candidate: A) => Node },
+) =>
+({ project, value }: Selection<A>): Effect.Effect<boolean, ProjectSnapshotError> =>
+  Effect.gen(function* () {
+    const candidate = yield* project.symbolOf(options?.location?.(value) ?? value)
+    if (candidate === undefined) return false
+    return (
+      (yield* project.canonicalSymbol(candidate)) === (yield* project.canonicalSymbol(symbol))
+    )
+  })
 
 const sameNode = (left: Node, right: Node): boolean =>
   left.pos === right.pos &&

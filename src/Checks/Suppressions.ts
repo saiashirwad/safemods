@@ -58,14 +58,15 @@ export const suppressions = (options: { readonly within: string }) =>
             fileName: file.fileName,
             start: match.start,
             message: `${match.text} silences the compiler: fix the type it complains about`,
-          })),
+          }))
         ),
         ...asserted.map((selection) =>
           Check.report(
             selection,
-            `${selection.value.getText().replace(/\s+/g, " ").slice(0, 40)} asserts non-null on trust: handle the undefined case`,
-          ),
+            `${
+              selection.value.getText().replace(/\s+/g, " ").slice(0, 40)
+            } asserts non-null on trust: handle the undefined case`,
+          )
         ),
       ]
-    }),
-  )
+    }))

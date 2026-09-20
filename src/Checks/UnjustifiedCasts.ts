@@ -36,14 +36,12 @@ export const unjustifiedCasts = (options: { readonly within: string }) =>
             }
             const source = brief(yield* project.typeToString(from))
             const target = brief(yield* project.typeToString(to))
-            const message = isUntyped(from)
-              ? `asserts ${source} as ${target} without checking it: decode or narrow the value instead`
-              : (yield* project.isTypeAssignableTo(to, from))
-                ? `narrows ${source} to ${target} on trust: use a guard, or give the source the narrower type`
-                : `asserts ${source} as the unrelated type ${target}: the value is not what its type says`
+            const message = isUntyped(from) ?
+              `asserts ${source} as ${target} without checking it: decode or narrow the value instead` :
+              (yield* project.isTypeAssignableTo(to, from)) ?
+              `narrows ${source} to ${target} on trust: use a guard, or give the source the narrower type` :
+              `asserts ${source} as the unrelated type ${target}: the value is not what its type says`
             return [Check.report(cast, message)]
-          }),
-        ),
+          }))
       ),
-    ),
-  )
+    ))

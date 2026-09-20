@@ -50,9 +50,9 @@ const loadModule = (file: string) =>
 const loadConfig = (path: string) =>
   loadModule(path).pipe(
     Effect.flatMap((module) =>
-      isConfig(module.default)
-        ? Effect.succeed(module.default)
-        : new InvalidConfig({ path, cause: "the default export needs `projects` and `checks`" }),
+      isConfig(module.default) ?
+        Effect.succeed(module.default) :
+        new InvalidConfig({ path, cause: "the default export needs `projects` and `checks`" })
     ),
   )
 
@@ -78,15 +78,15 @@ const check = Command.make(
         Effect.provide(Workspace.layer(definition, path.dirname(configPath))),
       )
       yield* Console.log(
-        format === "json"
-          ? JSON.stringify(findings, undefined, 2)
-          : findings.map(Check.format).join("\n"),
+        format === "json" ?
+          JSON.stringify(findings, undefined, 2) :
+          findings.map(Check.format).join("\n"),
       )
       yield* Console.error(`${findings.length} finding(s)`)
       if (findings.length > 0) return yield* new FindingsReported({ count: findings.length })
     }).pipe(
       Effect.mapError((cause) =>
-        cause instanceof FindingsReported ? cause : new CheckFailed({ cause }),
+        cause instanceof FindingsReported ? cause : new CheckFailed({ cause })
       ),
     ),
 ).pipe(Command.withDescription("Run whole-program checks and fail on findings"))
@@ -106,9 +106,9 @@ const isRecipe = (value: unknown): value is Recipe.Recipe<unknown> =>
 const listed = 10
 
 const capped = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
-  lines.length <= listed
-    ? lines
-    : [...lines.slice(0, listed), `  ... and ${lines.length - listed} more`]
+  lines.length <= listed ?
+    lines :
+    [...lines.slice(0, listed), `  ... and ${lines.length - listed} more`]
 
 const unresolvedLine = (
   sources: ReadonlyArray<PublicFilePreview>,
@@ -117,9 +117,12 @@ const unresolvedLine = (
   const source = sources.find(
     (file) => file.projectId === finding.projectId && file.fileName === finding.fileName,
   )
-  const at =
-    source?.before.exists === true ? Position.at(source.before.text, finding.start) : undefined
-  return `  ${finding.fileName}:${at === undefined ? "?" : `${at.line}:${at.column}`} ${finding.reason}`
+  const at = source?.before.exists === true ?
+    Position.at(source.before.text, finding.start) :
+    undefined
+  return `  ${finding.fileName}:${
+    at === undefined ? "?" : `${at.line}:${at.column}`
+  } ${finding.reason}`
 }
 
 const run = Command.make(
@@ -150,8 +153,9 @@ const run = Command.make(
         return yield* new InvalidConfig({ path: recipePath, cause: "no export is a recipe" })
       }
       const json = yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(inputJson)
-      const input =
-        recipe.schema === undefined ? json : yield* Schema.decodeUnknownEffect(recipe.schema)(json)
+      const input = recipe.schema === undefined ?
+        json :
+        yield* Schema.decodeUnknownEffect(recipe.schema)(json)
 
       yield* Effect.gen(function* () {
         const plan = yield* Recipe.run(recipe, input)
@@ -160,7 +164,9 @@ const run = Command.make(
           ...plan.fileOperations.map((operation) => operation.fileName),
         ])
         yield* Console.log(
-          `plan ${plan.planId.slice(0, 12)}  ${recipe.name} ${recipe.version}  ${plan.edits.length} edit(s), ${plan.fileOperations.length} file operation(s), ${files.size} file(s)`,
+          `plan ${
+            plan.planId.slice(0, 12)
+          }  ${recipe.name} ${recipe.version}  ${plan.edits.length} edit(s), ${plan.fileOperations.length} file operation(s), ${files.size} file(s)`,
         )
         const verified = yield* verify(plan, recipe, input).pipe(
           Effect.catchTag("VerificationFailure", (failure) =>
@@ -170,14 +176,15 @@ const run = Command.make(
                 capped(
                   (failure.diagnostics ?? []).map(
                     ({ fileName, line, column, code, message }) =>
-                      `  ${fileName === undefined ? "" : path.relative(root, fileName)}:${line}:${column} TS${code} ${message.split("\n")[0]}`,
+                      `  ${
+                        fileName === undefined ? "" : path.relative(root, fileName)
+                      }:${line}:${column} TS${code} ${message.split("\n")[0]}`,
                   ),
                 ).join("\n"),
               )
               yield* Console.log("nothing was written")
               return yield* new PlanRejected({ planId: plan.planId })
-            }),
-          ),
+            })),
         )
         yield* Console.log(
           capped(
@@ -201,7 +208,7 @@ const run = Command.make(
       }).pipe(Effect.provide(Workspace.layer(definition, root)))
     }).pipe(
       Effect.mapError((cause) =>
-        cause instanceof PlanRejected ? cause : new CheckFailed({ cause }),
+        cause instanceof PlanRejected ? cause : new CheckFailed({ cause })
       ),
     ),
 ).pipe(Command.withDescription("Plan a recipe, verify it, and write it only with --apply"))
@@ -214,9 +221,8 @@ const inspecting = (configFile: string, answer: Answer) =>
     const definition = yield* Schema.decodeUnknownEffect(Workspace.WorkspaceDefinition.schema)({
       projects: config.projects,
     })
-    const lines = yield* Workspace.Workspace.use((workspace) =>
-      workspace.withSnapshot(answer),
-    ).pipe(Effect.provide(Workspace.layer(definition, path.dirname(configPath))))
+    const lines = yield* Workspace.Workspace.use((workspace) => workspace.withSnapshot(answer))
+      .pipe(Effect.provide(Workspace.layer(definition, path.dirname(configPath))))
     yield* Console.log(lines.join("\n"))
   }).pipe(Effect.mapError((cause) => new CheckFailed({ cause })))
 
@@ -228,12 +234,16 @@ const at = (name: string, description: string, answer: (position: string) => Ans
   ).pipe(Command.withDescription(description))
 
 const about = (name: string, description: string, answer: (path: string) => Answer) =>
-  Command.make(name, { config: configFlag, path: Argument.string("path") }, ({ config, path }) =>
-    inspecting(config, answer(path)),
+  Command.make(
+    name,
+    { config: configFlag, path: Argument.string("path") },
+    ({ config, path }) => inspecting(config, answer(path)),
   ).pipe(Command.withDescription(description))
 
-const map = Command.make("map", { config: configFlag }, ({ config }) =>
-  inspecting(config, Inspect.map),
+const map = Command.make(
+  "map",
+  { config: configFlag },
+  ({ config }) => inspecting(config, Inspect.map),
 ).pipe(
   Command.withDescription("Every file with its size, export count and how many files import it"),
 )

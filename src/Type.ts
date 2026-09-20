@@ -12,9 +12,9 @@ export const ofSymbol = (
   project: ProjectSnapshot,
   symbol: NativeSymbol,
 ): Effect.Effect<NativeType | undefined, ProjectSnapshotError> =>
-  (symbol.flags & SymbolFlags.Value) === 0
-    ? project.declaredTypeOfSymbol(symbol)
-    : project.typeOfSymbol(symbol)
+  (symbol.flags & SymbolFlags.Value) === 0 ?
+    project.declaredTypeOfSymbol(symbol) :
+    project.typeOfSymbol(symbol)
 
 export const isAny = (type: NativeType): boolean =>
   (type.flags & TypeFlags.Any) !== 0 && !type.isErrorType()
@@ -40,9 +40,9 @@ const parameterOf = (
     const [signature] = signatures
     if (signature === undefined || signatures.length > 1) return Option.none()
     return Option.fromUndefinedOr(
-      position === "out"
-        ? yield* project.returnTypeOf(signature)
-        : (yield* project.parameterTypesOf(signature))[0],
+      position === "out" ?
+        yield* project.returnTypeOf(signature) :
+        (yield* project.parameterTypesOf(signature))[0],
     )
   })
 
@@ -65,8 +65,7 @@ export const variance =
           Object.entries(names),
           ([key, member]) =>
             Effect.map(parameterOf(project, struct, member, position), (found) =>
-              Option.map(found, (parameter) => [key, parameter] as const),
-            ),
+              Option.map(found, (parameter) => [key, parameter] as const)),
           { concurrency: "unbounded" },
         )
       const found = [

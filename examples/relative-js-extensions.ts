@@ -52,8 +52,7 @@ export const relativeJsExtensions = Recipe.define("relative-js-extensions", {
             Query.collect,
           )
           return Draft.concat(...references.map(rewrite(files)))
-        }),
-      )
+        }))
       return Draft.concat(...drafts)
     }),
 })

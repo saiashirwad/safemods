@@ -1,6 +1,7 @@
 packages: []
 
 allowBuilds:
+  dprint: true
   esbuild: true
   msgpackr-extract: true
 

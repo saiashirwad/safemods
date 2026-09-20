@@ -69,9 +69,9 @@ export const overloadedMethod = Recipe.define("overloaded-method", {
       return Draft.concat(
         ...calls.map((selection) => {
           const replacement = promiseForm(selection.value)
-          return replacement === undefined
-            ? Draft.unsupported(selection, "spread arguments prevent overload selection")
-            : Draft.replaceSelection(selection, replacement)
+          return replacement === undefined ?
+            Draft.unsupported(selection, "spread arguments prevent overload selection") :
+            Draft.replaceSelection(selection, replacement)
         }),
       )
     }),

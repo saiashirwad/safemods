@@ -57,15 +57,16 @@ export const encodeInput = <Input, E, R>(
   input: Input,
 ): Effect.Effect<Schema.Json, RecipeInputError> =>
   Effect.gen(function* () {
-    const encoded =
-      recipe.schema === undefined ? input : yield* Schema.encodeUnknownEffect(recipe.schema)(input)
+    const encoded = recipe.schema === undefined ?
+      input :
+      yield* Schema.encodeUnknownEffect(recipe.schema)(input)
     return yield* Schema.decodeUnknownEffect(Schema.Json)(encoded ?? null)
   }).pipe(Effect.mapError((cause) => new RecipeInputError({ recipe: recipe.name, cause })))
 
 const fingerprint = (file: FileRef.FileRef, content: Uint8Array | undefined): SourceFingerprint =>
-  content === undefined
-    ? { ...file, kind: "missing" }
-    : { ...file, kind: "file", hash: Sha256.digest(content) }
+  content === undefined ?
+    { ...file, kind: "missing" } :
+    { ...file, kind: "file", hash: Sha256.digest(content) }
 
 const readOptional = Effect.fn("Recipe.readOptional")(function* (path: string) {
   const fs = yield* FileSystem.FileSystem
@@ -73,9 +74,9 @@ const readOptional = Effect.fn("Recipe.readOptional")(function* (path: string) {
     .readFile(path)
     .pipe(
       Effect.catch((cause) =>
-        cause.reason._tag === "NotFound"
-          ? Effect.map(Effect.void, () => undefined)
-          : Effect.fail(cause),
+        cause.reason._tag === "NotFound" ?
+          Effect.map(Effect.void, () => undefined) :
+          Effect.fail(cause)
       ),
     )
 })

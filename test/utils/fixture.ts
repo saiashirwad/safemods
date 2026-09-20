@@ -67,7 +67,7 @@ export const withProject = <A, E, R>(
   withFixture(
     (_, app) =>
       Workspace.use((workspace) =>
-        workspace.withSnapshot(Effect.flatMap(fixtureProject(app), use)),
+        workspace.withSnapshot(Effect.flatMap(fixtureProject(app), use))
       ),
     { files, ...options },
   )
@@ -83,5 +83,5 @@ export const exists = (root: string, fileName: string): Effect.Effect<boolean> =
     Fs.stat(Path.join(root, fileName)).then(
       () => true,
       () => false,
-    ),
+    )
   )

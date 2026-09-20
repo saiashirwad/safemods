@@ -48,8 +48,11 @@ describe("structure rules", () => {
         const findings = yield* findingsOf(
           oversized({ within: "src/**", functionLines: 7, parameters: 2, fileLines: 12 }),
           {
-            "src/big.ts": `export const long = () => {\n${body}\n  return 0\n}\nexport const wide = (a: number, b: number, c: number) => a + b + c\nexport const fine = (a: number, b: number) => a + b\n\n`,
-            "src/small.ts": `export const atLimit = () => {\n${body.split("\n").slice(0, 5).join("\n")}\n}\n`,
+            "src/big.ts":
+              `export const long = () => {\n${body}\n  return 0\n}\nexport const wide = (a: number, b: number, c: number) => a + b + c\nexport const fine = (a: number, b: number) => a + b\n\n`,
+            "src/small.ts": `export const atLimit = () => {\n${
+              body.split("\n").slice(0, 5).join("\n")
+            }\n}\n`,
           },
         )
         expect(findings).toEqual([
@@ -60,63 +63,71 @@ describe("structure rules", () => {
       }),
   )
 
-  effect("any-in-public-api reaches exports published through a namespace re-export only", () =>
-    Effect.gen(function* () {
-      const findings = yield* findingsOf(anyInPublicApi({ publicApi: ["src/index.ts"] }), {
-        "src/index.ts": 'export * as Shapes from "./shapes.js"\n',
-        "src/shapes.ts": [
-          "export const loose = (input: Array<any>): number => input.length",
-          "export const strict = (input: Array<string>): number => input.length",
-          "",
-        ].join("\n"),
-        "src/internal.ts": "export const hidden = (input: any): number => input\n",
-      })
-      expect(findings).toEqual([
-        "src/shapes.ts:1:14 any-in-public-api loose is public and its type contains any: callers lose checking through it",
-      ])
-    }),
-  )
-
-  effect("unused-code treats a namespace re-export as publishing every member", () =>
-    Effect.gen(function* () {
-      const findings = yield* findingsOf(
-        unusedCode({ within: "src/**", tests: "test/**", publicApi: ["src/index.ts"] }),
-        {
+  effect(
+    "any-in-public-api reaches exports published through a namespace re-export only",
+    () =>
+      Effect.gen(function* () {
+        const findings = yield* findingsOf(anyInPublicApi({ publicApi: ["src/index.ts"] }), {
           "src/index.ts": 'export * as Shapes from "./shapes.js"\n',
-          "src/shapes.ts": "export const published = 1\n",
-          "src/internal.ts": "export const orphan = 1\n",
-        },
-      )
-      expect(findings).toEqual(["src/internal.ts:1:14 unused-code orphan is never used: delete it"])
-    }),
+          "src/shapes.ts": [
+            "export const loose = (input: Array<any>): number => input.length",
+            "export const strict = (input: Array<string>): number => input.length",
+            "",
+          ].join("\n"),
+          "src/internal.ts": "export const hidden = (input: any): number => input\n",
+        })
+        expect(findings).toEqual([
+          "src/shapes.ts:1:14 any-in-public-api loose is public and its type contains any: callers lose checking through it",
+        ])
+      }),
   )
 
-  effect("suppressions reports directives and non-null assertions, not the word in a string", () =>
-    Effect.gen(function* () {
-      const findings = yield* findingsOf(suppressions({ within: "src/**" }), {
-        "src/s.ts": [
-          "const list: Array<number> = []",
-          "// @ts-expect-error planted",
-          "export const wrong: string = 1",
-          "export const first = list[0]!",
-          "export const safe = list[0] ?? 0",
-          'export const documentation = "// @ts-ignore and /* eslint-disable */"',
-          "export const template = `// @ts-nocheck ${list.length} /* oxlint-disable */`",
-          "export const pattern = /[/*]@ts-expect-error/",
-          "/* eslint-disable no-unused-vars */",
-          "export const count = list.length // oxlint-disable-line",
-          "export const nested = `${/* @ts-ignore */ list.length}`",
-          "",
-        ].join("\n"),
-      })
-      expect(findings).toEqual([
-        "src/s.ts:2:4 suppressions @ts-expect-error silences the compiler: fix the type it complains about",
-        "src/s.ts:4:22 suppressions list[0]! asserts non-null on trust: handle the undefined case",
-        "src/s.ts:9:4 suppressions eslint-disable silences the compiler: fix the type it complains about",
-        "src/s.ts:10:37 suppressions oxlint-disable silences the compiler: fix the type it complains about",
-        "src/s.ts:11:29 suppressions @ts-ignore silences the compiler: fix the type it complains about",
-      ])
-    }),
+  effect(
+    "unused-code treats a namespace re-export as publishing every member",
+    () =>
+      Effect.gen(function* () {
+        const findings = yield* findingsOf(
+          unusedCode({ within: "src/**", tests: "test/**", publicApi: ["src/index.ts"] }),
+          {
+            "src/index.ts": 'export * as Shapes from "./shapes.js"\n',
+            "src/shapes.ts": "export const published = 1\n",
+            "src/internal.ts": "export const orphan = 1\n",
+          },
+        )
+        expect(findings).toEqual([
+          "src/internal.ts:1:14 unused-code orphan is never used: delete it",
+        ])
+      }),
+  )
+
+  effect(
+    "suppressions reports directives and non-null assertions, not the word in a string",
+    () =>
+      Effect.gen(function* () {
+        const findings = yield* findingsOf(suppressions({ within: "src/**" }), {
+          "src/s.ts": [
+            "const list: Array<number> = []",
+            "// @ts-expect-error planted",
+            "export const wrong: string = 1",
+            "export const first = list[0]!",
+            "export const safe = list[0] ?? 0",
+            'export const documentation = "// @ts-ignore and /* eslint-disable */"',
+            "export const template = `// @ts-nocheck ${list.length} /* oxlint-disable */`",
+            "export const pattern = /[/*]@ts-expect-error/",
+            "/* eslint-disable no-unused-vars */",
+            "export const count = list.length // oxlint-disable-line",
+            "export const nested = `${/* @ts-ignore */ list.length}`",
+            "",
+          ].join("\n"),
+        })
+        expect(findings).toEqual([
+          "src/s.ts:2:4 suppressions @ts-expect-error silences the compiler: fix the type it complains about",
+          "src/s.ts:4:22 suppressions list[0]! asserts non-null on trust: handle the undefined case",
+          "src/s.ts:9:4 suppressions eslint-disable silences the compiler: fix the type it complains about",
+          "src/s.ts:10:37 suppressions oxlint-disable silences the compiler: fix the type it complains about",
+          "src/s.ts:11:29 suppressions @ts-ignore silences the compiler: fix the type it complains about",
+        ])
+      }),
   )
 
   effect("unjustified-casts reports erasing a known type to any", () =>
@@ -128,6 +139,5 @@ describe("structure rules", () => {
       expect(findings).toEqual([
         "src/c.ts:3:18 unjustified-casts erases number to any: keep the type, or fix the signature that rejects it",
       ])
-    }),
-  )
+    }))
 })

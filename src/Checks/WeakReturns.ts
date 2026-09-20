@@ -35,9 +35,9 @@ const isWeak = (
     if (Option.isSome(effect)) return yield* isWeak(project, effect.value.success)
     const [awaited, ...others] = yield* project.typeArgumentsOf(type)
     const thenable = (yield* project.propertyOf(type, "then")) !== undefined
-    return thenable && awaited !== undefined && others.length === 0
-      ? yield* isWeak(project, awaited)
-      : false
+    return thenable && awaited !== undefined && others.length === 0 ?
+      yield* isWeak(project, awaited) :
+      false
   })
 
 export const weakReturns = (options: { readonly within: string }) =>
@@ -49,12 +49,11 @@ export const weakReturns = (options: { readonly within: string }) =>
         Check.each(functions, (selection) =>
           Effect.gen(function* () {
             const signature = yield* project.signatureOf(selection.value)
-            const returned =
-              signature === undefined ? undefined : yield* project.returnTypeOf(signature)
+            const returned = signature === undefined ?
+              undefined :
+              yield* project.returnTypeOf(signature)
             if (returned === undefined || !(yield* isWeak(project, returned))) return []
             return [Check.report(selection, `returns ${yield* project.typeToString(returned)}`)]
-          }),
-        ),
+          }))
       ),
-    ),
-  )
+    ))

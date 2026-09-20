@@ -2,14 +2,8 @@
   "name": "safemods",
   "version": "0.2.0",
   "description": "Type-directed codemods for TypeScript 7+ projects, built on Effect.",
-  "bin": {
-    "safemods": "./dist/src/bin.js"
-  },
-  "files": [
-    "dist"
-  ],
-  "type": "module",
   "sideEffects": false,
+  "type": "module",
   "exports": {
     "./Application": {
       "source": "./src/Application.ts",
@@ -82,13 +76,19 @@
       "default": "./dist/src/Workspace/index.js"
     }
   },
+  "bin": {
+    "safemods": "./dist/src/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "prepack": "pnpm build",
     "check": "pnpm fmt:check && pnpm typecheck && pnpm lint && pnpm test",
     "check:fast": "pnpm fmt:check && pnpm typecheck && pnpm lint",
-    "fmt": "oxfmt --disable-nested-config",
-    "fmt:check": "oxfmt --check --disable-nested-config",
+    "fmt": "dprint fmt",
+    "fmt:check": "dprint check",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint && knip && pnpm safemods check",
     "prepare": "effect-tsgo patch --no-typescript --oxlint",
@@ -105,15 +105,15 @@
     "@effect/tsgo": "^0.36.5",
     "@effect/vitest": "4.0.0-rc.109",
     "@types/node": "26.2.0",
+    "dprint": "^0.57.4",
     "is-kit": "1.14.1",
     "knip": "^6.34.0",
-    "oxfmt": "^0.63.0",
     "oxlint": "^1.78.0",
     "oxlint-tsgolint": "^7.0.2001",
     "vitest": "4.1.10"
   },
+  "packageManager": "pnpm@11.17.0",
   "engines": {
     "node": ">=24"
-  },
-  "packageManager": "pnpm@11.17.0"
+  }
 }

@@ -17,20 +17,21 @@ describe("Edit", () => {
   effect("applies edits in offset order regardless of input order", () =>
     Effect.gen(function* () {
       expect(yield* applyFileEdits("abcdef", [edit(4, 5, "E"), edit(1, 2, "B")])).toBe("aBcdEf")
-    }),
-  )
+    }))
 
-  effect("rejects insertions at the same position and overlapping replacements", () =>
-    Effect.gen(function* () {
-      const insertion = yield* Effect.exit(
-        applyFileEdits("abcdef", [edit(2, 2, "x"), edit(2, 2, "y")]),
-      )
-      const overlap = yield* Effect.exit(
-        applyFileEdits("abcdef", [edit(1, 4, "x"), edit(3, 5, "y")]),
-      )
-      expect(Exit.isFailure(insertion)).toBe(true)
-      expect(Exit.isFailure(overlap)).toBe(true)
-    }),
+  effect(
+    "rejects insertions at the same position and overlapping replacements",
+    () =>
+      Effect.gen(function* () {
+        const insertion = yield* Effect.exit(
+          applyFileEdits("abcdef", [edit(2, 2, "x"), edit(2, 2, "y")]),
+        )
+        const overlap = yield* Effect.exit(
+          applyFileEdits("abcdef", [edit(1, 4, "x"), edit(3, 5, "y")]),
+        )
+        expect(Exit.isFailure(insertion)).toBe(true)
+        expect(Exit.isFailure(overlap)).toBe(true)
+      }),
   )
 
   effect("rejects every overlap, not only adjacent sorted edits", () =>
@@ -40,8 +41,7 @@ describe("Edit", () => {
       const differentlyOrdered = yield* Effect.exit(applyFileEdits("abcdef", edits.toReversed()))
       expect(Exit.isFailure(overlap)).toBe(true)
       expect(Exit.isFailure(differentlyOrdered)).toBe(true)
-    }),
-  )
+    }))
 
   effect("guards expected source text", () =>
     Effect.gen(function* () {
@@ -55,6 +55,5 @@ describe("Edit", () => {
       })
       expect(yield* applyFileEdits("abcdef", [guarded])).toBe("aBCdef")
       expect(Exit.isFailure(yield* Effect.exit(applyFileEdits("axcdef", [guarded])))).toBe(true)
-    }),
-  )
+    }))
 })

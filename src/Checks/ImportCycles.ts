@@ -25,9 +25,10 @@ export const importCycles = (options: { readonly within: string; readonly typeIm
           .map((reference) =>
             Check.report(
               reference,
-              `imports ${reference.value.resolved!.fileName}, which leads back to this file: move what both need into a module neither imports`,
-            ),
+              `imports ${
+                reference.value.resolved!.fileName
+              }, which leads back to this file: move what both need into a module neither imports`,
+            )
           )
       }),
-    ),
-  )
+    ))

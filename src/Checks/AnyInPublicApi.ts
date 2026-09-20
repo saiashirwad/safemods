@@ -16,19 +16,20 @@ export const anyInPublicApi = (options: { readonly publicApi: ReadonlyArray<stri
             const type = yield* Type.ofSymbol(project, symbol)
             const [declaration] = yield* project.declarationsOf(symbol)
             if (type === undefined || declaration === undefined) return []
-            const leaked = yield* Type.mentions(project, type, (candidate) =>
-              Effect.succeed(Type.isAny(candidate)),
+            const leaked = yield* Type.mentions(
+              project,
+              type,
+              (candidate) => Effect.succeed(Type.isAny(candidate)),
             )
-            return Option.isNone(leaked)
-              ? []
-              : Option.toArray(Query.selectionOf(project, declaration)).map((at) =>
-                  Check.report(
-                    at,
-                    `${symbol.name} is public and its type contains any: callers lose checking through it`,
-                  ),
+            return Option.isNone(leaked) ?
+              [] :
+              Option.toArray(Query.selectionOf(project, declaration)).map((at) =>
+                Check.report(
+                  at,
+                  `${symbol.name} is public and its type contains any: callers lose checking through it`,
                 )
+              )
           }),
         8,
       )
-    }),
-  )
+    }))

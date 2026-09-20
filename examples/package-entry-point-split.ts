@@ -25,7 +25,8 @@ const entryPointByExport = new Map([
   ["ListInvoicesOptions", "billing"],
 ])
 
-const AMBIGUOUS = `The root entry point is ambiguous here; choose ${ROOT}/auth or ${ROOT}/billing manually`
+const AMBIGUOUS =
+  `The root entry point is ambiguous here; choose ${ROOT}/auth or ${ROOT}/billing manually`
 const MIXED = "This declaration mixes exports from different package entry points"
 
 const namedBindings = P.either(
@@ -67,10 +68,11 @@ export const packageEntryPointSplit = Recipe.define("package-entry-point-split",
       const snapshot = yield* WorkspaceSnapshot
       const references = yield* Effect.forEach(snapshot.projects, (project) =>
         Query.moduleReferences(project).pipe(
-          Query.filter(({ value }) => value.specifier.text === ROOT),
+          Query.filter(({ value }) =>
+            value.specifier.text === ROOT
+          ),
           Query.collect,
-        ),
-      )
+        ))
       return Draft.concat(...references.flat().map(split))
     }),
 })

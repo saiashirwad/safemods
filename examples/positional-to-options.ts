@@ -20,7 +20,7 @@ export interface PositionalToOptionsInput {
 
 const namesOf = (parameters: NodeArray<ParameterDeclaration>): ReadonlyArray<Identifier> =>
   parameters.flatMap(({ name, dotDotDotToken }) =>
-    isIdentifier(name) && dotDotDotToken === undefined ? [name] : [],
+    isIdentifier(name) && dotDotDotToken === undefined ? [name] : []
   )
 
 const accepts = (
@@ -41,8 +41,7 @@ const accepts = (
           given !== undefined &&
           (yield* project.isTypeAssignableTo(given, expected))
         )
-      }),
-    )
+      }))
     return fits.every(Boolean)
   })
 
@@ -76,11 +75,10 @@ export const positionalToOptions = Recipe.define("positional-to-options", {
 
           const objectForms = yield* Effect.filter(overloads, (candidate) =>
             candidate.value._tag === "object" &&
-            candidate.fileName === positional.fileName &&
-            candidate.value.captures.name.text === name.text
-              ? accepts(project, candidate.value.captures.options, names)
-              : Effect.succeed(false),
-          )
+              candidate.fileName === positional.fileName &&
+              candidate.value.captures.name.text === name.text ?
+              accepts(project, candidate.value.captures.options, names) :
+              Effect.succeed(false))
           if (objectForms.length === 0) return Draft.empty
 
           const calls = yield* Query.calls(project).pipe(
@@ -96,7 +94,9 @@ export const positionalToOptions = Recipe.define("positional-to-options", {
               const sourceFile = call.getSourceFile()
               const first = call.arguments[0]
               const last = call.arguments.at(-1)
-              if (first === undefined || last === undefined) return Draft.empty
+              if (first === undefined || last === undefined) {
+                return Draft.empty
+              }
               const properties = call.arguments.map((argument, index) => {
                 const key = names[index]!.text
                 return argument.getText() === key ? key : `${key}: ${argument.getText()}`
@@ -112,8 +112,7 @@ export const positionalToOptions = Recipe.define("positional-to-options", {
               )
             }),
           )
-        }),
-      )
+        }))
       return Draft.concat(...drafts)
     }),
 })

@@ -40,110 +40,119 @@ const hasTwoArguments = refineKey(
 )
 
 describe("queries", () => {
-  effect("sources stay on project-owned files", () =>
-    withProject({}, (project) =>
-      Effect.gen(function* () {
-        const files = yield* project.files
-        const owned = new Set(files.map((file) => file.fileName))
-        const fromProject = yield* Query.collect(Query.identifiers(project))
-        const fromFiles = yield* Query.collect(Query.identifiers(files))
-
-        expect(owned).toEqual(
-          new Set([
-            "src/barrel.ts",
-            "src/consumer.ts",
-            "src/library.ts",
-            "src/reexport-consumer.ts",
-          ]),
-        )
-        expect(fromProject.length).toBeGreaterThan(0)
-        expect(fromProject.length).toBe(fromFiles.length)
-        expect(fromProject.every((selection) => owned.has(selection.fileName))).toBe(true)
-      }),
-    ),
-  )
-
-  effect("file scopes restrict a query and ignore repeated files", () =>
-    withProject({}, (project) =>
-      Effect.gen(function* () {
-        const library = yield* project.file(projectPath("src/library.ts"))
-        const consumer = yield* project.file(projectPath("src/consumer.ts"))
-        const consumerAgain = yield* project.file(projectPath("src/consumer.ts"))
-        expect(yield* project.file(projectPath("src/absent.ts"))).toBeUndefined()
-
-        const exported = yield* Query.nodes([library!, consumer!], isFunctionDeclaration).pipe(
-          Query.filter(
-            ({ value }) =>
-              value.modifiers?.some((modifier) => modifier.kind === SyntaxKind.ExportKeyword) ??
-              false,
-          ),
-          Query.collect,
-        )
-        expect(exported.map((selection) => selection.fileName)).toEqual([
-          "src/library.ts",
-          "src/library.ts",
-        ])
-
-        const once = yield* Query.collect(Query.calls([consumer!]))
-        const twice = yield* Query.collect(Query.calls([consumer!, consumerAgain!]))
-        expect(twice.length).toBe(once.length)
-        expect(yield* Query.collect(Query.calls([]))).toEqual([])
-      }),
-    ),
-  )
-
-  effect("where keeps the selections whose effectful test holds", () =>
-    withProject({ "src/tiny.ts": "export const alpha = 1\nexport const beta = 2\n" }, (project) =>
-      Effect.gen(function* () {
-        const surviving = yield* Query.identifiers(project).pipe(
-          Query.within("src/tiny.ts"),
-          Query.where((selection) => Effect.succeed(selection.value.text === "alpha")),
-          Query.collect,
-        )
-        expect(surviving.map((selection) => selection.value.text)).toEqual(["alpha"])
-      }),
-    ),
-  )
-
-  effect("filter narrows the selected node type", () =>
-    withProject({ "src/arity.ts": ARITY_SOURCE }, (project) =>
-      Effect.gen(function* () {
-        const binary = yield* Query.calls(project).pipe(
-          Query.within("src/arity.ts"),
-          Query.filter(hasTwoArguments),
-          Query.collect,
-        )
-        expect(binary).toHaveLength(1)
-        const [left, right] = binary[0]!.value.arguments
-        expect([left.getText(), right.getText()]).toEqual(["1", "2"])
-      }),
-    ),
-  )
-
-  effect("within matches globs when the pattern has a wildcard and exact paths otherwise", () =>
-    withProject(
-      {
-        "src/question?.ts": "export const question = 1\n",
-        "src/nested/deep.ts": "export const deep = 1\n",
-      },
-      (project) =>
+  effect(
+    "sources stay on project-owned files",
+    () =>
+      withProject({}, (project) =>
         Effect.gen(function* () {
-          const filesIn = (pattern: string) =>
-            Query.identifiers(project).pipe(
-              Query.within(pattern),
-              Query.collect,
-              Effect.map((selections) => new Set<string>(selections.map((s) => s.fileName))),
-            )
+          const files = yield* project.files
+          const owned = new Set(files.map((file) => file.fileName))
+          const fromProject = yield* Query.collect(Query.identifiers(project))
+          const fromFiles = yield* Query.collect(Query.identifiers(files))
 
-          expect((yield* filesIn("src/**/*.ts")).has("src/nested/deep.ts")).toBe(true)
-          expect((yield* filesIn("src/*.ts")).has("src/nested/deep.ts")).toBe(false)
-          expect((yield* filesIn("src/*.ts")).has("src/question?.ts")).toBe(true)
-          expect(yield* filesIn("src\\*.ts")).toEqual(yield* filesIn("src/*.ts"))
-          expect(yield* filesIn("src/library.ts")).toEqual(new Set(["src/library.ts"]))
-          expect(yield* filesIn("src/question?.ts")).toEqual(new Set(["src/question?.ts"]))
-          expect(yield* filesIn("library.ts")).toEqual(new Set())
-        }),
-    ),
+          expect(owned).toEqual(
+            new Set([
+              "src/barrel.ts",
+              "src/consumer.ts",
+              "src/library.ts",
+              "src/reexport-consumer.ts",
+            ]),
+          )
+          expect(fromProject.length).toBeGreaterThan(0)
+          expect(fromProject.length).toBe(fromFiles.length)
+          expect(fromProject.every((selection) => owned.has(selection.fileName))).toBe(true)
+        })),
+  )
+
+  effect(
+    "file scopes restrict a query and ignore repeated files",
+    () =>
+      withProject({}, (project) =>
+        Effect.gen(function* () {
+          const library = yield* project.file(projectPath("src/library.ts"))
+          const consumer = yield* project.file(projectPath("src/consumer.ts"))
+          const consumerAgain = yield* project.file(projectPath("src/consumer.ts"))
+          expect(yield* project.file(projectPath("src/absent.ts"))).toBeUndefined()
+
+          const exported = yield* Query.nodes([library!, consumer!], isFunctionDeclaration).pipe(
+            Query.filter(
+              ({ value }) =>
+                value.modifiers?.some((modifier) => modifier.kind === SyntaxKind.ExportKeyword) ??
+                  false,
+            ),
+            Query.collect,
+          )
+          expect(exported.map((selection) => selection.fileName)).toEqual([
+            "src/library.ts",
+            "src/library.ts",
+          ])
+
+          const once = yield* Query.collect(Query.calls([consumer!]))
+          const twice = yield* Query.collect(Query.calls([consumer!, consumerAgain!]))
+          expect(twice.length).toBe(once.length)
+          expect(yield* Query.collect(Query.calls([]))).toEqual([])
+        })),
+  )
+
+  effect(
+    "where keeps the selections whose effectful test holds",
+    () =>
+      withProject(
+        { "src/tiny.ts": "export const alpha = 1\nexport const beta = 2\n" },
+        (project) =>
+          Effect.gen(function* () {
+            const surviving = yield* Query.identifiers(project).pipe(
+              Query.within("src/tiny.ts"),
+              Query.where((selection) => Effect.succeed(selection.value.text === "alpha")),
+              Query.collect,
+            )
+            expect(surviving.map((selection) => selection.value.text)).toEqual(["alpha"])
+          }),
+      ),
+  )
+
+  effect(
+    "filter narrows the selected node type",
+    () =>
+      withProject({ "src/arity.ts": ARITY_SOURCE }, (project) =>
+        Effect.gen(function* () {
+          const binary = yield* Query.calls(project).pipe(
+            Query.within("src/arity.ts"),
+            Query.filter(hasTwoArguments),
+            Query.collect,
+          )
+          expect(binary).toHaveLength(1)
+          const [left, right] = binary[0]!.value.arguments
+          expect([left.getText(), right.getText()]).toEqual(["1", "2"])
+        })),
+  )
+
+  effect(
+    "within matches globs when the pattern has a wildcard and exact paths otherwise",
+    () =>
+      withProject(
+        {
+          "src/question?.ts": "export const question = 1\n",
+          "src/nested/deep.ts": "export const deep = 1\n",
+        },
+        (project) =>
+          Effect.gen(function* () {
+            const filesIn = (pattern: string) =>
+              Query.identifiers(project).pipe(
+                Query.within(pattern),
+                Query.collect,
+                Effect.map((selections) => new Set<string>(selections.map((s) => s.fileName))),
+              )
+
+            expect((yield* filesIn("src/**/*.ts")).has("src/nested/deep.ts")).toBe(true)
+            expect((yield* filesIn("src/*.ts")).has("src/nested/deep.ts")).toBe(false)
+            expect((yield* filesIn("src/*.ts")).has("src/question?.ts")).toBe(true)
+            expect(yield* filesIn("src\\*.ts")).toEqual(yield* filesIn("src/*.ts"))
+            expect(yield* filesIn("src/library.ts")).toEqual(new Set(["src/library.ts"]))
+            expect(yield* filesIn("src/question?.ts")).toEqual(new Set(["src/question?.ts"]))
+            expect(yield* filesIn("library.ts")).toEqual(new Set())
+          }),
+      ),
   )
 
   effect("resolvesTo follows a symbol across files", () =>
@@ -172,41 +181,42 @@ describe("queries", () => {
             "src/sem.ts:oldThing",
           ])
         }),
-    ),
-  )
+    ))
 
-  effect("resolvesTo canonicalizes a target symbol supplied through an import alias", () =>
-    withProject(
-      {
-        "src/alias-library.ts": "export const oldThing = 1\n",
-        "src/alias-consumer.ts": [
-          'import { oldThing as localThing } from "./alias-library.js"',
-          "export const result = localThing",
-          "",
-        ].join("\n"),
-      },
-      (project) =>
-        Effect.gen(function* () {
-          const consumer = yield* project.file(projectPath("src/alias-consumer.ts"))
-          const localThing = (yield* Query.identifiers([consumer!]).pipe(
-            Query.filter(({ value }) => value.text === "localThing"),
-            Query.collect,
-          ))[0]!
-          const alias = yield* project.symbolOf(localThing.value)
-          const references = yield* Query.identifiers(project).pipe(
-            Query.where(Query.resolvesTo(alias!)),
-            Query.collect,
-          )
-          expect(
-            references.map((selection) => `${selection.fileName}:${selection.value.text}`),
-          ).toEqual([
-            "src/alias-consumer.ts:oldThing",
-            "src/alias-consumer.ts:localThing",
-            "src/alias-consumer.ts:localThing",
-            "src/alias-library.ts:oldThing",
-          ])
-        }),
-    ),
+  effect(
+    "resolvesTo canonicalizes a target symbol supplied through an import alias",
+    () =>
+      withProject(
+        {
+          "src/alias-library.ts": "export const oldThing = 1\n",
+          "src/alias-consumer.ts": [
+            'import { oldThing as localThing } from "./alias-library.js"',
+            "export const result = localThing",
+            "",
+          ].join("\n"),
+        },
+        (project) =>
+          Effect.gen(function* () {
+            const consumer = yield* project.file(projectPath("src/alias-consumer.ts"))
+            const localThing = (yield* Query.identifiers([consumer!]).pipe(
+              Query.filter(({ value }) => value.text === "localThing"),
+              Query.collect,
+            ))[0]!
+            const alias = yield* project.symbolOf(localThing.value)
+            const references = yield* Query.identifiers(project).pipe(
+              Query.where(Query.resolvesTo(alias!)),
+              Query.collect,
+            )
+            expect(
+              references.map((selection) => `${selection.fileName}:${selection.value.text}`),
+            ).toEqual([
+              "src/alias-consumer.ts:oldThing",
+              "src/alias-consumer.ts:localThing",
+              "src/alias-consumer.ts:localThing",
+              "src/alias-library.ts:oldThing",
+            ])
+          }),
+      ),
   )
 
   effect("finds every supported module reference form", () =>
@@ -245,8 +255,7 @@ describe("queries", () => {
             ["require", "./common.cjs"],
           ])
         }),
-    ),
-  )
+    ))
 
   effect("classifies semantic references by their syntactic role", () =>
     withProject(
@@ -290,8 +299,7 @@ describe("queries", () => {
             "value:property-name",
           ])
         }),
-    ),
-  )
+    ))
 
   effect("resolves module references through the compiler", () =>
     withProject(
@@ -317,8 +325,7 @@ describe("queries", () => {
             ["./missing.js", undefined],
           ])
         }),
-    ),
-  )
+    ))
 
   const OVERLOAD_SOURCE = [
     "export function parse(value: string): string",
@@ -349,8 +356,7 @@ describe("queries", () => {
           ])
           expect(yield* project.typeToString(returned!)).toBe("number")
         }),
-    ),
-  )
+    ))
 
   effect(
     "resolvesToSignature matches calls by the overload they select, through any receiver",
@@ -419,8 +425,7 @@ describe("queries", () => {
           ])
           expect(yield* callsAssignableTo("string")).toEqual(["label.toUpperCase()"])
         }),
-    ),
-  )
+    ))
 
   effect("typed pairs each node with its checked type", () =>
     withProject(
@@ -433,44 +438,51 @@ describe("queries", () => {
             Query.collect,
           )
           expect(
-            yield* Effect.forEach(calls, ({ value }) =>
-              Effect.map(project.typeToString(value.type), (type) => [value.node.getText(), type]),
+            yield* Effect.forEach(
+              calls,
+              ({ value }) =>
+                Effect.map(
+                  project.typeToString(value.type),
+                  (type) => [value.node.getText(), type],
+                ),
             ),
           ).toEqual([['JSON.parse("1")', "any"]])
         }),
-    ),
-  )
+    ))
 
-  effect("usesOf ignores default import bindings but retains actual escaping uses", () =>
-    withProject(
-      {
-        "src/direct.ts": "export default function direct(value?: number) { return value ?? 1 }\n",
-        "src/escaped.ts": "export default function escaped(value?: number) { return value ?? 1 }\n",
-        "src/consumer.ts": [
-          'import direct from "./direct.js"',
-          'import escaped from "./escaped.js"',
-          "direct()",
-          "direct(2)",
-          "escaped()",
-          "export const callback = escaped",
-          "",
-        ].join("\n"),
-      },
-      (project) =>
-        Effect.gen(function* () {
-          for (const name of ["direct", "escaped"]) {
-            const [selection] = yield* Query.namedFunctions(project).pipe(
-              Query.within(`src/${name}.ts`),
-              Query.collect,
-            )
-            const uses = yield* Query.usesOf({ ...selection!, value: selection!.value.name })
-            expect(uses.calls.map(({ value }) => value.getText())).toEqual(
-              name === "direct" ? ["direct()", "direct(2)"] : ["escaped()"],
-            )
-            expect(uses.escapes).toBe(name === "escaped")
-          }
-        }),
-    ),
+  effect(
+    "usesOf ignores default import bindings but retains actual escaping uses",
+    () =>
+      withProject(
+        {
+          "src/direct.ts": "export default function direct(value?: number) { return value ?? 1 }\n",
+          "src/escaped.ts":
+            "export default function escaped(value?: number) { return value ?? 1 }\n",
+          "src/consumer.ts": [
+            'import direct from "./direct.js"',
+            'import escaped from "./escaped.js"',
+            "direct()",
+            "direct(2)",
+            "escaped()",
+            "export const callback = escaped",
+            "",
+          ].join("\n"),
+        },
+        (project) =>
+          Effect.gen(function* () {
+            for (const name of ["direct", "escaped"]) {
+              const [selection] = yield* Query.namedFunctions(project).pipe(
+                Query.within(`src/${name}.ts`),
+                Query.collect,
+              )
+              const uses = yield* Query.usesOf({ ...selection!, value: selection!.value.name })
+              expect(uses.calls.map(({ value }) => value.getText())).toEqual(
+                name === "direct" ? ["direct()", "direct(2)"] : ["escaped()"],
+              )
+              expect(uses.escapes).toBe(name === "escaped")
+            }
+          }),
+      ),
   )
 
   effect("referencesTo follows the checker, not the spelling", () =>
@@ -516,6 +528,5 @@ describe("queries", () => {
             "src/account.ts:3",
           ])
         }),
-    ),
-  )
+    ))
 })

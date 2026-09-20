@@ -19,17 +19,18 @@ export const ignoredReturns = (options: { readonly within: string }) =>
             if (escapes || calls.length < 2) return []
             if (!calls.every(({ value }) => isExpressionStatement(value.parent))) return []
             const signature = yield* project.signatureOf(selection.value.node)
-            const returned =
-              signature === undefined ? undefined : yield* project.returnTypeOf(signature)
+            const returned = signature === undefined ?
+              undefined :
+              yield* project.returnTypeOf(signature)
             if (returned === undefined || (returned.flags & nothing) !== 0) return []
             return [
               Check.report(
                 name,
-                `returns ${yield* project.typeToString(returned)}, which all ${calls.length} callers ignore: return nothing`,
+                `returns ${yield* project.typeToString(
+                  returned,
+                )}, which all ${calls.length} callers ignore: return nothing`,
               ),
             ]
-          }),
-        ),
+          }))
       ),
-    ),
-  )
+    ))

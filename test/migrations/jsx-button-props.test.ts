@@ -36,11 +36,13 @@ describe("jsx-button-props", () => {
           const diagnostic = yield* readUtf8(root, "src/features/preexisting-error.tsx")
           expect(diagnostic).toContain("<Button label={123} />")
 
-          for (const relative of [
-            "src/ui/button.tsx",
-            "src/ui/index.tsx",
-            "src/features/unrelated.tsx",
-          ]) {
+          for (
+            const relative of [
+              "src/ui/button.tsx",
+              "src/ui/index.tsx",
+              "src/features/unrelated.tsx",
+            ]
+          ) {
             const [actual, original] = yield* Effect.all([
               readUtf8(root, relative),
               readUtf8(fixturePath, relative),
@@ -53,6 +55,5 @@ describe("jsx-button-props", () => {
           expect(second.unsupported).toHaveLength(4)
         }),
       { fixture },
-    ),
-  )
+    ))
 })

@@ -19,15 +19,16 @@ export const duplicatedFunctions = (options: {
       Effect.map((functions) =>
         [...Map.groupBy(functions, bodyOf).values()].flatMap((copies) => {
           const files = [...new Set(copies.map((copy) => copy.fileName))]
-          return files.length < 2
-            ? []
-            : copies.map((copy) =>
-                Check.report(
-                  copy,
-                  `${copy.value.name.text} is written out in ${files.length} files (${files.filter((file) => file !== copy.fileName).join(", ")}): keep one and import it`,
-                ),
+          return files.length < 2 ?
+            [] :
+            copies.map((copy) =>
+              Check.report(
+                copy,
+                `${copy.value.name.text} is written out in ${files.length} files (${
+                  files.filter((file) => file !== copy.fileName).join(", ")
+                }): keep one and import it`,
               )
-        }),
+            )
+        })
       ),
-    ),
-  )
+    ))

@@ -27,7 +27,9 @@ const lineText = (node: Node): string => {
 
 const located = (project: ProjectSnapshot, node: Node): string => {
   const fileName = project.fileNameOf(node.getSourceFile())
-  return `${fileName._tag === "Some" ? fileName.value : node.getSourceFile().fileName}:${lineText(node)}`
+  return `${fileName._tag === "Some" ? fileName.value : node.getSourceFile().fileName}:${
+    lineText(node)
+  }`
 }
 
 const innermost = (node: Node, offset: number): Node => {
@@ -67,8 +69,8 @@ const targetAt = (position: string) =>
     }
     const { project, file } = yield* fileNamed(path)
     const lines = file.sourceFile.text.split("\n").slice(0, Number(line) - 1)
-    const offset =
-      lines.reduce((total, text) => total + text.length + 1, 0) + Number(column ?? 1) - 1
+    const offset = lines.reduce((total, text) => total + text.length + 1, 0) + Number(column ?? 1) -
+      1
     return { project, file, node: innermost(file.sourceFile, offset) } satisfies Target
   })
 
@@ -99,9 +101,9 @@ export const calls = (position: string) =>
     const { calls: found, escapes } = yield* Query.usesOf(selection)
     return [
       ...found.map(({ value }) => located(project, value)).sort(),
-      ...(escapes
-        ? ["note: also used other than by a direct call, so more callers may exist"]
-        : []),
+      ...(escapes ?
+        ["note: also used other than by a direct call, so more callers may exist"] :
+        []),
     ]
   })
 
@@ -122,10 +124,12 @@ export const exports = (path: string) =>
   })
 
 const edges = (project: ProjectSnapshot) =>
-  Effect.map(Query.collect(Query.resolvedModuleReferences(project)), (references) =>
-    references.flatMap(({ fileName, value }) =>
-      value.resolved === undefined ? [] : [{ from: fileName, to: value.resolved.fileName }],
-    ),
+  Effect.map(
+    Query.collect(Query.resolvedModuleReferences(project)),
+    (references) =>
+      references.flatMap(({ fileName, value }) =>
+        value.resolved === undefined ? [] : [{ from: fileName, to: value.resolved.fileName }]
+      ),
   )
 
 export const deps = (path: string) =>
@@ -164,8 +168,7 @@ export const map = Effect.gen(function* () {
           })),
         { concurrency: "unbounded" },
       )
-    }),
-  )
+    }))
   return [
     "lines  exports  imported-by  imports  file",
     ...rows
@@ -173,7 +176,9 @@ export const map = Effect.gen(function* () {
       .sort((left, right) => right.importedBy - left.importedBy || right.lines - left.lines)
       .map(
         (row) =>
-          `${String(row.lines).padStart(5)}  ${String(row.exports).padStart(7)}  ${String(row.importedBy).padStart(11)}  ${String(row.imports).padStart(7)}  ${row.fileName}`,
+          `${String(row.lines).padStart(5)}  ${String(row.exports).padStart(7)}  ${
+            String(row.importedBy).padStart(11)
+          }  ${String(row.imports).padStart(7)}  ${row.fileName}`,
       ),
   ]
 })

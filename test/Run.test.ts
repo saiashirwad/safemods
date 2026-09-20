@@ -28,7 +28,7 @@ const run = (cwd: string, to: string, ...flags: ReadonlyArray<string>) =>
               code: typeof error?.code === "number" ? error.code : 0,
               lines: stdout.trimEnd().split("\n").slice(1),
             }),
-        ),
+        )
       ),
   )
 

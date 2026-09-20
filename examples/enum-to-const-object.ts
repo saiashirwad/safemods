@@ -47,15 +47,16 @@ const replacement = (declaration: EnumDeclaration, name: string): string => {
 const memberReason = (member: EnumMember): string | undefined => {
   if (!isIdentifier(member.name)) return "only identifier member names are supported"
   if (member.initializer === undefined) return "every member must have an explicit string literal"
-  if (!isStringLiteral(member.initializer))
+  if (!isStringLiteral(member.initializer)) {
     return "numeric and computed enum members are unsupported"
+  }
   return undefined
 }
 
 const reasonFor = (declaration: EnumDeclaration): string | undefined =>
-  isAmbient(declaration)
-    ? "ambient enums are unsupported"
-    : declaration.members.map(memberReason).find(Predicate.isNotUndefined)
+  isAmbient(declaration) ?
+    "ambient enums are unsupported" :
+    declaration.members.map(memberReason).find(Predicate.isNotUndefined)
 
 export const enumToConstObject = Recipe.define("enum-to-const-object", {
   version: "1.0.0",

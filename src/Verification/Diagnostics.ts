@@ -57,12 +57,11 @@ export const collectDiagnostics = Effect.gen(function* () {
     )
     for (const kind of diagnosticKinds) {
       const found = yield* project.unsafeNative(({ program }) =>
-        nativeRequest(kind, () => program[kind]()),
+        nativeRequest(kind, () => program[kind]())
       )
       for (const diagnostic of found) {
         const fileName = diagnostic.fileName ?? ""
-        const text =
-          texts.get(fileName) ??
+        const text = texts.get(fileName) ??
           (yield* fs.readFileString(fileName).pipe(Effect.orElseSucceed(() => "")))
         diagnostics.push(record(diagnostic, text))
       }
@@ -94,10 +93,9 @@ export const diffDiagnostics = (
   const remaining = Map.groupBy(
     baseline.map((diagnostic) => ({
       ...diagnostic,
-      fileName:
-        diagnostic.fileName === undefined
-          ? undefined
-          : (moves.get(diagnostic.fileName) ?? diagnostic.fileName),
+      fileName: diagnostic.fileName === undefined ?
+        undefined :
+        (moves.get(diagnostic.fileName) ?? diagnostic.fileName),
     })),
     identity,
   )

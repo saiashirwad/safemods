@@ -19,45 +19,49 @@ const rejects = (plan: TransformationPlan) =>
   })
 
 describe("plan validation", () => {
-  effect("accepts disjoint edits, creation, deletion, and movement in one plan", () =>
-    Effect.gen(function* () {
-      const plan = yield* finalizePlan({
-        ...richInput,
-        edits: [
-          ...richInput.edits,
-          { ...richInput.edits[0]!, start: 2, end: 3, expectedTextHash: Sha256.digest("u") },
-        ],
-      })
-      expect(plan.edits).toHaveLength(2)
-      expect(plan.fileOperations.map((operation) => operation.kind)).toEqual([
-        "create",
-        "delete",
-        "move",
-      ])
-    }),
+  effect(
+    "accepts disjoint edits, creation, deletion, and movement in one plan",
+    () =>
+      Effect.gen(function* () {
+        const plan = yield* finalizePlan({
+          ...richInput,
+          edits: [
+            ...richInput.edits,
+            { ...richInput.edits[0]!, start: 2, end: 3, expectedTextHash: Sha256.digest("u") },
+          ],
+        })
+        expect(plan.edits).toHaveLength(2)
+        expect(plan.fileOperations.map((operation) => operation.kind)).toEqual([
+          "create",
+          "delete",
+          "move",
+        ])
+      }),
   )
 
-  effect("treats the same relative path in different projects as different sources", () =>
-    Effect.gen(function* () {
-      const plan = yield* finalizePlan({
-        ...richInput,
-        projects: [...richInput.projects, { id: "other", configFileName: "other/tsconfig.json" }],
-        sources: [
-          ...richInput.sources,
-          { projectId: "other", fileName: "src/index.ts", kind: "missing" },
-        ],
-        fileOperations: [
-          ...richInput.fileOperations,
-          {
-            kind: "create",
-            projectId: "other",
-            fileName: "src/index.ts",
-            content: "",
-          },
-        ],
-      })
-      expect(plan.projects).toHaveLength(2)
-    }),
+  effect(
+    "treats the same relative path in different projects as different sources",
+    () =>
+      Effect.gen(function* () {
+        const plan = yield* finalizePlan({
+          ...richInput,
+          projects: [...richInput.projects, { id: "other", configFileName: "other/tsconfig.json" }],
+          sources: [
+            ...richInput.sources,
+            { projectId: "other", fileName: "src/index.ts", kind: "missing" },
+          ],
+          fileOperations: [
+            ...richInput.fileOperations,
+            {
+              kind: "create",
+              projectId: "other",
+              fileName: "src/index.ts",
+              content: "",
+            },
+          ],
+        })
+        expect(plan.projects).toHaveLength(2)
+      }),
   )
 
   effect("accepts edits to a file that the same plan moves", () =>
@@ -67,8 +71,7 @@ describe("plan validation", () => {
         edits: [...richInput.edits, { ...richInput.edits[0]!, fileName: "src/move.ts" }],
       })
       expect(plan.edits.map((edit) => edit.fileName)).toEqual(["src/index.ts", "src/move.ts"])
-    }),
-  )
+    }))
 
   effect("rejects semantic input mutations", () =>
     Effect.gen(function* () {
@@ -79,8 +82,7 @@ describe("plan validation", () => {
           outcome: "Failure",
         })
       }
-    }),
-  )
+    }))
 
   effect("rejects unknown and missing fields", () =>
     Effect.gen(function* () {
@@ -88,8 +90,7 @@ describe("plan validation", () => {
       const { recipe: _, ...missingRecipe } = plan
       expect(yield* rejects({ ...plan, unexpected: true } as TransformationPlan)).toBe(true)
       expect(yield* rejects(missingRecipe as TransformationPlan)).toBe(true)
-    }),
-  )
+    }))
 
   effect("rejects tampered hashes and non-canonical ordering", () =>
     Effect.gen(function* () {
@@ -108,6 +109,5 @@ describe("plan validation", () => {
         }),
       ]
       for (const candidate of tampered) expect(yield* rejects(candidate)).toBe(true)
-    }),
-  )
+    }))
 })

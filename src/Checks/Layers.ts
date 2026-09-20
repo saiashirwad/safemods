@@ -8,9 +8,7 @@ export const layers = (options: {
 }) => {
   const rowOf = (fileName: string): number | undefined => {
     const row = options.order.findIndex((entries) =>
-      entries.some((entry) =>
-        entry.endsWith("/") ? fileName.startsWith(entry) : fileName === entry,
-      ),
+      entries.some((entry) => entry.endsWith("/") ? fileName.startsWith(entry) : fileName === entry)
     )
     return row === -1 ? undefined : row
   }
@@ -24,11 +22,10 @@ export const layers = (options: {
           const target = reference.value.resolved?.fileName
           const from = rowOf(reference.fileName)
           const to = target === undefined ? undefined : rowOf(target)
-          return from === undefined || to === undefined || to <= from
-            ? []
-            : [Check.report(reference, `imports ${target}, which is listed below it`)]
-        }),
+          return from === undefined || to === undefined || to <= from ?
+            [] :
+            [Check.report(reference, `imports ${target}, which is listed below it`)]
+        })
       ),
-    ),
-  )
+    ))
 }

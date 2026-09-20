@@ -183,10 +183,9 @@ const copyFixture = Effect.fn("copyFixture")(function* (
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const source = path.resolve(repoRoot, fixture)
-  const workspace =
-    destination === undefined
-      ? yield* fs.makeTempDirectory({ prefix: `safemods-${path.basename(fixture)}-` })
-      : path.resolve(destination)
+  const workspace = destination === undefined ?
+    yield* fs.makeTempDirectory({ prefix: `safemods-${path.basename(fixture)}-` }) :
+    path.resolve(destination)
   if (isInside(fixturesRoot, workspace, path)) {
     return yield* new WritesIntoFixtures({ path: workspace })
   }
@@ -304,8 +303,8 @@ const command = Command.make(
   ),
 )
 
-const isMain =
-  process.argv[1] !== undefined && NodePath.resolve(process.argv[1]) === import.meta.filename
+const isMain = process.argv[1] !== undefined &&
+  NodePath.resolve(process.argv[1]) === import.meta.filename
 
 if (isMain) {
   NodeRuntime.runMain(

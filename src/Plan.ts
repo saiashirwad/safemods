@@ -117,22 +117,22 @@ const byProject = Order.Struct({ id: Order.String, configFileName: Order.String 
 const bySource = Order.combine(
   byFile,
   Order.make((left: SourceFingerprint, right: SourceFingerprint) =>
-    Order.String(canonicalJson(left), canonicalJson(right)),
+    Order.String(canonicalJson(left), canonicalJson(right))
   ),
 )
 const byOperation = Order.combine(
   byFile,
   Order.make((left: FileOperation, right: FileOperation) =>
-    Order.String(canonicalJson(left), canonicalJson(right)),
+    Order.String(canonicalJson(left), canonicalJson(right))
   ),
 )
 const byEdit = Order.make((left: TextEdit, right: TextEdit) => {
   const compared = compareEdits(left, right)
-  return compared < 0
-    ? -1
-    : compared > 0
-      ? 1
-      : Order.String(left.expectedTextHash, right.expectedTextHash)
+  return compared < 0 ?
+    -1 :
+    compared > 0 ?
+    1 :
+    Order.String(left.expectedTextHash, right.expectedTextHash)
 })
 
 const canonicalize = (input: PlanContent): PlanContent => ({
@@ -158,8 +158,7 @@ const duplicate = (values: ReadonlyArray<string>): string | undefined => {
 
 const semanticError = (plan: PlanContent): string | undefined => {
   if (plan.projects.length === 0) return "A plan must contain at least one project"
-  const repeatedProject =
-    duplicate(plan.projects.map((project) => project.id)) ??
+  const repeatedProject = duplicate(plan.projects.map((project) => project.id)) ??
     duplicate(plan.projects.map((project) => project.configFileName))
   if (repeatedProject !== undefined) return `Duplicate project ${repeatedProject}`
 
@@ -186,9 +185,9 @@ const semanticError = (plan: PlanContent): string | undefined => {
   )
   const owners = new Map<string, string>()
   const moveTargets = plan.fileOperations.flatMap((operation) =>
-    operation.kind === "move"
-      ? [{ projectId: operation.projectId, fileName: operation.toFileName }]
-      : [],
+    operation.kind === "move" ?
+      [{ projectId: operation.projectId, fileName: operation.toFileName }] :
+      []
   )
   for (const { projectId, fileName } of [...plan.edits, ...plan.fileOperations, ...moveTargets]) {
     const diskPath = `${roots.get(projectId)}/${fileName}`

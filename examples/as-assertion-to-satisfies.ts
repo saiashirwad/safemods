@@ -47,9 +47,9 @@ const operatorRange = (node: AsExpression): { readonly start: number; readonly e
 
 const draftFor = (selection: Query.Selection<AsExpression>): Draft.Draft => {
   const review = needsReview(selection.value)
-  return review === undefined
-    ? Draft.replaceRange(selection, operatorRange(selection.value), "satisfies")
-    : Draft.unsupported(selection, review._tag)
+  return review === undefined ?
+    Draft.replaceRange(selection, operatorRange(selection.value), "satisfies") :
+    Draft.unsupported(selection, review._tag)
 }
 
 export const asAssertionToSatisfies = Recipe.define("as-assertion-to-satisfies", {
@@ -60,11 +60,12 @@ export const asAssertionToSatisfies = Recipe.define("as-assertion-to-satisfies",
       const snapshot = yield* WorkspaceSnapshot
       const drafts = yield* Effect.forEach(snapshot.projects, (project) =>
         Query.nodes(project, isAsExpression).pipe(
-          Query.filter((selection) => isVariableInitializer(selection.value)),
+          Query.filter((selection) =>
+            isVariableInitializer(selection.value)
+          ),
           Query.collect,
           Effect.map((selections) => Draft.concat(...selections.map(draftFor))),
-        ),
-      )
+        ))
       return Draft.concat(...drafts)
     }),
 })

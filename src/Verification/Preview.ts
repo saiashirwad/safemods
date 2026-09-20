@@ -77,7 +77,7 @@ const readSource = (plan: ValidatedPlan, source: SourceFingerprint) =>
         .exists(absolute)
         .pipe(
           Effect.mapError((cause): PlatformError.PlatformError | StalePlanError =>
-            cause.reason._tag === "NotFound" ? stale : cause,
+            cause.reason._tag === "NotFound" ? stale : cause
           ),
         )
       return exists ? yield* stale : undefined
@@ -86,7 +86,7 @@ const readSource = (plan: ValidatedPlan, source: SourceFingerprint) =>
       .readFile(absolute)
       .pipe(
         Effect.mapError((cause): PlatformError.PlatformError | StalePlanError =>
-          cause.reason._tag === "NotFound" ? stale : cause,
+          cause.reason._tag === "NotFound" ? stale : cause
         ),
       )
     return Sha256.digest(bytes) === source.hash ? bytes : yield* stale

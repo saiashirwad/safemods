@@ -90,7 +90,7 @@ const namesOf = (group: ReadonlyArray<Declared>): ReadonlyArray<string> =>
 const textOf = (group: ReadonlyArray<Declared>): string =>
   group
     .map(({ statement }) =>
-      statement.getSourceFile().text.slice(statement.getFullStart(), statement.getEnd()).trim(),
+      statement.getSourceFile().text.slice(statement.getFullStart(), statement.getEnd()).trim()
     )
     .join("\n\n")
 
@@ -107,9 +107,9 @@ const splittableConsumer = P.tagged({
 })
 
 const bindingText = (element: ImportSpecifier | ExportSpecifier): string =>
-  element.propertyName === undefined
-    ? element.name.getText()
-    : `${element.propertyName.getText()} as ${element.name.getText()}`
+  element.propertyName === undefined ?
+    element.name.getText() :
+    `${element.propertyName.getText()} as ${element.name.getText()}`
 
 export const splitModule = Recipe.define("split-module", {
   version: "1.0.0",
@@ -136,7 +136,7 @@ export const splitModule = Recipe.define("split-module", {
       if (unsplittable.length > 0) {
         return Draft.concat(
           ...unsplittable.map((statement) =>
-            Draft.unsupported(selectionOf(statement), "only named declarations can be split"),
+            Draft.unsupported(selectionOf(statement), "only named declarations can be split")
           ),
         )
       }
@@ -163,17 +163,16 @@ export const splitModule = Recipe.define("split-module", {
       if (hidden.length > 0) {
         return Draft.concat(
           ...hidden.map(({ statement }) =>
-            Draft.unsupported(selectionOf(statement), "the service needs this unexported type"),
+            Draft.unsupported(selectionOf(statement), "the service needs this unexported type")
           ),
         )
       }
 
       const typeNames = new Set(namesOf(types))
       const neededTypes = namesOf(serviceNeeds)
-      const service =
-        neededTypes.length === 0
-          ? textOf(values)
-          : `import type { ${neededTypes.join(", ")} } from "./model.js"\n\n${textOf(values)}`
+      const service = neededTypes.length === 0 ?
+        textOf(values) :
+        `import type { ${neededTypes.join(", ")} } from "./model.js"\n\n${textOf(values)}`
       const index = [
         `export type { ${namesOf(types.filter(isExported)).join(", ")} } from "./model.js"`,
         `export { ${namesOf(values.filter(isExported)).join(", ")} } from "./service.js"`,
@@ -190,7 +189,9 @@ export const splitModule = Recipe.define("split-module", {
         const quote = specifier.getText().startsWith("'") ? "'" : '"'
         const semicolon = matched.node.getText().endsWith(";") ? ";" : ""
         const from = (target: string): string =>
-          `${quote}${ModuleSpecifier.emitted(ModuleSpecifier.between(selection.fileName, target))}${quote}`
+          `${quote}${
+            ModuleSpecifier.emitted(ModuleSpecifier.between(selection.fileName, target))
+          }${quote}`
         const line = (bindings: ReadonlyArray<string>, modifier: string, target: string): string =>
           `${matched._tag}${modifier} { ${bindings.join(", ")} } from ${from(target)}${semicolon}`
         const isTypeBinding = (element: ImportSpecifier | ExportSpecifier): boolean =>
@@ -204,9 +205,9 @@ export const splitModule = Recipe.define("split-module", {
           )
         const lines = [
           fromModel.length === 0 ? undefined : line(fromModel, " type", paths.model),
-          fromService.length === 0
-            ? undefined
-            : line(fromService, typeOnly ? " type" : "", paths.service),
+          fromService.length === 0 ?
+            undefined :
+            line(fromService, typeOnly ? " type" : "", paths.service),
         ].filter((text) => text !== undefined)
         return Draft.replace(project, matched.node, lines.join("\n"))
       }

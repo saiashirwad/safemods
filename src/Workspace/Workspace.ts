@@ -71,9 +71,9 @@ const make = (
   )
   const projectRoot = (projectId: ProjectId.Type) => {
     const configFile = configFiles.get(projectId)
-    return configFile === undefined
-      ? Effect.fail(new ProjectNotInWorkspace({ projectId }))
-      : Effect.succeed(path.dirname(configFile))
+    return configFile === undefined ?
+      Effect.fail(new ProjectNotInWorkspace({ projectId })) :
+      Effect.succeed(path.dirname(configFile))
   }
 
   return {
@@ -82,19 +82,18 @@ const make = (
     projectRoot,
     absolutePath: (file) =>
       Effect.map(projectRoot(file.projectId), (projectRoot) =>
-        file.fileName.startsWith("../")
-          ? path.join(root, file.fileName.slice(3))
-          : path.join(projectRoot, file.fileName),
-      ),
+        file.fileName.startsWith("../") ?
+          path.join(root, file.fileName.slice(3)) :
+          path.join(projectRoot, file.fileName)),
     withSnapshot: (program, overlay) =>
       Effect.gen(function* () {
         const api = yield* Effect.acquireRelease(
           Effect.try({
             try: () =>
               new API(
-                overlay === undefined
-                  ? { cwd: root }
-                  : { cwd: root, fs: Overlay.fileSystem(overlay, path) },
+                overlay === undefined ?
+                  { cwd: root } :
+                  { cwd: root, fs: Overlay.fileSystem(overlay, path) },
               ),
             catch: (cause) => new WorkspaceCompilerError({ operation: "createAPI", cause }),
           }),
@@ -102,37 +101,38 @@ const make = (
         )
         const native = yield* Effect.acquireRelease(
           nativeRequest("updateSnapshot", () =>
-            api.updateSnapshot({ openProjects: [...configFiles.values()] }),
-          ),
+            api.updateSnapshot({ openProjects: [...configFiles.values()] })),
           (snapshot) =>
-            nativeRequest("disposeSnapshot", () => snapshot.dispose()).pipe(Effect.ignore),
+            nativeRequest("disposeSnapshot", () =>
+              snapshot.dispose()).pipe(Effect.ignore),
         )
 
         let active = true
         const ensureActive = Effect.suspend(() =>
-          active ? Effect.void : Effect.fail(new ProjectSnapshot.SnapshotExpired()),
+          active ? Effect.void : Effect.fail(new ProjectSnapshot.SnapshotExpired())
         )
 
         const projects = new Map(
           definition.projects.flatMap((configured) => {
             const configFile = configFiles.get(configured.id)
-            const nativeProject =
-              configFile === undefined ? undefined : native.getProject(configFile)
-            return configFile === undefined || nativeProject === undefined
-              ? []
-              : [
-                  [
-                    configured.id,
-                    ProjectSnapshot.make({
-                      configured,
-                      native: nativeProject,
-                      path,
-                      workspaceRoot: root,
-                      projectRoot: path.dirname(configFile),
-                      ensureActive,
-                    }),
-                  ] as const,
-                ]
+            const nativeProject = configFile === undefined ?
+              undefined :
+              native.getProject(configFile)
+            return configFile === undefined || nativeProject === undefined ?
+              [] :
+              [
+                [
+                  configured.id,
+                  ProjectSnapshot.make({
+                    configured,
+                    native: nativeProject,
+                    path,
+                    workspaceRoot: root,
+                    projectRoot: path.dirname(configFile),
+                    ensureActive,
+                  }),
+                ] as const,
+              ]
           }),
         )
         const ownership = new Map<string, Array<ProjectId.Type>>()
@@ -160,9 +160,9 @@ const make = (
           projects: [...projects.values()],
           project: (projectId) => {
             const project = projects.get(projectId)
-            return project === undefined
-              ? Effect.fail(new ProjectNotInSnapshot({ projectId }))
-              : Effect.succeed(project)
+            return project === undefined ?
+              Effect.fail(new ProjectNotInSnapshot({ projectId })) :
+              Effect.succeed(project)
           },
           capture: Effect.gen(function* () {
             const fs = yield* FileSystem.FileSystem
@@ -183,9 +183,9 @@ const make = (
                   captured,
                   { projectId: configured.id, fileName: file.fileName },
                   yield* fs.readFile(
-                    file.fileName.startsWith("../")
-                      ? path.join(root, file.fileName.slice(3))
-                      : path.join(path.dirname(configFile), file.fileName),
+                    file.fileName.startsWith("../") ?
+                      path.join(root, file.fileName.slice(3)) :
+                      path.join(path.dirname(configFile), file.fileName),
                   ),
                 )
               }

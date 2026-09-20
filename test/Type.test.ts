@@ -44,62 +44,63 @@ const printed = (project: ProjectSnapshot, parameters: Option.Option<Record<stri
     onSome: (found) =>
       Effect.map(
         Effect.forEach(Object.entries(found), ([key, type]) =>
-          Effect.map(project.typeToString(type), (text) => [key, text] as const),
-        ),
+          Effect.map(project.typeToString(type), (text) => [key, text] as const)),
         Object.fromEntries,
       ),
   })
 
 describe("types", () => {
-  effect("reads Effect, Stream and Layer parameters off the real variance structs", () =>
-    withProject(
-      { "src/effects.ts": SOURCE },
-      (project) =>
-        Effect.gen(function* () {
-          const parse =
-            <Parsed extends Record<string, NativeType>>(
+  effect(
+    "reads Effect, Stream and Layer parameters off the real variance structs",
+    () =>
+      withProject(
+        { "src/effects.ts": SOURCE },
+        (project) =>
+          Effect.gen(function* () {
+            const parse = <Parsed extends Record<string, NativeType>>(
               parser: (
                 project: ProjectSnapshot,
                 type: NativeType,
               ) => Effect.Effect<Option.Option<Parsed>, ProjectSnapshotError>,
             ) =>
             (name: string) =>
-              Effect.flatMap(typeNamed(project, name), (type) =>
-                Effect.flatMap(parser(project, type), (found) => printed(project, found)),
+              Effect.flatMap(
+                typeNamed(project, name),
+                (type) => Effect.flatMap(parser(project, type), (found) => printed(project, found)),
               )
 
-          const diagnostics = yield* collectDiagnostics
-          expect(
-            diagnostics.filter(({ fileName }) => fileName?.endsWith("src/effects.ts") === true),
-          ).toEqual([])
+            const diagnostics = yield* collectDiagnostics
+            expect(
+              diagnostics.filter(({ fileName }) => fileName?.endsWith("src/effects.ts") === true),
+            ).toEqual([])
 
-          expect(yield* parse(Type.effect)("viaAlias")).toEqual({
-            success: "string",
-            error: "Boom",
-            services: "Clock",
-          })
-          expect(yield* parse(Type.effect)("inferred")).toEqual({
-            success: "number",
-            error: "never",
-            services: "Clock",
-          })
-          expect(yield* parse(Type.stream)("ticks")).toEqual({
-            success: "1 | 2 | 3",
-            error: "never",
-            services: "never",
-          })
-          expect(yield* parse(Type.layer)("clockLive")).toEqual({
-            provides: "Clock",
-            error: "never",
-            requirements: "never",
-          })
+            expect(yield* parse(Type.effect)("viaAlias")).toEqual({
+              success: "string",
+              error: "Boom",
+              services: "Clock",
+            })
+            expect(yield* parse(Type.effect)("inferred")).toEqual({
+              success: "number",
+              error: "never",
+              services: "Clock",
+            })
+            expect(yield* parse(Type.stream)("ticks")).toEqual({
+              success: "1 | 2 | 3",
+              error: "never",
+              services: "never",
+            })
+            expect(yield* parse(Type.layer)("clockLive")).toEqual({
+              provides: "Clock",
+              error: "never",
+              requirements: "never",
+            })
 
-          expect(yield* parse(Type.effect)("ticks")).toBeUndefined()
-          expect(yield* parse(Type.effect)("looksLikeOne")).toBeUndefined()
-          expect(yield* parse(Type.effect)("plain")).toBeUndefined()
-        }),
-      { dependencies: true },
-    ),
+            expect(yield* parse(Type.effect)("ticks")).toBeUndefined()
+            expect(yield* parse(Type.effect)("looksLikeOne")).toBeUndefined()
+            expect(yield* parse(Type.effect)("plain")).toBeUndefined()
+          }),
+        { dependencies: true },
+      ),
   )
 
   effect("tells any and unknown apart from each other and from unresolved types", () =>
@@ -118,8 +119,7 @@ describe("types", () => {
           expect(yield* flags("unresolved")).toEqual({ any: false, unknown: false })
         }),
       { dependencies: true },
-    ),
-  )
+    ))
 })
 
 const MENTIONS = [
@@ -203,85 +203,93 @@ const realMarker = (project: ProjectSnapshot) =>
   })
 
 describe("mentions", () => {
-  effect("finds a type through generics, members and signatures, and only that type", () =>
-    mentionsProject((project) =>
-      Effect.gen(function* () {
-        const marker = yield* realMarker(project)
-        const isMarker = (candidate: NativeType) =>
-          Effect.gen(function* () {
-            const symbol = yield* project.symbolOfType(candidate)
-            return symbol !== undefined && (yield* project.canonicalSymbol(symbol)) === marker
-          })
-        const found = (name: string) =>
-          Effect.gen(function* () {
-            const type = yield* declaredType(project, name)
-            const mentioned = yield* Type.mentions(project, type, isMarker)
-            return Option.isNone(mentioned)
-              ? undefined
-              : yield* project.typeToString(mentioned.value)
-          })
+  effect(
+    "finds a type through generics, members and signatures, and only that type",
+    () =>
+      mentionsProject((project) =>
+        Effect.gen(function* () {
+          const marker = yield* realMarker(project)
+          const isMarker = (candidate: NativeType) =>
+            Effect.gen(function* () {
+              const symbol = yield* project.symbolOfType(candidate)
+              return symbol !== undefined && (yield* project.canonicalSymbol(symbol)) === marker
+            })
+          const found = (name: string) =>
+            Effect.gen(function* () {
+              const type = yield* declaredType(project, name)
+              const mentioned = yield* Type.mentions(project, type, isMarker)
+              return Option.isNone(mentioned) ?
+                undefined :
+                yield* project.typeToString(mentioned.value)
+            })
 
-        expect(yield* found("chained")).toBe("Marker")
-        expect(yield* found("promised")).toBe("Marker")
-        expect(yield* found("effected")).toBe("Marker")
-        expect(yield* found("accepts")).toBe("Marker")
-        expect(yield* found("returns")).toBe("Marker")
-        expect(yield* found("nested")).toBe("Marker")
+          expect(yield* found("chained")).toBe("Marker")
+          expect(yield* found("promised")).toBe("Marker")
+          expect(yield* found("effected")).toBe("Marker")
+          expect(yield* found("accepts")).toBe("Marker")
+          expect(yield* found("returns")).toBe("Marker")
+          expect(yield* found("nested")).toBe("Marker")
 
-        expect(yield* found("factory")).toBe("Marker")
-        expect(yield* found("keyed")).toBe("Marker")
-        expect(yield* found("intersected")).toBe("Marker")
-        expect(yield* found("phantom")).toBe("Marker")
-        expect(yield* found("constrained")).toBe("Marker")
+          expect(yield* found("factory")).toBe("Marker")
+          expect(yield* found("keyed")).toBe("Marker")
+          expect(yield* found("intersected")).toBe("Marker")
+          expect(yield* found("phantom")).toBe("Marker")
+          expect(yield* found("constrained")).toBe("Marker")
 
-        expect(yield* found("looped")).toBeUndefined()
-        expect(yield* found("external")).toBeUndefined()
-        expect(yield* found("impostor")).toBeUndefined()
-        expect(yield* found("conditional")).toBeUndefined()
-        expect(yield* found("builder")).toBeUndefined()
-        expect(yield* found("layered")).toBeUndefined()
-      }),
-    ),
+          expect(yield* found("looped")).toBeUndefined()
+          expect(yield* found("external")).toBeUndefined()
+          expect(yield* found("impostor")).toBeUndefined()
+          expect(yield* found("conditional")).toBeUndefined()
+          expect(yield* found("builder")).toBeUndefined()
+          expect(yield* found("layered")).toBeUndefined()
+        })
+      ),
   )
 
-  effect("walks own members but leaves a type declared outside the project a leaf", () =>
-    mentionsProject((project) =>
-      Effect.gen(function* () {
-        const visited = (name: string) =>
-          Effect.gen(function* () {
-            const seen: Array<string> = []
-            const type = yield* declaredType(project, name)
-            yield* Type.mentions(project, type, (candidate) =>
-              Effect.map(project.typeToString(candidate), (text) => {
-                seen.push(text)
-                return false
-              }),
-            )
-            return seen.sort()
-          })
+  effect(
+    "walks own members but leaves a type declared outside the project a leaf",
+    () =>
+      mentionsProject((project) =>
+        Effect.gen(function* () {
+          const visited = (name: string) =>
+            Effect.gen(function* () {
+              const seen: Array<string> = []
+              const type = yield* declaredType(project, name)
+              yield* Type.mentions(project, type, (candidate) =>
+                Effect.map(project.typeToString(candidate), (text) => {
+                  seen.push(text)
+                  return false
+                }))
+              return seen.sort()
+            })
 
-        expect(yield* visited("promised")).toEqual([
-          '"marker"',
-          "Marker",
-          "Promise<Marker>",
-          "Promise<T>",
-          "T",
-        ])
-        expect(yield* visited("external")).toEqual(["Promise<T>", "Promise<string>", "T", "string"])
-        expect(yield* visited("intersected")).toEqual([
-          '"marker"',
-          "1",
-          "Marker",
-          "Marker & { readonly extra: 1; }",
-          "{ readonly extra: 1; }",
-        ])
-        expect(yield* visited("nested")).toEqual([
-          '"marker"',
-          "Marker",
-          "{ readonly held: Marker; }",
-          "{ readonly inner: { readonly held: Marker; }; }",
-        ])
-      }),
-    ),
+          expect(yield* visited("promised")).toEqual([
+            '"marker"',
+            "Marker",
+            "Promise<Marker>",
+            "Promise<T>",
+            "T",
+          ])
+          expect(yield* visited("external")).toEqual([
+            "Promise<T>",
+            "Promise<string>",
+            "T",
+            "string",
+          ])
+          expect(yield* visited("intersected")).toEqual([
+            '"marker"',
+            "1",
+            "Marker",
+            "Marker & { readonly extra: 1; }",
+            "{ readonly extra: 1; }",
+          ])
+          expect(yield* visited("nested")).toEqual([
+            '"marker"',
+            "Marker",
+            "{ readonly held: Marker; }",
+            "{ readonly inner: { readonly held: Marker; }; }",
+          ])
+        })
+      ),
   )
 })

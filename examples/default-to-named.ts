@@ -70,9 +70,9 @@ const importClauseText = (binding: string, existing: NamedImportBindings | undef
 const rebinding = (element: ExportSpecifier, exportName: string): string | undefined => {
   const matched = defaultSpecifier(element)
   if (matched === undefined) return undefined
-  return matched._tag === "bare"
-    ? exportName
-    : namedBinding(matched.captures.local.getText(), exportName)
+  return matched._tag === "bare" ?
+    exportName :
+    namedBinding(matched.captures.local.getText(), exportName)
 }
 
 export const defaultToNamed = Recipe.define("default-to-named", {
@@ -127,8 +127,7 @@ export const defaultToNamed = Recipe.define("default-to-named", {
 
       return Draft.concat(
         Draft.replaceEach(defaultFunctions, ({ value }) =>
-          value.getText().replace(/^export\s+default\s+/, "export "),
-        ),
+          value.getText().replace(/^export\s+default\s+/, "export ")),
         ...importEdits,
         ...reexportEdits,
       )

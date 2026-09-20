@@ -119,8 +119,9 @@ const isGlobalBlock = (scope: Node): boolean =>
   scope.parent.name.text === "global"
 
 const isAmbientGlobal = (declaration: Node): boolean => {
-  const statement =
-    declaration.kind === SyntaxKind.VariableDeclaration ? declaration.parent.parent : declaration
+  const statement = declaration.kind === SyntaxKind.VariableDeclaration ?
+    declaration.parent.parent :
+    declaration
   if (!isVariableStatement(statement) && !isFunctionDeclaration(statement)) return false
   const source = statement.getSourceFile()
   if (statement.parent !== source) return isGlobalBlock(statement.parent)
@@ -176,7 +177,9 @@ const replacementFor = (
     case "namespace":
       return `import * as ${matched.captures.name.text} from ${from}`
     case "member":
-      return `import { ${renamed(matched.captures.member.text, matched.captures.name.text)} } from ${from}`
+      return `import { ${
+        renamed(matched.captures.member.text, matched.captures.name.text)
+      } } from ${from}`
     case "destructured": {
       const bindings = bindingsOf(matched.captures.elements)
       return bindings === undefined ? undefined : `import { ${bindings} } from ${from}`

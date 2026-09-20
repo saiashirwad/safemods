@@ -18,14 +18,15 @@ export const restrictedReferences = (options: {
         Query.collect,
       )
       const references = yield* Effect.forEach(declarations, (declaration) =>
-        Query.collect(Query.referencesTo(declaration)),
-      )
+        Query.collect(Query.referencesTo(declaration)))
       const outside = new Map(
         references
           .flat()
           .filter(
             ({ fileName }) =>
-              !options.allowedWithin.some((pattern) => matchesGlob(fileName, pattern)),
+              !options.allowedWithin.some((pattern) =>
+                matchesGlob(fileName, pattern)
+              ),
           )
           .map((reference) => [`${reference.fileName}:${reference.start}`, reference]),
       )
@@ -33,7 +34,6 @@ export const restrictedReferences = (options: {
         Check.report(
           reference,
           `${options.name} may only be used within ${options.allowedWithin.join(", ")}`,
-        ),
+        )
       )
-    }),
-  )
+    }))

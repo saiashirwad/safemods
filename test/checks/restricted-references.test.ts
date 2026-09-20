@@ -34,33 +34,35 @@ describe("restricted-references", () => {
       }),
   )
 
-  effect("follows aliases and re-exports to uses outside the allowed files", () =>
-    Effect.gen(function* () {
-      const findings = yield* findingsOf(
-        restrictedReferences({
-          name: "escapeHatch",
-          declaredIn: projectPath("src/internal/hatch.ts"),
-          allowedWithin: ["src/internal/**"],
-        }),
-        {
-          "src/internal/hatch.ts": "export const escapeHatch = (): number => 1\n",
-          "src/internal/index.ts": 'export { escapeHatch as hatch } from "./hatch.js"\n',
-          "src/internal/user.ts":
-            'import { escapeHatch } from "./hatch.js"\nexport const ok = escapeHatch()\n',
-          "src/feature.ts": [
-            'import { hatch as renamed } from "./internal/index.js"',
-            "export const leaked = renamed()",
-            "const escapeHatch = (): number => 2",
-            "export const unrelated = escapeHatch()",
-            "",
-          ].join("\n"),
-        },
-      )
-      expect(findings).toEqual([
-        "src/feature.ts:1:10 restricted-references:escapeHatch escapeHatch may only be used within src/internal/**",
-        "src/feature.ts:1:19 restricted-references:escapeHatch escapeHatch may only be used within src/internal/**",
-        "src/feature.ts:2:23 restricted-references:escapeHatch escapeHatch may only be used within src/internal/**",
-      ])
-    }),
+  effect(
+    "follows aliases and re-exports to uses outside the allowed files",
+    () =>
+      Effect.gen(function* () {
+        const findings = yield* findingsOf(
+          restrictedReferences({
+            name: "escapeHatch",
+            declaredIn: projectPath("src/internal/hatch.ts"),
+            allowedWithin: ["src/internal/**"],
+          }),
+          {
+            "src/internal/hatch.ts": "export const escapeHatch = (): number => 1\n",
+            "src/internal/index.ts": 'export { escapeHatch as hatch } from "./hatch.js"\n',
+            "src/internal/user.ts":
+              'import { escapeHatch } from "./hatch.js"\nexport const ok = escapeHatch()\n',
+            "src/feature.ts": [
+              'import { hatch as renamed } from "./internal/index.js"',
+              "export const leaked = renamed()",
+              "const escapeHatch = (): number => 2",
+              "export const unrelated = escapeHatch()",
+              "",
+            ].join("\n"),
+          },
+        )
+        expect(findings).toEqual([
+          "src/feature.ts:1:10 restricted-references:escapeHatch escapeHatch may only be used within src/internal/**",
+          "src/feature.ts:1:19 restricted-references:escapeHatch escapeHatch may only be used within src/internal/**",
+          "src/feature.ts:2:23 restricted-references:escapeHatch escapeHatch may only be used within src/internal/**",
+        ])
+      }),
   )
 })

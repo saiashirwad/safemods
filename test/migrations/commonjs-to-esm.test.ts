@@ -51,8 +51,7 @@ describe("commonjs-to-esm", () => {
             'declare function require(id: string): unknown\nrequire("./register.js")\nexport {}\n',
         },
       },
-    ),
-  )
+    ))
 
   effect("converts safe top-level forms and reports ambiguous ones", () =>
     withFixture(
@@ -68,7 +67,7 @@ describe("commonjs-to-esm", () => {
             Fs.readFile(
               Path.join(fixturePath("migrations/commonjs-to-esm"), "src/unsupported.js"),
               "utf8",
-            ),
+            )
           )
           expect(plan.unsupported.map(({ start, end }) => original.slice(start, end))).toEqual([
             'const conditional = process.env.FEATURE && require("feature")',
@@ -76,7 +75,7 @@ describe("commonjs-to-esm", () => {
           ])
 
           const index = yield* Effect.tryPromise(() =>
-            Fs.readFile(Path.join(root, "src/index.js"), "utf8"),
+            Fs.readFile(Path.join(root, "src/index.js"), "utf8")
           )
           expect(index).toContain('import * as path from "node:path"')
           expect(index).toContain('import { readFile, writeFile as saveFile } from "node:fs"')
@@ -87,13 +86,13 @@ describe("commonjs-to-esm", () => {
           expect(index).toContain("export default { path, saveFile }")
 
           const unsupported = yield* Effect.tryPromise(() =>
-            Fs.readFile(Path.join(root, "src/unsupported.js"), "utf8"),
+            Fs.readFile(Path.join(root, "src/unsupported.js"), "utf8")
           )
           expect(unsupported).toContain('return require("not-a-module-reference")')
           expect(unsupported).toContain('require("feature")')
 
           const shadowed = yield* Effect.tryPromise(() =>
-            Fs.readFile(Path.join(root, "src/shadowed.js"), "utf8"),
+            Fs.readFile(Path.join(root, "src/shadowed.js"), "utf8")
           )
           expect(shadowed).toContain('const loaded = require("node:path")')
           expect(shadowed).toContain("export default { loaded }")
@@ -103,6 +102,5 @@ describe("commonjs-to-esm", () => {
           expect(second.unsupported).toHaveLength(2)
         }),
       { fixture: "migrations/commonjs-to-esm" },
-    ),
-  )
+    ))
 })

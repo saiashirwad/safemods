@@ -106,8 +106,7 @@ const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
           ...Position.at(file?.sourceFile.text ?? "", found.start),
           message: found.message,
         } satisfies Finding
-      }),
-    )
+      }))
     return sorted(findings)
   })
 

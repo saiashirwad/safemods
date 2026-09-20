@@ -19,15 +19,16 @@ export const unusedOptionalParameters = (options: {
         Effect.gen(function* () {
           const optional = selection.value.node.parameters.flatMap((parameter, index) =>
             parameter.dotDotDotToken === undefined &&
-            (parameter.questionToken !== undefined || parameter.initializer !== undefined)
-              ? [{ index, name: parameter.name.getText() }]
-              : [],
+              (parameter.questionToken !== undefined || parameter.initializer !== undefined) ?
+              [{ index, name: parameter.name.getText() }] :
+              []
           )
           if (optional.length === 0) return []
           const name = { ...selection, value: selection.value.name }
           const symbol = yield* project.symbolOf(name.value)
-          if (symbol !== undefined && isPublic.has(yield* project.canonicalSymbol(symbol)))
+          if (symbol !== undefined && isPublic.has(yield* project.canonicalSymbol(symbol))) {
             return []
+          }
           const { calls, escapes } = yield* Query.usesOf(name)
           if (escapes || calls.length === 0) return []
           if (calls.some(({ value }) => value.arguments.some(isSpreadElement))) return []
@@ -37,9 +38,7 @@ export const unusedOptionalParameters = (options: {
               Check.report(
                 name,
                 `no caller passes ${parameter.name} in ${calls.length} call(s): remove the parameter`,
-              ),
+              )
             )
-        }),
-      )
-    }),
-  )
+        }))
+    }))

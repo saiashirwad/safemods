@@ -11,22 +11,23 @@ describe("plan codec and canonicalization", () => {
       const parsed = yield* parsePlan(serialized)
       expect(parsed).toEqual(plan)
       expect(serializePlan(parsed)).toBe(serialized)
-    }),
-  )
+    }))
 
-  effect("produces the same plan regardless of input order and path style", () =>
-    Effect.gen(function* () {
-      const shuffled: PlanInput = {
-        ...richInput,
-        sources: [...richInput.sources].reverse().map((source) => ({
-          ...source,
-          fileName: source.fileName.replaceAll("/", "\\"),
-        })),
-        edits: richInput.edits.map((edit) => ({ ...edit, fileName: `./${edit.fileName}` })),
-        fileOperations: [...richInput.fileOperations].reverse(),
-      }
-      expect(yield* finalizePlan(shuffled)).toEqual(yield* finalizePlan(richInput))
-    }),
+  effect(
+    "produces the same plan regardless of input order and path style",
+    () =>
+      Effect.gen(function* () {
+        const shuffled: PlanInput = {
+          ...richInput,
+          sources: [...richInput.sources].reverse().map((source) => ({
+            ...source,
+            fileName: source.fileName.replaceAll("/", "\\"),
+          })),
+          edits: richInput.edits.map((edit) => ({ ...edit, fileName: `./${edit.fileName}` })),
+          fileOperations: [...richInput.fileOperations].reverse(),
+        }
+        expect(yield* finalizePlan(shuffled)).toEqual(yield* finalizePlan(richInput))
+      }),
   )
 
   effect("decodes path transformations through the plan JSON codec", () =>
@@ -38,17 +39,18 @@ describe("plan codec and canonicalization", () => {
       if (result._tag === "Failure") {
         expect(result.failure.detail).toBe("Plan text is not canonical JSON")
       }
-    }),
-  )
+    }))
 
-  effect("rejects schema-invalid JSON without accepting a typed cast", () =>
-    Effect.gen(function* () {
-      const plan = yield* finalizePlan(richInput)
-      const malformed = serializePlan(plan).replace('"schemaVersion":1', '"schemaVersion":"1"')
-      const result = yield* parsePlan(malformed).pipe(Effect.result)
-      expect(result._tag).toBe("Failure")
-      if (result._tag === "Failure") expect(result.failure.detail).toBe("Plan is not valid JSON")
-    }),
+  effect(
+    "rejects schema-invalid JSON without accepting a typed cast",
+    () =>
+      Effect.gen(function* () {
+        const plan = yield* finalizePlan(richInput)
+        const malformed = serializePlan(plan).replace('"schemaVersion":1', '"schemaVersion":"1"')
+        const result = yield* parsePlan(malformed).pipe(Effect.result)
+        expect(result._tag).toBe("Failure")
+        if (result._tag === "Failure") expect(result.failure.detail).toBe("Plan is not valid JSON")
+      }),
   )
 
   effect("hashes canonical schema-encoded unsigned content", () =>
@@ -63,14 +65,12 @@ describe("plan codec and canonicalization", () => {
       const { planId: _, ...unsigned } = plan
       expect(plan.planId).toBe(planIdOf(unsigned))
       expect(plan.planId).toBe((yield* finalizePlan(richInput)).planId)
-    }),
-  )
+    }))
 
   effect("keeps the established canonical JSON and hash format", () =>
     Effect.gen(function* () {
       const plan = yield* finalizePlan(richInput)
       expect(plan.planId).toBe("6d3f25da8d721eda17a5144b81210ebbb08239ac6337db79536e3ee9882b2213")
       expect(serializePlan(plan)).toMatchSnapshot()
-    }),
-  )
+    }))
 })

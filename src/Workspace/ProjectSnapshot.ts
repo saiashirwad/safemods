@@ -188,8 +188,7 @@ export interface ProjectSnapshot {
   ) => Effect.Effect<A, E | SnapshotExpired, R>
 }
 
-const anyMeaning =
-  SymbolFlags.Value |
+const anyMeaning = SymbolFlags.Value |
   SymbolFlags.Type |
   SymbolFlags.Namespace |
   SymbolFlags.Alias |
@@ -197,7 +196,7 @@ const anyMeaning =
 
 const decodePath = Schema.decodeOption(ProjectRelativePath.schema)
 
-const memoize = <Key, A extends object>(load: (key: Key) => A): ((key: Key) => A) => {
+const memoize = <Key, A extends object>(load: (key: Key) => A): (key: Key) => A => {
   const known = new Map<Key, A>()
   return (key) => {
     const found = known.get(key)
@@ -223,9 +222,9 @@ export const make = (options: {
     Effect.andThen(ensureActive, nativeRequest(operation, evaluate))
 
   const absolute = (fileName: ProjectRelativePath.Type): string =>
-    fileName.startsWith("../")
-      ? path.join(workspaceRoot, fileName.slice(3))
-      : path.join(projectRoot, fileName)
+    fileName.startsWith("../") ?
+      path.join(workspaceRoot, fileName.slice(3)) :
+      path.join(projectRoot, fileName)
 
   const relative = (absoluteName: string): Option.Option<ProjectRelativePath.Type> => {
     const projectRelative = path.relative(projectRoot, absoluteName)
@@ -243,16 +242,17 @@ export const make = (options: {
       program.isSourceFileDefaultLibrary(sourceFile),
       program.isSourceFileFromExternalLibrary(sourceFile),
     ])
-    const fileName =
-      defaultLibrary || external ? undefined : Option.getOrUndefined(relative(sourceFile.fileName))
+    const fileName = defaultLibrary || external ?
+      undefined :
+      Option.getOrUndefined(relative(sourceFile.fileName))
     return { sourceFile, fileName }
   })
 
   const projectFileOf = memoize(async (absoluteName: string): Promise<ProjectFile | undefined> => {
     const info = await fileInfoOf(absoluteName)
-    return info === undefined || info.fileName === undefined
-      ? undefined
-      : { project, fileName: info.fileName, sourceFile: info.sourceFile }
+    return info === undefined || info.fileName === undefined ?
+      undefined :
+      { project, fileName: info.fileName, sourceFile: info.sourceFile }
   })
 
   const ownedFile = (absoluteName: string) =>
@@ -262,32 +262,32 @@ export const make = (options: {
     const nodes = await Promise.all(handles.map((handle) => handle.resolve(native)))
     const owned = await Promise.all(
       nodes.map(async (node) =>
-        node !== undefined && (await projectFileOf(node.getSourceFile().fileName)) !== undefined
-          ? node
-          : undefined,
+        node !== undefined && (await projectFileOf(node.getSourceFile().fileName)) !== undefined ?
+          node :
+          undefined
       ),
     )
     return owned.filter((node) => node !== undefined)
   }
 
   const canonicalSymbolOf = memoize((symbol: NativeSymbol) =>
-    (symbol.flags & SymbolFlags.Alias) === 0
-      ? symbol.getExportSymbol()
-      : checker.getAliasedSymbol(symbol),
+    (symbol.flags & SymbolFlags.Alias) === 0 ?
+      symbol.getExportSymbol() :
+      checker.getAliasedSymbol(symbol)
   )
 
   const intrinsicTypeOf = memoize((name: IntrinsicTypeName) =>
-    checker[intrinsicTypeGetters[name]](),
+    checker[intrinsicTypeGetters[name]]()
   )
 
   const assignableTo = memoize((target: NativeType) =>
-    memoize((source: NativeType) => checker.isTypeAssignableTo(source, target)),
+    memoize((source: NativeType) => checker.isTypeAssignableTo(source, target))
   )
 
   const perNode = <A>(
     operation: string,
     ask: (nodes: ReadonlyArray<Node>) => PromiseLike<ReadonlyArray<A>>,
-  ): ((node: Node) => Effect.Effect<A, ProjectSnapshotError>) => {
+  ): (node: Node) => Effect.Effect<A, ProjectSnapshotError> => {
     const question = Request.of<NodeQuestion<A>>()
     const resolver = RequestResolver.makeGrouped<NodeQuestion<A>, string>({
       key: (entry) => entry.request.node.getSourceFile().fileName,
@@ -296,7 +296,7 @@ export const make = (options: {
           request(operation, () => ask(entries.map((entry) => entry.request.node))),
           (answers) =>
             entries.forEach((entry, index) =>
-              entry.completeUnsafe(Exit.succeed(answers[index] as A)),
+              entry.completeUnsafe(Exit.succeed(answers[index] as A))
             ),
         ),
     })
@@ -316,32 +316,33 @@ export const make = (options: {
     file: (fileName) => ownedFile(absolute(fileName)),
 
     textFile: (fileName) =>
-      Effect.map(ownedFile(absolute(fileName)), (file) =>
-        file === undefined ? undefined : { project, fileName, text: file.sourceFile.text },
+      Effect.map(
+        ownedFile(absolute(fileName)),
+        (file) =>
+          file === undefined ? undefined : { project, fileName, text: file.sourceFile.text },
       ),
 
     files,
 
     textFiles: files.pipe(
       Effect.map((files) =>
-        files.map((file) => ({ project, fileName: file.fileName, text: file.sourceFile.text })),
+        files.map((file) => ({ project, fileName: file.fileName, text: file.sourceFile.text }))
       ),
     ),
 
     symbolNamed: (name, { within }) =>
       Effect.gen(function* () {
         const file = yield* project.file(within)
-        const symbol =
-          file === undefined
-            ? undefined
-            : yield* request("resolveName", async () => {
-                const local = await checker.resolveName(name, anyMeaning, file.sourceFile)
-                if (local !== undefined) return local
-                const [module] = await checker.getSymbolAtLocation([file.sourceFile])
-                return module === undefined
-                  ? undefined
-                  : checker.getMemberInModuleExports(module, name)
-              })
+        const symbol = file === undefined ?
+          undefined :
+          yield* request("resolveName", async () => {
+            const local = await checker.resolveName(name, anyMeaning, file.sourceFile)
+            if (local !== undefined) return local
+            const [module] = await checker.getSymbolAtLocation([file.sourceFile])
+            return module === undefined ?
+              undefined :
+              checker.getMemberInModuleExports(module, name)
+          })
         if (symbol === undefined) return yield* new SymbolNotFound({ name, fileName: within })
         return yield* project.canonicalSymbol(symbol)
       }),
@@ -349,10 +350,9 @@ export const make = (options: {
     exportsOf: (source) =>
       Effect.gen(function* () {
         const exported = yield* request("getExportsOfModule", async () => {
-          const module =
-            "sourceFile" in source
-              ? (await checker.getSymbolAtLocation([source.sourceFile]))[0]
-              : source
+          const module = "sourceFile" in source ?
+            (await checker.getSymbolAtLocation([source.sourceFile]))[0] :
+            source
           return module === undefined ? [] : checker.getExportsOfModule(module)
         })
         const entries = yield* Effect.forEach(
@@ -381,8 +381,7 @@ export const make = (options: {
             const info = await fileInfoOf(handle.path)
             return { path: info?.sourceFile.fileName ?? handle.path, fileName: info?.fileName }
           }),
-        ),
-      ),
+        )),
 
     referencesTo: (node) =>
       request("getReferencedSymbolsForNode", async () => {
@@ -410,35 +409,35 @@ export const make = (options: {
       request("getContextualType", () => checker.getContextualType(expression)),
 
     unionMembersOf: (type) =>
-      type.isUnionType()
-        ? request("getTypes", () => type.getTypes())
-        : Effect.as(ensureActive, [type]),
+      type.isUnionType() ?
+        request("getTypes", () => type.getTypes()) :
+        Effect.as(ensureActive, [type]),
 
     intersectionMembersOf: (type) =>
-      type.isIntersectionType()
-        ? request("getTypes", () => type.getTypes())
-        : Effect.as(ensureActive, []),
+      type.isIntersectionType() ?
+        request("getTypes", () => type.getTypes()) :
+        Effect.as(ensureActive, []),
 
     typeArgumentsOf: (type) =>
-      type.isTypeReference()
-        ? request("getTypeArguments", () => checker.getTypeArguments(type))
-        : Effect.as(ensureActive, []),
+      type.isTypeReference() ?
+        request("getTypeArguments", () => checker.getTypeArguments(type)) :
+        Effect.as(ensureActive, []),
 
     aliasTypeArgumentsOf: (type) =>
       request("getAliasTypeArguments", () => type.getAliasTypeArguments()),
 
     genericTargetOf: (type) =>
-      type.isTypeReference()
-        ? request("getTargetOfType", async () => {
-            const target = await type.getTarget()
-            return target === type ? undefined : target
-          })
-        : Effect.as(ensureActive, undefined),
+      type.isTypeReference() ?
+        request("getTargetOfType", async () => {
+          const target = await type.getTarget()
+          return target === type ? undefined : target
+        }) :
+        Effect.as(ensureActive, undefined),
 
     constraintOf: (type) =>
-      (type.flags & TypeFlags.TypeParameter) === 0
-        ? Effect.as(ensureActive, undefined)
-        : request("getBaseConstraintOfType", () => checker.getBaseConstraintOfType(type)),
+      (type.flags & TypeFlags.TypeParameter) === 0 ?
+        Effect.as(ensureActive, undefined) :
+        request("getBaseConstraintOfType", () => checker.getBaseConstraintOfType(type)),
 
     propertyOf: (type, name) =>
       request("getPropertyOfType", () => checker.getPropertyOfType(type, name)),
@@ -449,31 +448,34 @@ export const make = (options: {
       request("getSignaturesOfType", () => checker.getSignaturesOfType(type, SignatureKind.Call)),
 
     constructSignaturesOf: (type) =>
-      request("getSignaturesOfType", () =>
-        checker.getSignaturesOfType(type, SignatureKind.Construct),
+      request(
+        "getSignaturesOfType",
+        () => checker.getSignaturesOfType(type, SignatureKind.Construct),
       ),
 
     indexInfosOf: (type) => request("getIndexInfosOfType", () => checker.getIndexInfosOfType(type)),
 
     signatureOf: (declaration) =>
-      request("getSignatureFromDeclaration", () =>
-        checker.getSignatureFromDeclaration(declaration),
+      request(
+        "getSignatureFromDeclaration",
+        () => checker.getSignatureFromDeclaration(declaration),
       ),
 
     resolvedSignature: (call) =>
       request("getResolvedSignature", () => checker.getResolvedSignature(call)),
 
     signatureDeclaration: (signature) =>
-      request("resolveSignatureDeclaration", async () =>
-        signature.declaration === undefined ? undefined : signature.declaration.resolve(native),
+      request(
+        "resolveSignatureDeclaration",
+        async () =>
+          signature.declaration === undefined ? undefined : signature.declaration.resolve(native),
       ),
 
     parameterTypesOf: (signature) =>
       request("getParameterType", () =>
         Promise.all(
           signature.parameters.map((_, index) => checker.getParameterType(signature, index)),
-        ),
-      ),
+        )),
 
     returnTypeOf: (signature) =>
       request("getReturnTypeOfSignature", () => checker.getReturnTypeOfSignature(signature)),
@@ -483,11 +485,10 @@ export const make = (options: {
         checker.typeToString(
           type,
           undefined,
-          options?.expandAliases === true
-            ? NodeBuilderFlags.NoTruncation | NodeBuilderFlags.InTypeAlias
-            : NodeBuilderFlags.NoTruncation,
-        ),
-      ),
+          options?.expandAliases === true ?
+            NodeBuilderFlags.NoTruncation | NodeBuilderFlags.InTypeAlias :
+            NodeBuilderFlags.NoTruncation,
+        )),
 
     isTypeAssignableTo: (source, target) =>
       request("isTypeAssignableTo", () => assignableTo(target)(source)),
@@ -502,9 +503,9 @@ export const make = (options: {
         const handle = canonical.valueDeclaration ?? canonical.declarations[0]
         if (handle === undefined) return undefined
         const declaration = yield* request("resolveModuleDeclaration", () => handle.resolve(native))
-        return declaration === undefined
-          ? undefined
-          : yield* ownedFile(declaration.getSourceFile().fileName)
+        return declaration === undefined ?
+          undefined :
+          yield* ownedFile(declaration.getSourceFile().fileName)
       }),
 
     unsafeNative: (use) =>
