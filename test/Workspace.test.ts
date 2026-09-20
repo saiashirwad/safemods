@@ -54,7 +54,10 @@ describe("workspace snapshots", () => {
         workspace.withSnapshot(WorkspaceSnapshot).pipe(Effect.result),
       ).pipe(
         Effect.provide(
-          Layer.merge(workspaceLayer(definition, fixturePath("multi-overlap")), NodeServices.layer),
+          Layer.provideMerge(
+            workspaceLayer(definition, fixturePath("multi-overlap")),
+            NodeServices.layer,
+          ),
         ),
       )
       expect(result).toMatchObject({

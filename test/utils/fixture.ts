@@ -53,7 +53,7 @@ export const withFixture = <A, E, R>(
           projects: [{ id: "app", config: "tsconfig.json" }],
         })
         return yield* use(root, definition.projects[0]).pipe(
-          Effect.provide(Layer.merge(workspaceLayer(definition, root), NodeServices.layer)),
+          Effect.provide(Layer.provideMerge(workspaceLayer(definition, root), NodeServices.layer)),
         )
       }),
     (root) => Effect.promise(() => Fs.rm(root, { recursive: true, force: true })),

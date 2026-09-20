@@ -26,11 +26,6 @@
       "types": "./dist/src/Checks/index.d.ts",
       "default": "./dist/src/Checks/index.js"
     },
-    "./Comparison": {
-      "source": "./src/Comparison.ts",
-      "types": "./dist/src/Comparison.d.ts",
-      "default": "./dist/src/Comparison.js"
-    },
     "./Draft": {
       "source": "./src/Draft.ts",
       "types": "./dist/src/Draft.d.ts",
@@ -95,7 +90,7 @@
     "fmt": "oxfmt --disable-nested-config",
     "fmt:check": "oxfmt --check --disable-nested-config",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint && knip && pnpm safemods check --baseline safemods.known.json",
+    "lint": "oxlint && knip && pnpm safemods check",
     "prepare": "effect-tsgo patch --no-typescript --oxlint",
     "test": "vitest run",
     "example": "node --conditions=source examples/run.ts",

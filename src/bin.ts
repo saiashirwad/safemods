@@ -1,22 +1,14 @@
 #!/usr/bin/env node
-import * as Path from "node:path"
-import { pathToFileURL } from "node:url"
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
-import { Console, Data, Effect, FileSystem, Option, Predicate, Runtime, Schema } from "effect"
+import { Console, Data, Effect, FileSystem, Path, Predicate, Runtime, Schema } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
 import { applyVerifiedPlan } from "./Application.ts"
 import * as Check from "./Check.ts"
-import * as Git from "./Git.ts"
 import * as Inspect from "./Inspect.ts"
 import type { UnsupportedFinding } from "./Plan.ts"
 import * as Position from "./Position.ts"
 import * as Recipe from "./Recipe.ts"
-import {
-  actionOf,
-  type DiagnosticRecord,
-  type PublicFilePreview,
-  verify,
-} from "./Verification/index.ts"
+import { actionOf, type PublicFilePreview, verify } from "./Verification/index.ts"
 import * as Workspace from "./Workspace/index.ts"
 
 class FindingsReported extends Data.TaggedError("FindingsReported")<{ readonly count: number }> {
@@ -38,10 +30,6 @@ class PlanRejected extends Data.TaggedError("PlanRejected")<{ readonly planId: s
   readonly [Runtime.errorReported] = false
 }
 
-class SinceWithBaseline extends Data.TaggedError("SinceWithBaseline")<{}> {}
-
-const KnownFindings = Schema.fromJsonString(Schema.Array(Check.Known))
-
 const isConfig = (value: unknown): value is Check.Config =>
   Predicate.isObject(value) &&
   "projects" in value &&
@@ -49,10 +37,14 @@ const isConfig = (value: unknown): value is Check.Config =>
   "checks" in value &&
   Array.isArray(value.checks)
 
-const loadModule = (path: string) =>
-  Effect.tryPromise({
-    try: () => import(pathToFileURL(path).href) as Promise<Readonly<Record<string, unknown>>>,
-    catch: (cause) => new InvalidConfig({ path, cause }),
+const loadModule = (file: string) =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path
+    const url = yield* path.toFileUrl(file)
+    return yield* Effect.tryPromise({
+      try: () => import(url.href) as Promise<Readonly<Record<string, unknown>>>,
+      catch: (cause) => new InvalidConfig({ path: file, cause }),
+    })
   })
 
 const loadConfig = (path: string) =>
@@ -60,9 +52,7 @@ const loadConfig = (path: string) =>
     Effect.flatMap((module) =>
       isConfig(module.default)
         ? Effect.succeed(module.default)
-        : Effect.fail(
-            new InvalidConfig({ path, cause: "the default export needs `projects` and `checks`" }),
-          ),
+        : new InvalidConfig({ path, cause: "the default export needs `projects` and `checks`" }),
     ),
   )
 
@@ -74,78 +64,26 @@ const check = Command.make(
       Flag.withDescription("Module whose default export lists projects and checks"),
     ),
     format: Flag.choice("format", ["text", "json"]).pipe(Flag.withDefault("text")),
-    baseline: Flag.optional(
-      Flag.path("baseline").pipe(
-        Flag.withDescription("Known findings; only findings missing from this file fail"),
-      ),
-    ),
-    updateBaseline: Flag.boolean("update-baseline").pipe(
-      Flag.withDescription("Record the current findings in the baseline and succeed"),
-    ),
-    since: Flag.optional(
-      Flag.string("since").pipe(
-        Flag.withDescription("Git ref; only findings this change introduced fail"),
-      ),
-    ),
   },
-  ({ config: configFile, format, baseline, updateBaseline, since }) =>
+  ({ config: configFile, format }) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
-      const baselinePath = Option.getOrUndefined(baseline)
-      const ref = Option.getOrUndefined(since)
-      if (ref !== undefined && baselinePath !== undefined) return yield* new SinceWithBaseline()
-      const configPath = Path.resolve(configFile)
+      const path = yield* Path.Path
+      const configPath = yield* fs.realPath(configFile)
       const config = yield* loadConfig(configPath)
       const definition = yield* Schema.decodeUnknownEffect(Workspace.WorkspaceDefinition.schema)({
         projects: config.projects,
       })
-      const root = Path.dirname(configPath)
-      const workspace = Workspace.layer(definition, root)
-      const runChecks = (overlay?: Workspace.Overlay) =>
-        Check.run(config.checks, overlay).pipe(Effect.provide(workspace))
-      const comparisons = config.comparisons ?? []
-
-      if (ref === undefined && comparisons.length > 0) {
-        yield* Console.error(
-          `skipped without --since: ${comparisons.map((check) => check.name).join(", ")}`,
-        )
-      }
-
-      const changes = ref === undefined ? undefined : yield* Git.changesSince(root, ref)
-      const atRef =
-        changes === undefined
-          ? []
-          : yield* runChecks({ files: changes.previous, deleted: changes.added })
-      const findings = yield* runChecks()
-      const compared =
-        changes === undefined
-          ? []
-          : yield* Check.runCompared(comparisons, changes.previous).pipe(Effect.provide(workspace))
-
-      if (updateBaseline && baselinePath !== undefined) {
-        const known = findings.map(({ check, path, message }) => ({ check, path, message }))
-        yield* fs.writeFileString(baselinePath, `${JSON.stringify(known, undefined, 2)}\n`)
-        return yield* Console.error(`recorded ${known.length} known finding(s)`)
-      }
-
-      const known =
-        baselinePath === undefined
-          ? atRef
-          : yield* Effect.flatMap(
-              fs.readFileString(baselinePath),
-              Schema.decodeEffect(KnownFindings),
-            )
-      const newFindings = Check.introducedSince(known, findings)
-      const introduced = Check.sorted([...newFindings, ...compared])
+      const findings = yield* Check.run(config.checks).pipe(
+        Effect.provide(Workspace.layer(definition, path.dirname(configPath))),
+      )
       yield* Console.log(
         format === "json"
-          ? JSON.stringify(introduced, undefined, 2)
-          : introduced.map(Check.format).join("\n"),
+          ? JSON.stringify(findings, undefined, 2)
+          : findings.map(Check.format).join("\n"),
       )
-      yield* Console.error(
-        `${introduced.length} finding(s), ${findings.length - newFindings.length} known`,
-      )
-      if (introduced.length > 0) return yield* new FindingsReported({ count: introduced.length })
+      yield* Console.error(`${findings.length} finding(s)`)
+      if (findings.length > 0) return yield* new FindingsReported({ count: findings.length })
     }).pipe(
       Effect.mapError((cause) =>
         cause instanceof FindingsReported ? cause : new CheckFailed({ cause }),
@@ -172,14 +110,6 @@ const capped = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
     ? lines
     : [...lines.slice(0, listed), `  ... and ${lines.length - listed} more`]
 
-const positionIn = (text: string, offset: number): string => {
-  const { line, column } = Position.at(text, offset)
-  return `${line}:${column}`
-}
-
-const diagnosticLine = (root: string, diagnostic: DiagnosticRecord): string =>
-  `  ${diagnostic.fileName === undefined ? "" : Path.relative(root, diagnostic.fileName)}:${diagnostic.line}:${diagnostic.column} TS${diagnostic.code} ${diagnostic.message.split("\n")[0]}`
-
 const unresolvedLine = (
   sources: ReadonlyArray<PublicFilePreview>,
   finding: UnsupportedFinding,
@@ -187,9 +117,9 @@ const unresolvedLine = (
   const source = sources.find(
     (file) => file.projectId === finding.projectId && file.fileName === finding.fileName,
   )
-  const position =
-    source?.before.exists === true ? positionIn(source.before.text, finding.start) : "?"
-  return `  ${finding.fileName}:${position} ${finding.reason}`
+  const at =
+    source?.before.exists === true ? Position.at(source.before.text, finding.start) : undefined
+  return `  ${finding.fileName}:${at === undefined ? "?" : `${at.line}:${at.column}`} ${finding.reason}`
 }
 
 const run = Command.make(
@@ -207,13 +137,14 @@ const run = Command.make(
   },
   ({ config: configFile, recipe: recipeFile, input: inputJson, apply }) =>
     Effect.gen(function* () {
-      const configPath = Path.resolve(configFile)
-      const root = Path.dirname(configPath)
+      const path = yield* Path.Path
+      const configPath = path.resolve(configFile)
+      const root = path.dirname(configPath)
       const config = yield* loadConfig(configPath)
       const definition = yield* Schema.decodeUnknownEffect(Workspace.WorkspaceDefinition.schema)({
         projects: config.projects,
       })
-      const recipePath = Path.resolve(recipeFile)
+      const recipePath = path.resolve(recipeFile)
       const recipe = Object.values(yield* loadModule(recipePath)).find(isRecipe)
       if (recipe === undefined) {
         return yield* new InvalidConfig({ path: recipePath, cause: "no export is a recipe" })
@@ -237,7 +168,10 @@ const run = Command.make(
               yield* Console.log(`rejected (${failure.policy}): ${failure.detail}`)
               yield* Console.log(
                 capped(
-                  (failure.diagnostics ?? []).map((diagnostic) => diagnosticLine(root, diagnostic)),
+                  (failure.diagnostics ?? []).map(
+                    ({ fileName, line, column, code, message }) =>
+                      `  ${fileName === undefined ? "" : path.relative(root, fileName)}:${line}:${column} TS${code} ${message.split("\n")[0]}`,
+                  ),
                 ).join("\n"),
               )
               yield* Console.log("nothing was written")
@@ -274,14 +208,15 @@ const run = Command.make(
 
 const inspecting = (configFile: string, answer: Answer) =>
   Effect.gen(function* () {
-    const configPath = Path.resolve(configFile)
+    const path = yield* Path.Path
+    const configPath = path.resolve(configFile)
     const config = yield* loadConfig(configPath)
     const definition = yield* Schema.decodeUnknownEffect(Workspace.WorkspaceDefinition.schema)({
       projects: config.projects,
     })
     const lines = yield* Workspace.Workspace.use((workspace) =>
       workspace.withSnapshot(answer),
-    ).pipe(Effect.provide(Workspace.layer(definition, Path.dirname(configPath))))
+    ).pipe(Effect.provide(Workspace.layer(definition, path.dirname(configPath))))
     yield* Console.log(lines.join("\n"))
   }).pipe(Effect.mapError((cause) => new CheckFailed({ cause })))
 

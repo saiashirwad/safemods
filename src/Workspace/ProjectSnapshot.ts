@@ -1,5 +1,14 @@
-import * as Path from "node:path"
-import { Data, Effect, Exit, Option, Order, Request, RequestResolver, Schema } from "effect"
+import {
+  Data,
+  Effect,
+  Exit,
+  Option,
+  Order,
+  type Path,
+  Request,
+  RequestResolver,
+  Schema,
+} from "effect"
 import type { CallExpression, Expression, Node, SourceFile } from "typescript/unstable/ast"
 import {
   type IndexInfo,
@@ -79,7 +88,6 @@ export interface ProjectSnapshot {
     fileName: ProjectRelativePath.Type,
   ) => Effect.Effect<TextFile | undefined, ProjectSnapshotError>
   readonly files: Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError>
-  readonly hiddenFiles: Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError>
   readonly textFiles: Effect.Effect<ReadonlyArray<TextFile>, ProjectSnapshotError>
   readonly symbolNamed: (
     name: string,
@@ -203,12 +211,12 @@ const memoize = <Key, A extends object>(load: (key: Key) => A): ((key: Key) => A
 export const make = (options: {
   readonly configured: ConfiguredProject.Type
   readonly native: NativeProject
+  readonly path: Path.Path
   readonly workspaceRoot: string
   readonly projectRoot: string
-  readonly hidden: ReadonlySet<string>
   readonly ensureActive: Effect.Effect<void, SnapshotExpired>
 }): ProjectSnapshot => {
-  const { configured, native, workspaceRoot, projectRoot, hidden, ensureActive } = options
+  const { configured, native, path, workspaceRoot, projectRoot, ensureActive } = options
   const { program, checker } = native
 
   const request = <A>(operation: string, evaluate: () => PromiseLike<A>) =>
@@ -216,15 +224,15 @@ export const make = (options: {
 
   const absolute = (fileName: ProjectRelativePath.Type): string =>
     fileName.startsWith("../")
-      ? Path.join(workspaceRoot, fileName.slice(3))
-      : Path.join(projectRoot, fileName)
+      ? path.join(workspaceRoot, fileName.slice(3))
+      : path.join(projectRoot, fileName)
 
   const relative = (absoluteName: string): Option.Option<ProjectRelativePath.Type> => {
-    const projectRelative = Path.relative(projectRoot, absoluteName)
-    if (!projectRelative.startsWith(`..${Path.sep}`)) return decodePath(projectRelative)
-    const workspaceRelative = Path.relative(workspaceRoot, absoluteName)
-    if (workspaceRelative.startsWith(`..${Path.sep}`)) return Option.none()
-    const fileName = ProjectRelativePath.decodeWorkspaceFile(Path.join("..", workspaceRelative))
+    const projectRelative = path.relative(projectRoot, absoluteName)
+    if (!projectRelative.startsWith(`..${path.sep}`)) return decodePath(projectRelative)
+    const workspaceRelative = path.relative(workspaceRoot, absoluteName)
+    if (workspaceRelative.startsWith(`..${path.sep}`)) return Option.none()
+    const fileName = ProjectRelativePath.decodeWorkspaceFile(path.join("..", workspaceRelative))
     return fileName === undefined ? Option.none() : Option.some(fileName)
   }
 
@@ -247,19 +255,14 @@ export const make = (options: {
       : { project, fileName: info.fileName, sourceFile: info.sourceFile }
   })
 
-  const ownedFileOf = async (absoluteName: string): Promise<ProjectFile | undefined> => {
-    const file = await projectFileOf(absoluteName)
-    return file === undefined || hidden.has(file.sourceFile.fileName) ? undefined : file
-  }
-
   const ownedFile = (absoluteName: string) =>
-    request("getSourceFile", () => ownedFileOf(absoluteName))
+    request("getSourceFile", () => projectFileOf(absoluteName))
 
   const ownedNodes = async (handles: ReadonlyArray<NodeHandle>): Promise<ReadonlyArray<Node>> => {
     const nodes = await Promise.all(handles.map((handle) => handle.resolve(native)))
     const owned = await Promise.all(
       nodes.map(async (node) =>
-        node !== undefined && (await ownedFileOf(node.getSourceFile().fileName)) !== undefined
+        node !== undefined && (await projectFileOf(node.getSourceFile().fileName)) !== undefined
           ? node
           : undefined,
       ),
@@ -318,10 +321,6 @@ export const make = (options: {
       ),
 
     files,
-
-    hiddenFiles: request("getHiddenFiles", () => Promise.all([...hidden].map(projectFileOf))).pipe(
-      Effect.map((files) => files.filter((file) => file !== undefined)),
-    ),
 
     textFiles: files.pipe(
       Effect.map((files) =>

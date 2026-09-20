@@ -1,5 +1,4 @@
-import * as Path from "node:path"
-import { Data, Effect } from "effect"
+import { Data, Effect, Path } from "effect"
 import type { Node } from "typescript/unstable/ast"
 import * as Position from "./Position.ts"
 import * as ProjectRelativePath from "./ProjectRelativePath.ts"
@@ -45,18 +44,19 @@ const innermost = (node: Node, offset: number): Node => {
   return found
 }
 
-const fileNamed = (path: string) =>
+const fileNamed = (named: string) =>
   Effect.gen(function* () {
+    const path = yield* Path.Path
     const workspace = yield* Workspace
     const snapshot = yield* WorkspaceSnapshot
-    const absolute = Path.resolve(workspace.root, path)
+    const absolute = path.resolve(workspace.root, named)
     for (const project of snapshot.projects) {
       const root = yield* workspace.projectRoot(project.project.id)
-      const fileName = ProjectRelativePath.decodeWorkspaceFile(Path.relative(root, absolute))
+      const fileName = ProjectRelativePath.decodeWorkspaceFile(path.relative(root, absolute))
       const file = fileName === undefined ? undefined : yield* project.file(fileName)
       if (file !== undefined) return { project, file }
     }
-    return yield* new NotFound({ what: `${path} is not a file of any configured project` })
+    return yield* new NotFound({ what: `${named} is not a file of any configured project` })
   })
 
 const targetAt = (position: string) =>

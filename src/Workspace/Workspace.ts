@@ -1,8 +1,4 @@
-import * as Fs from "node:fs/promises"
-import * as Path from "node:path"
-import { Context, Data, Effect, FileSystem, Layer, type PlatformError } from "effect"
-import { SyntaxKind } from "typescript/unstable/ast"
-import { createScanner } from "typescript/unstable/ast/scanner"
+import { Context, Data, Effect, FileSystem, Layer, Path, type PlatformError } from "effect"
 import { API } from "typescript/unstable/async"
 import * as FileRef from "../FileRef.ts"
 import type * as ProjectId from "../ProjectId.ts"
@@ -64,26 +60,20 @@ export class Workspace extends Context.Service<
   }
 >()("safemods/Workspace/Workspace") {}
 
-const configWithRoots = (text: string, files: ReadonlyArray<string>): string => {
-  const scanner = createScanner(true, undefined, text)
-  const tokens: Array<string> = []
-  while (scanner.scan() !== SyntaxKind.EndOfFile) tokens.push(scanner.getTokenText())
-  const withoutCommentsOrTrailingCommas = tokens
-    .filter((token, index) => token !== "," || !["}", "]"].includes(tokens[index + 1]!))
-    .join("")
-  return JSON.stringify({ ...JSON.parse(withoutCommentsOrTrailingCommas), files, include: [] })
-}
-
-const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Service"] => {
-  const root = Path.resolve(cwd)
+const make = (
+  definition: WorkspaceDefinition.Type,
+  cwd: string,
+  path: Path.Path,
+): Workspace["Service"] => {
+  const root = path.resolve(cwd)
   const configFiles = new Map(
-    definition.projects.map((project) => [project.id, Path.join(root, project.config)]),
+    definition.projects.map((project) => [project.id, path.join(root, project.config)]),
   )
   const projectRoot = (projectId: ProjectId.Type) => {
     const configFile = configFiles.get(projectId)
     return configFile === undefined
       ? Effect.fail(new ProjectNotInWorkspace({ projectId }))
-      : Effect.succeed(Path.dirname(configFile))
+      : Effect.succeed(path.dirname(configFile))
   }
 
   return {
@@ -93,61 +83,26 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
     absolutePath: (file) =>
       Effect.map(projectRoot(file.projectId), (projectRoot) =>
         file.fileName.startsWith("../")
-          ? Path.join(root, file.fileName.slice(3))
-          : Path.join(projectRoot, file.fileName),
+          ? path.join(root, file.fileName.slice(3))
+          : path.join(projectRoot, file.fileName),
       ),
     withSnapshot: (program, overlay) =>
       Effect.gen(function* () {
-        const configs = new Map<string, string>()
-        const fs = overlay === undefined ? undefined : Overlay.fileSystem(overlay)
         const api = yield* Effect.acquireRelease(
           Effect.try({
             try: () =>
               new API(
                 overlay === undefined
                   ? { cwd: root }
-                  : {
-                      cwd: root,
-                      fs: {
-                        ...fs,
-                        readFile: (name) => configs.get(name) ?? fs?.readFile?.(name),
-                        fileExists: (name) => configs.has(name) || fs?.fileExists?.(name),
-                      },
-                    },
+                  : { cwd: root, fs: Overlay.fileSystem(overlay, path) },
               ),
             catch: (cause) => new WorkspaceCompilerError({ operation: "createAPI", cause }),
           }),
           (api) => nativeRequest("closeAPI", () => api.close()).pipe(Effect.ignore),
         )
-        if (overlay?.rootSiblings !== undefined) {
-          for (const configFile of configFiles.values()) {
-            const parsed = yield* nativeRequest("parseConfigFile", () =>
-              api.parseConfigFile(configFile),
-            )
-            const roots = new Set(parsed.fileNames)
-            const siblings = parsed.fileNames.flatMap((name) => {
-              const sibling = overlay.rootSiblings?.get(name)
-              return sibling === undefined || roots.has(sibling) ? [] : [sibling]
-            })
-            if (siblings.length === 0) continue
-            const text = yield* nativeRequest(
-              "readConfigFile",
-              async () => fs?.readFile?.(configFile) ?? (await Fs.readFile(configFile, "utf8")),
-            )
-            const updated = yield* Effect.try({
-              try: () => configWithRoots(text, [...parsed.fileNames, ...siblings]),
-              catch: (cause) =>
-                new WorkspaceCompilerError({ operation: "updateConfigRoots", cause }),
-            })
-            configs.set(configFile, updated)
-          }
-        }
         const native = yield* Effect.acquireRelease(
           nativeRequest("updateSnapshot", () =>
-            api.updateSnapshot({
-              openProjects: [...configFiles.values()],
-              fileChanges: { changed: [...configs.keys()] },
-            }),
+            api.updateSnapshot({ openProjects: [...configFiles.values()] }),
           ),
           (snapshot) =>
             nativeRequest("disposeSnapshot", () => snapshot.dispose()).pipe(Effect.ignore),
@@ -158,7 +113,6 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
           active ? Effect.void : Effect.fail(new ProjectSnapshot.SnapshotExpired()),
         )
 
-        const hidden = new Set([...(overlay?.hidden ?? [])].map((name) => Path.resolve(name)))
         const projects = new Map(
           definition.projects.flatMap((configured) => {
             const configFile = configFiles.get(configured.id)
@@ -172,9 +126,9 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
                     ProjectSnapshot.make({
                       configured,
                       native: nativeProject,
+                      path,
                       workspaceRoot: root,
-                      projectRoot: Path.dirname(configFile),
-                      hidden,
+                      projectRoot: path.dirname(configFile),
                       ensureActive,
                     }),
                   ] as const,
@@ -185,8 +139,8 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
         for (const project of projects.values()) {
           const configFile = configFiles.get(project.project.id)!
           for (const file of yield* project.files) {
-            const absolute = Path.resolve(
-              file.fileName.startsWith("../") ? root : Path.dirname(configFile),
+            const absolute = path.resolve(
+              file.fileName.startsWith("../") ? root : path.dirname(configFile),
               file.fileName.startsWith("../") ? file.fileName.slice(3) : file.fileName,
             )
             const owners = ownership.get(absolute) ?? []
@@ -220,7 +174,7 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
                 captured,
                 {
                   projectId: configured.id,
-                  fileName: ProjectRelativePath.schema.make(Path.basename(configFile)),
+                  fileName: ProjectRelativePath.schema.make(path.basename(configFile)),
                 },
                 yield* fs.readFile(configFile),
               )
@@ -230,8 +184,8 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
                   { projectId: configured.id, fileName: file.fileName },
                   yield* fs.readFile(
                     file.fileName.startsWith("../")
-                      ? Path.join(root, file.fileName.slice(3))
-                      : Path.join(Path.dirname(configFile), file.fileName),
+                      ? path.join(root, file.fileName.slice(3))
+                      : path.join(path.dirname(configFile), file.fileName),
                   ),
                 )
               }
@@ -252,5 +206,13 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
   }
 }
 
-export const layer = (definition: WorkspaceDefinition.Type, root: string): Layer.Layer<Workspace> =>
-  Layer.succeed(Workspace, make(definition, root))
+export const layer = (
+  definition: WorkspaceDefinition.Type,
+  root: string,
+): Layer.Layer<Workspace, never, Path.Path> =>
+  Layer.effect(
+    Workspace,
+    Effect.gen(function* () {
+      return make(definition, root, yield* Path.Path)
+    }),
+  )

@@ -1,12 +1,9 @@
-import * as Path from "node:path"
-import { Data, Effect, Order, Schema } from "effect"
-import { type Comparison, withComparison } from "./Comparison.ts"
+import { Data, Effect, Order, Path, Schema } from "effect"
 import * as Position from "./Position.ts"
 import type * as ProjectId from "./ProjectId.ts"
 import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import type { Selection } from "./Query.ts"
 import { type ProjectSnapshot, Workspace, WorkspaceSnapshot } from "./Workspace/index.ts"
-import type { Overlay } from "./Workspace/Overlay.ts"
 
 export interface Report {
   readonly projectId: ProjectId.Type
@@ -62,7 +59,6 @@ export const perProject = <E, R>(
 export interface Config {
   readonly projects: ReadonlyArray<{ readonly id: string; readonly config: string }>
   readonly checks: ReadonlyArray<Check<unknown>>
-  readonly comparisons?: ReadonlyArray<Check<unknown, WorkspaceSnapshot | Comparison>>
 }
 
 export const Finding = Schema.Struct({
@@ -73,13 +69,6 @@ export const Finding = Schema.Struct({
   message: Schema.String,
 })
 export type Finding = typeof Finding.Type
-
-export const Known = Schema.Struct({
-  check: Schema.String,
-  path: Schema.String,
-  message: Schema.String,
-})
-export type Known = typeof Known.Type
 
 const byPosition = Order.Struct({
   path: Order.String,
@@ -94,6 +83,7 @@ export const sorted = (findings: ReadonlyArray<Finding>): ReadonlyArray<Finding>
 
 const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
   Effect.gen(function* () {
+    const path = yield* Path.Path
     const workspace = yield* Workspace
     const snapshot = yield* WorkspaceSnapshot
     const reported = yield* Effect.forEach(
@@ -112,7 +102,7 @@ const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
         const absolute = yield* workspace.absolutePath(found)
         return {
           check: found.check,
-          path: Path.relative(workspace.root, absolute).replaceAll(Path.sep, "/"),
+          path: path.relative(workspace.root, absolute).replaceAll(path.sep, "/"),
           ...Position.at(file?.sourceFile.text ?? "", found.start),
           message: found.message,
         } satisfies Finding
@@ -121,23 +111,8 @@ const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
     return sorted(findings)
   })
 
-export const run = <E>(checks: ReadonlyArray<Check<E>>, overlay?: Overlay) =>
-  Effect.flatMap(Workspace, (workspace) => workspace.withSnapshot(collect(checks), overlay))
-
-export const runCompared = <E>(
-  comparisons: ReadonlyArray<Check<E, WorkspaceSnapshot | Comparison>>,
-  previous: ReadonlyMap<string, string>,
-) => withComparison(previous, collect(comparisons))
-
-const identity = ({ check, path, message }: Known): string => JSON.stringify([check, path, message])
-
-export const introducedSince = (
-  known: ReadonlyArray<Known>,
-  findings: ReadonlyArray<Finding>,
-): ReadonlyArray<Finding> => {
-  const remaining = Map.groupBy(known, identity)
-  return findings.filter((finding) => remaining.get(identity(finding))?.pop() === undefined)
-}
+export const run = <E>(checks: ReadonlyArray<Check<E>>) =>
+  Effect.flatMap(Workspace, (workspace) => workspace.withSnapshot(collect(checks)))
 
 export const format = ({ check, path, line, column, message }: Finding): string =>
   `${path}:${line}:${column} ${check} ${message}`

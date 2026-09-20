@@ -1,5 +1,13 @@
-import { randomUUID } from "node:crypto"
-import { type Cause, Data, Effect, Exit, FileSystem, Path, type PlatformError } from "effect"
+import {
+  type Cause,
+  Crypto,
+  Data,
+  Effect,
+  Exit,
+  FileSystem,
+  Path,
+  type PlatformError,
+} from "effect"
 import * as Sha256 from "./Sha256.ts"
 import { type FilePreview, StalePlanError, type VerifiedPlan } from "./Verification/index.ts"
 import { applicationState } from "./Verification/VerifiedPlan.ts"
@@ -34,6 +42,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
   const { workspace, plan, preview } = state
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
+  const crypto = yield* Crypto.Crypto
 
   const failed = (cause: unknown) =>
     new ApplicationFailure({ planId: plan.planId, reason: "filesystem", cause })
@@ -179,7 +188,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     yield* confinedTarget(file)
     yield* fs.makeDirectory(path.dirname(target), { recursive: true }).pipe(Effect.mapError(failed))
     yield* confinedTarget(file)
-    const temporary = `${target}.safemods-${randomUUID()}.tmp`
+    const temporary = `${target}.safemods-${yield* crypto.randomUUIDv4.pipe(Effect.mapError(failed))}.tmp`
     temporaries.add(temporary)
     yield* fs.writeFile(temporary, bytes, { flag: "wx", mode }).pipe(Effect.mapError(failed))
     yield* confinedTarget(file)
@@ -192,7 +201,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       yield* confinedTarget(file)
       yield* requireUnchanged(file, target)
       if (!file.before.exists) continue
-      const backup = `${target}.safemods-${randomUUID()}.backup`
+      const backup = `${target}.safemods-${yield* crypto.randomUUIDv4.pipe(Effect.mapError(failed))}.backup`
       yield* fs.rename(target, backup).pipe(Effect.mapError(failed))
       backups.push({ target, backup })
     }
