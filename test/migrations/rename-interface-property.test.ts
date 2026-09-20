@@ -1,14 +1,9 @@
-import * as Fs from "node:fs/promises"
-import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { renameInterfaceProperty } from "../../examples/rename-interface-property.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
-import { withFixture } from "../utils/fixture.ts"
-
-const read = (root: string, file: string) =>
-  Effect.tryPromise(() => Fs.readFile(Path.join(root, file), "utf8"))
+import { withFixture, read } from "../utils/fixture.ts"
 
 describe("rename-interface-property", () => {
   effect("renames only semantic Account property references and reports computed access", () =>

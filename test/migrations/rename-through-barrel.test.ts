@@ -1,18 +1,13 @@
-import * as Fs from "node:fs/promises"
-import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { renameThroughBarrel } from "../../examples/rename-through-barrel.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { withFixture } from "../utils/fixture.ts"
+import { withFixture, read as readSource } from "../utils/fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/rename-through-barrel"
 
 const file = (lines: ReadonlyArray<string>) => lines.join("\n") + "\n"
-
-const readSource = (root: string, relative: string) =>
-  Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
 
 const afterStore = file([
   'import { AccountNotFound, type Account } from "./account.js"',

@@ -10,11 +10,7 @@ import type { Type as NativeType } from "typescript/unstable/async"
 import * as Check from "../Check.ts"
 import * as Query from "../Query.ts"
 import * as Type from "../Type.ts"
-import {
-  type ProjectSnapshot,
-  type ProjectSnapshotError,
-  WorkspaceSnapshot,
-} from "../Workspace/index.ts"
+import type { ProjectSnapshot, ProjectSnapshotError } from "../Workspace/index.ts"
 
 const isFunctionLike = (node: Node): node is Node =>
   isFunctionDeclaration(node) ||
@@ -45,30 +41,20 @@ const isWeak = (
   })
 
 export const weakReturns = (options: { readonly within: string }) =>
-  Check.define(
-    "weak-returns",
-    Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
-      const reports = yield* Effect.forEach(snapshot.projects, (project) =>
-        Effect.gen(function* () {
-          const functions = yield* Query.nodes(project, isFunctionLike).pipe(
-            Query.within(options.within),
-            Query.collect,
-          )
-          return yield* Effect.forEach(
-            functions,
-            (selection) =>
-              Effect.gen(function* () {
-                const signature = yield* project.signatureOf(selection.value)
-                const returned =
-                  signature === undefined ? undefined : yield* project.returnTypeOf(signature)
-                if (returned === undefined || !(yield* isWeak(project, returned))) return []
-                return [Check.report(selection, `returns ${yield* project.typeToString(returned)}`)]
-              }),
-            { concurrency: "unbounded" },
-          )
-        }),
-      )
-      return reports.flat(2)
-    }),
+  Check.perProject("weak-returns", (project) =>
+    Query.nodes(project, isFunctionLike).pipe(
+      Query.within(options.within),
+      Query.collect,
+      Effect.flatMap((functions) =>
+        Check.each(functions, (selection) =>
+          Effect.gen(function* () {
+            const signature = yield* project.signatureOf(selection.value)
+            const returned =
+              signature === undefined ? undefined : yield* project.returnTypeOf(signature)
+            if (returned === undefined || !(yield* isWeak(project, returned))) return []
+            return [Check.report(selection, `returns ${yield* project.typeToString(returned)}`)]
+          }),
+        ),
+      ),
+    ),
   )

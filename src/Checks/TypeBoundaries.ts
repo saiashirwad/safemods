@@ -3,14 +3,13 @@ import { Effect, Option } from "effect"
 import type { Type as NativeType } from "typescript/unstable/async"
 import * as Check from "../Check.ts"
 import * as Type from "../Type.ts"
-import {
-  type DeclarationSite,
-  type ProjectFile,
-  type ProjectSnapshot,
-  type ProjectSnapshotError,
-  WorkspaceSnapshot,
+import type {
+  DeclarationSite,
+  ProjectFile,
+  ProjectSnapshot,
+  ProjectSnapshotError,
 } from "../Workspace/index.ts"
-import { declarationIn, typeOf } from "./Exported.ts"
+import { declarationIn, filesWithin, typeOf } from "./Exported.ts"
 
 interface Forbidden {
   readonly files?: ReadonlyArray<string> | undefined
@@ -63,49 +62,33 @@ const memoized = (project: ProjectSnapshot, forbidden: Forbidden): Place => {
 }
 
 const reportsIn = (project: ProjectSnapshot, file: ProjectFile, place: Place) =>
-  Effect.gen(function* () {
-    const exported = yield* project.exportsOf(file)
-    const reports = yield* Effect.forEach(
+  Effect.flatMap(project.exportsOf(file), (exported) =>
+    Check.each(
       exported,
       ({ name, symbol }) =>
         Effect.gen(function* () {
           const at = yield* declarationIn(project, symbol, file)
-          if (at === undefined) return []
           const type = yield* typeOf(project, symbol)
-          if (type === undefined) return []
+          if (at === undefined || type === undefined) return []
           const leaked = yield* Type.mentions(project, type, (candidate) =>
             Effect.map(place(candidate), Option.isSome),
           )
           if (Option.isNone(leaked)) return []
-          const described = yield* place(leaked.value)
-          return Option.toArray(described).map((found) =>
+          return Option.toArray(yield* place(leaked.value)).map((found) =>
             Check.report(at, `exports ${name} with a type mentioning ${found}`),
           )
         }),
-      { concurrency: 8 },
-    )
-    return reports.flat()
-  })
+      8,
+    ),
+  )
 
 export const typeBoundaries = (options: {
   readonly within: string
   readonly forbidden: Forbidden
 }) =>
-  Check.define(
-    "type-boundaries",
-    Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
-      const reports = yield* Effect.forEach(snapshot.projects, (project) =>
-        Effect.gen(function* () {
-          const files = (yield* project.files).filter((file) =>
-            matchesGlob(file.fileName, options.within),
-          )
-          const place = memoized(project, options.forbidden)
-          return yield* Effect.forEach(files, (file) => reportsIn(project, file, place), {
-            concurrency: 8,
-          })
-        }),
-      )
-      return reports.flat(2)
-    }),
-  )
+  Check.perProject("type-boundaries", (project) => {
+    const place = memoized(project, options.forbidden)
+    return Effect.flatMap(filesWithin(project, [options.within]), (files) =>
+      Check.each(files, (file) => reportsIn(project, file, place), 8),
+    )
+  })

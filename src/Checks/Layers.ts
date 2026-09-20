@@ -1,7 +1,6 @@
 import { Effect } from "effect"
 import * as Check from "../Check.ts"
 import * as Query from "../Query.ts"
-import { WorkspaceSnapshot } from "../Workspace/index.ts"
 
 export const layers = (options: {
   readonly within: string
@@ -16,21 +15,20 @@ export const layers = (options: {
     return row === -1 ? undefined : row
   }
 
-  return Check.define(
-    "layers",
-    Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
-      const references = yield* Effect.forEach(snapshot.projects, (project) =>
-        Query.resolvedModuleReferences(project).pipe(Query.within(options.within), Query.collect),
-      )
-      return references.flat().flatMap((selection) => {
-        const target = selection.value.resolved?.fileName
-        const from = rowOf(selection.fileName)
-        const to = target === undefined ? undefined : rowOf(target)
-        return from === undefined || to === undefined || to <= from
-          ? []
-          : [Check.report(selection, `imports ${target}, which is listed below it`)]
-      })
-    }),
+  return Check.perProject("layers", (project) =>
+    Query.resolvedModuleReferences(project).pipe(
+      Query.within(options.within),
+      Query.collect,
+      Effect.map((references) =>
+        references.flatMap((reference) => {
+          const target = reference.value.resolved?.fileName
+          const from = rowOf(reference.fileName)
+          const to = target === undefined ? undefined : rowOf(target)
+          return from === undefined || to === undefined || to <= from
+            ? []
+            : [Check.report(reference, `imports ${target}, which is listed below it`)]
+        }),
+      ),
+    ),
   )
 }

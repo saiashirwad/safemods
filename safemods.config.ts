@@ -2,11 +2,21 @@ import type * as Check from "safemods/Check"
 import * as ProjectRelativePath from "safemods/ProjectRelativePath"
 import {
   apiCompatibility,
+  duplicatedFunctions,
+  ignoredReturns,
   layers,
   restrictedReferences,
   typeBoundaries,
+  unjustifiedCasts,
+  unusedCode,
+  unusedOptionalParameters,
   weakReturns,
 } from "safemods/Checks"
+
+const publicApi = [
+  "src/{Application,Check,Comparison,Draft,Plan,ProjectId,ProjectRelativePath,Query,Recipe,Type,bin}.ts",
+  "src/{Checks,Verification,Workspace}/index.ts",
+]
 
 export default {
   projects: [{ id: "safemods", config: "tsconfig.json" }],
@@ -39,6 +49,11 @@ export default {
       within: "src/{Sha256,ProjectId,ProjectRelativePath,FileRef,Edit,Plan}.ts",
       forbidden: { packages: ["typescript"] },
     }),
+    unjustifiedCasts({ within: "src/**" }),
+    unusedCode({ within: "src/**", tests: "test/**", publicApi }),
+    unusedOptionalParameters({ within: "{src,examples}/**", publicApi }),
+    ignoredReturns({ within: "{src,examples}/**" }),
+    duplicatedFunctions({ within: "{src,examples,test}/**", minimumLength: 60 }),
     restrictedReferences({
       name: "unsafeNative",
       declaredIn: ProjectRelativePath.schema.make("src/Workspace/ProjectSnapshot.ts"),

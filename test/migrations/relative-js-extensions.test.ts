@@ -1,17 +1,12 @@
-import * as Fs from "node:fs/promises"
-import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { relativeJsExtensions } from "../../examples/relative-js-extensions.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { fixturePath as fixtureDirectory, withFixture } from "../utils/fixture.ts"
+import { fixturePath as fixtureDirectory, withFixture, read } from "../utils/fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/relative-js-extensions"
 const fixturePath = fixtureDirectory(fixture)
-
-const read = (root: string, relative: string) =>
-  Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
 
 describe("relative-js-extensions", () => {
   effect("names the project file a specifier reaches and reports the ones that reach none", () =>

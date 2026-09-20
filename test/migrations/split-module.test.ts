@@ -5,12 +5,9 @@ import { Effect } from "effect"
 import { splitModule, type SplitModuleInput } from "../../examples/split-module.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
-import { withFixture } from "../utils/fixture.ts"
+import { withFixture, read } from "../utils/fixture.ts"
 
 const fixture = "migrations/split-module"
-
-const read = (root: string, relative: string) =>
-  Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
 
 const exists = (root: string, relative: string) =>
   Effect.tryPromise(() =>

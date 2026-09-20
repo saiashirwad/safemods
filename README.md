@@ -124,17 +124,22 @@ A check listed under `comparisons` sees both versions at once. `--since` gives i
 
 ### Rules that ship in `safemods/Checks`
 
-| Rule                   | Reports                                                                                                                                     |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `layers`               | an import that points at a module listed below the importer; an entry ending in `/` is a folder                                             |
-| `weakReturns`          | a function whose resolved return type is `any` or `unknown`, seen through unions, promises and an Effect's success channel                  |
-| `restrictedReferences` | a use of one declaration outside the files allowed to use it, through any alias or re-export                                                |
-| `typeBoundaries`       | an export whose type mentions a type declared in a forbidden file or package, even with no import of it                                     |
-| `apiCompatibility`     | a comparison: an export that was removed, or whose type no longer fits where the old one did (`breaking`), or only accepts more (`widened`) |
+| Rule                       | Reports                                                                                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `layers`                   | an import that points at a module listed below the importer; an entry ending in `/` is a folder                                                        |
+| `weakReturns`              | a function whose resolved return type is `any` or `unknown`, seen through unions, promises and an Effect's success channel                             |
+| `restrictedReferences`     | a use of one declaration outside the files allowed to use it, through any alias or re-export                                                           |
+| `typeBoundaries`           | an export whose type mentions a type declared in a forbidden file or package, even with no import of it                                                |
+| `apiCompatibility`         | a comparison: an export that was removed, or whose type no longer fits where the old one did (`breaking`), or only accepts more (`widened`)            |
+| `unjustifiedCasts`         | an `as` the checker cannot confirm: from `any` or `unknown`, a narrowing, or between unrelated types; a cast that was already assignable is left alone |
+| `unusedCode`               | an export outside the public API that nothing uses, or that only tests use                                                                             |
+| `unusedOptionalParameters` | an optional parameter no caller passes; silent when the function is used other than by calling it, since not every caller is visible then              |
+| `ignoredReturns`           | a function whose return value every caller drops                                                                                                       |
+| `duplicatedFunctions`      | the same function body written out in more than one file                                                                                               |
 
 `apiCompatibility` stays quiet about an export whose own printed shape is unchanged: that is ripple from a type it mentions, and the type itself is reported. For an interface the message names the members that were removed, changed and added. It cannot see a change confined to a call signature or to a class's instance members.
 
-This repository runs the first four on itself in `pnpm lint` (see `safemods.config.ts`) and `apiCompatibility` with `pnpm safemods check --since main`.
+This repository runs all of them on itself in `pnpm lint` (see `safemods.config.ts`), against the six deliberate casts recorded in `safemods.known.json`, and runs `apiCompatibility` with `pnpm safemods check --since main`.
 
 ## Reading the code
 

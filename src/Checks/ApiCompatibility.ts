@@ -8,7 +8,7 @@ import {
 import * as Check from "../Check.ts"
 import { Comparison, previousMarker } from "../Comparison.ts"
 import * as ProjectRelativePath from "../ProjectRelativePath.ts"
-import { type ProjectFile, type ProjectSnapshot, WorkspaceSnapshot } from "../Workspace/index.ts"
+import type { ProjectFile, ProjectSnapshot } from "../Workspace/index.ts"
 import { declarationIn, typeOf } from "./Exported.ts"
 
 const withoutIds = (printed: string): string =>
@@ -144,40 +144,25 @@ const reportsFor = (
       )
     }
     const now = new Map((yield* project.exportsOf(current)).map((entry) => [entry.name, entry]))
-    const reports = yield* Effect.forEach(
-      was,
-      ({ name, symbol }) => {
-        const found = now.get(name)
-        return found === undefined
-          ? Effect.succeed([Check.reportAt(project, current.fileName, `removed export ${name}`)])
-          : changeIn(project, name, symbol, found.symbol, current)
-      },
-      { concurrency: "unbounded" },
-    )
-    return reports.flat()
+    return yield* Check.each(was, ({ name, symbol }) => {
+      const found = now.get(name)
+      return found === undefined
+        ? Effect.succeed([Check.reportAt(project, current.fileName, `removed export ${name}`)])
+        : changeIn(project, name, symbol, found.symbol, current)
+    })
   })
 
 export const apiCompatibility = (options: { readonly within: string }) =>
-  Check.define(
-    "api-compatibility",
-    Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
-      const { previous } = yield* Comparison
-      const reports = yield* Effect.forEach(snapshot.projects, (project) =>
-        Effect.gen(function* () {
-          const changed = [...(previous.get(project.project.id) ?? [])].filter(([fileName]) =>
-            matchesGlob(fileName, options.within),
-          )
-          return yield* Effect.forEach(
-            changed,
-            ([fileName, before]) =>
-              Effect.flatMap(project.file(fileName), (current) =>
-                reportsFor(project, before, current, fileName),
-              ),
-            { concurrency: "unbounded" },
-          )
-        }),
-      )
-      return reports.flat(2)
-    }),
+  Check.perProject("api-compatibility", (project) =>
+    Effect.flatMap(Comparison, ({ previous }) =>
+      Check.each(
+        [...(previous.get(project.project.id) ?? [])].filter(([fileName]) =>
+          matchesGlob(fileName, options.within),
+        ),
+        ([fileName, before]) =>
+          Effect.flatMap(project.file(fileName), (current) =>
+            reportsFor(project, before, current, fileName),
+          ),
+      ),
+    ),
   )

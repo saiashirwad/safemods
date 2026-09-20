@@ -85,7 +85,7 @@
     "fmt": "oxfmt --disable-nested-config",
     "fmt:check": "oxfmt --check --disable-nested-config",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint && knip && pnpm safemods check",
+    "lint": "oxlint && knip && pnpm safemods check --baseline safemods.known.json",
     "prepare": "effect-tsgo patch --no-typescript --oxlint",
     "test": "vitest run",
     "example": "node --conditions=source examples/run.ts",

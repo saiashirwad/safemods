@@ -42,6 +42,22 @@ export const define = <E, R>(
   run: Effect.Effect<ReadonlyArray<Report>, E, R>,
 ): Check<E, R> => ({ name, run })
 
+export const each = <A, E, R>(
+  items: Iterable<A>,
+  reportsFor: (item: A) => Effect.Effect<ReadonlyArray<Report>, E, R>,
+  concurrency: number | "unbounded" = "unbounded",
+): Effect.Effect<ReadonlyArray<Report>, E, R> =>
+  Effect.map(Effect.forEach(items, reportsFor, { concurrency }), (reports) => reports.flat())
+
+export const perProject = <E, R>(
+  name: string,
+  reportsFor: (project: ProjectSnapshot) => Effect.Effect<ReadonlyArray<Report>, E, R>,
+): Check<E, R | WorkspaceSnapshot> =>
+  define(
+    name,
+    WorkspaceSnapshot.use((snapshot) => each(snapshot.projects, reportsFor)),
+  )
+
 export interface Config {
   readonly projects: ReadonlyArray<{ readonly id: string; readonly config: string }>
   readonly checks: ReadonlyArray<Check<unknown>>

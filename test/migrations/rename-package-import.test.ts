@@ -1,17 +1,12 @@
-import * as Fs from "node:fs/promises"
-import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { renamePackageImport } from "../../examples/rename-package-import.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { fixturePath as fixtureDirectory, withFixture } from "../utils/fixture.ts"
+import { fixturePath as fixtureDirectory, withFixture, read } from "../utils/fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/rename-package-import"
 const fixturePath = fixtureDirectory(fixture)
-
-const read = (root: string, relativePath: string) =>
-  Effect.tryPromise(() => Fs.readFile(Path.join(root, relativePath), "utf8"))
 
 describe("rename-package-import", () => {
   effect("rewrites @acme/legacy-client specifiers and leaves other modules alone", () =>

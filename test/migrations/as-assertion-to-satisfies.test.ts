@@ -1,16 +1,11 @@
-import * as Fs from "node:fs/promises"
-import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { asAssertionToSatisfies } from "../../examples/as-assertion-to-satisfies.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { withFixture } from "../utils/fixture.ts"
+import { withFixture, read } from "../utils/fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/as-assertion-to-satisfies"
-
-const read = (root: string, relative: string) =>
-  Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
 
 describe("as-assertion-to-satisfies", () => {
   effect("rewrites only safe contextual assertions and preserves narrower inference", () =>

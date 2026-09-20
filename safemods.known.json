@@ -1,0 +1,32 @@
+[
+  {
+    "check": "unjustified-casts",
+    "path": "src/Plan.ts",
+    "message": "narrows {} | null to Json on trust: use a guard, or give the source the narrower type"
+  },
+  {
+    "check": "unjustified-casts",
+    "path": "src/Plan.ts",
+    "message": "narrows { readonly recipe: { readonly name: string; readonly vers... to ValidatedPlan on trust: use a guard, or give the source the narrower type"
+  },
+  {
+    "check": "unjustified-casts",
+    "path": "src/ProjectRelativePath.ts",
+    "message": "narrows string to string & Brand<\"ProjectRelativePath\"> on trust: use a guard, or give the source the narrower type"
+  },
+  {
+    "check": "unjustified-casts",
+    "path": "src/Type.ts",
+    "message": "narrows { [k: string]: Type; } to Parameters<Out> & Parameters<In> on trust: use a guard, or give the source the narrower type"
+  },
+  {
+    "check": "unjustified-casts",
+    "path": "src/Verification/VerifiedPlan.ts",
+    "message": "narrows Readonly<{ preview: PublicPlanPreview; diagnosticDiff: Di... to VerifiedPlan on trust: use a guard, or give the source the narrower type"
+  },
+  {
+    "check": "unjustified-casts",
+    "path": "src/Workspace/ProjectSnapshot.ts",
+    "message": "narrows A | undefined to A on trust: use a guard, or give the source the narrower type"
+  }
+]

@@ -1,7 +1,10 @@
 import { matchesGlob } from "node:path"
 import { Effect, Option, Order, Predicate, Stream } from "effect"
 import {
+  type ArrowFunction,
   type CallExpression,
+  type FunctionDeclaration,
+  type FunctionExpression,
   type Identifier,
   type ImportDeclaration,
   type Node,
@@ -9,7 +12,11 @@ import {
   SyntaxKind,
 } from "typescript/unstable/ast"
 import {
+  isArrowFunction,
   isCallExpression,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isVariableDeclaration,
   isExportDeclaration,
   isExternalModuleReference,
   isIdentifier,
@@ -319,6 +326,63 @@ export const referencesTo = (selection: Selection<Node>): Query<Node, ProjectSna
     Effect.map(selection.project.referencesTo(selection.value), (nodes) =>
       nodes.flatMap((node) => Option.toArray(selectionOf(selection.project, node))),
     ),
+  )
+
+export interface Uses {
+  readonly calls: ReadonlyArray<Selection<CallExpression>>
+  readonly escapes: boolean
+}
+
+export const usesOf = (selection: Selection<Node>): Effect.Effect<Uses, ProjectSnapshotError> =>
+  Effect.map(collect(referencesTo(selection)), (references) => {
+    const calls: Array<Selection<CallExpression>> = []
+    let escapes = false
+    for (const { project, value } of references) {
+      if (value === selection.value || isImportSpecifier(value.parent)) continue
+      const callee =
+        isPropertyAccessExpression(value.parent) && value.parent.name === value
+          ? value.parent
+          : value
+      const call =
+        isCallExpression(callee.parent) && callee.parent.expression === callee
+          ? selectionOf(project, callee.parent)
+          : Option.none()
+      if (Option.isSome(call)) calls.push(call.value)
+      else escapes = true
+    }
+    return { calls, escapes }
+  })
+
+export interface NamedFunction {
+  readonly node: FunctionDeclaration | ArrowFunction | FunctionExpression
+  readonly name: Identifier
+}
+
+const namedFunctionOf = (node: Node): NamedFunction | undefined => {
+  if (isFunctionDeclaration(node)) {
+    return node.name === undefined ? undefined : { node, name: node.name }
+  }
+  if (
+    (isArrowFunction(node) || isFunctionExpression(node)) &&
+    isVariableDeclaration(node.parent) &&
+    isIdentifier(node.parent.name)
+  ) {
+    return { node, name: node.parent.name }
+  }
+  return undefined
+}
+
+export const namedFunctions = (scope: Scope): Query<NamedFunction, ProjectSnapshotError> =>
+  nodes(scope, (node): node is Node => namedFunctionOf(node) !== undefined).pipe(
+    Stream.map((selection) => {
+      const value = namedFunctionOf(selection.value)!
+      return {
+        ...selection,
+        value,
+        start: value.name.getStart(value.name.getSourceFile()),
+        end: value.name.getEnd(),
+      }
+    }),
   )
 
 export interface TypedNode<A extends Node> {

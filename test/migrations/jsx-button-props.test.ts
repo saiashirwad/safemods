@@ -1,17 +1,12 @@
-import * as Fs from "node:fs/promises"
-import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { jsxButtonProps } from "../../examples/jsx-button-props.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { fixturePath as fixtureDirectory, withFixture } from "../utils/fixture.ts"
+import { fixturePath as fixtureDirectory, withFixture, read as readUtf8 } from "../utils/fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/jsx-button-props"
 const fixturePath = fixtureDirectory(fixture)
-const readUtf8 = (root: string, relative: string) =>
-  Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
-
 describe("jsx-button-props", () => {
   effect("migrates only safe props on the canonical component", () =>
     withFixture(
