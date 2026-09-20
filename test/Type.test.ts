@@ -5,6 +5,7 @@ import * as Query from "../src/Query.ts"
 import * as Type from "../src/Type.ts"
 import { collectDiagnostics } from "../src/Verification/Diagnostics.ts"
 import type { ProjectSnapshot, ProjectSnapshotError } from "../src/Workspace/index.ts"
+import { projectPath } from "./utils/domain.ts"
 import { withProject } from "./utils/fixture.ts"
 
 const SOURCE = [
@@ -117,6 +118,170 @@ describe("types", () => {
           expect(yield* flags("unresolved")).toEqual({ any: false, unknown: false })
         }),
       { dependencies: true },
+    ),
+  )
+})
+
+const MENTIONS = [
+  'import type { Effect } from "effect"',
+  'import type { Marker } from "./lookalike.js"',
+  'import type { Marker as Real } from "./marker.js"',
+  "",
+  "export interface Chain {",
+  "  readonly next: Chain | undefined",
+  "  readonly tag: Real",
+  "}",
+  "export interface Loop {",
+  "  readonly next: Loop | undefined",
+  "  readonly label: string",
+  "}",
+  "export declare const chained: Chain",
+  "export declare const looped: Loop",
+  "export declare const promised: Promise<Real>",
+  "export declare const effected: Effect.Effect<Real, string, never>",
+  "export declare const accepts: { run(input: Real): number }",
+  "export declare const returns: { run(): Real }",
+  "export declare const nested: { readonly inner: { readonly held: Real } }",
+  "export declare const external: Promise<string>",
+  "export declare const impostor: Marker",
+  "export interface Factory {",
+  "  new (): Real",
+  "}",
+  "export interface Keyed {",
+  "  readonly [key: string]: Real",
+  "}",
+  "export declare const factory: Factory",
+  "export declare const keyed: Keyed",
+  "export declare const intersected: Real & { readonly extra: 1 }",
+  "type Phantom<T> = { readonly tag: string; readonly unrelated: T[keyof T] }",
+  "export declare const phantom: Phantom<Real>",
+  "interface Conditional<T> {",
+  "  readonly held: T extends string ? Real : number",
+  "}",
+  "export declare const conditional: Conditional<string>",
+  "type Builder<Out> = {",
+  "  onA<B>(f: () => B): Builder<Out | B>",
+  "  onB<B>(f: () => B): Builder<Out | B>",
+  "  done(): Out",
+  "}",
+  "export declare const builder: <Out>() => Builder<Out>",
+  "type Layered<Out> = { readonly tag: string } & {",
+  "  onA<B>(f: () => B): Layered<Out | B>",
+  "  done(): Out",
+  "}",
+  "export declare const layered: <Out>() => Layered<Out>",
+  "export declare const constrained: <T extends Real>(value: T) => T",
+  "",
+].join("\n")
+
+const mentionsProject = <A, E, R>(use: (project: ProjectSnapshot) => Effect.Effect<A, E, R>) =>
+  withProject(
+    {
+      "src/marker.ts": 'export interface Marker { readonly tag: "marker" }\n',
+      "src/lookalike.ts": 'export interface Marker { readonly tag: "marker" }\n',
+      "src/mentions.ts": MENTIONS,
+    },
+    use,
+    { dependencies: true },
+  )
+
+const declaredType = (project: ProjectSnapshot, name: string) =>
+  Effect.gen(function* () {
+    const [declaration] = yield* Query.identifiers(project).pipe(
+      Query.within("src/mentions.ts"),
+      Query.filter(({ value }) => value.text === name),
+      Query.collect,
+    )
+    return (yield* project.typeOf(declaration!.value))!
+  })
+
+const realMarker = (project: ProjectSnapshot) =>
+  Effect.gen(function* () {
+    const file = yield* project.file(projectPath("src/marker.ts"))
+    const exported = yield* project.exportsOf(file!)
+    return exported.find((entry) => entry.name === "Marker")!.symbol
+  })
+
+describe("mentions", () => {
+  effect("finds a type through generics, members and signatures, and only that type", () =>
+    mentionsProject((project) =>
+      Effect.gen(function* () {
+        const marker = yield* realMarker(project)
+        const isMarker = (candidate: NativeType) =>
+          Effect.gen(function* () {
+            const symbol = yield* project.symbolOfType(candidate)
+            return symbol !== undefined && (yield* project.canonicalSymbol(symbol)) === marker
+          })
+        const found = (name: string) =>
+          Effect.gen(function* () {
+            const type = yield* declaredType(project, name)
+            const mentioned = yield* Type.mentions(project, type, isMarker)
+            return Option.isNone(mentioned)
+              ? undefined
+              : yield* project.typeToString(mentioned.value)
+          })
+
+        expect(yield* found("chained")).toBe("Marker")
+        expect(yield* found("promised")).toBe("Marker")
+        expect(yield* found("effected")).toBe("Marker")
+        expect(yield* found("accepts")).toBe("Marker")
+        expect(yield* found("returns")).toBe("Marker")
+        expect(yield* found("nested")).toBe("Marker")
+
+        expect(yield* found("factory")).toBe("Marker")
+        expect(yield* found("keyed")).toBe("Marker")
+        expect(yield* found("intersected")).toBe("Marker")
+        expect(yield* found("phantom")).toBe("Marker")
+        expect(yield* found("constrained")).toBe("Marker")
+
+        expect(yield* found("looped")).toBeUndefined()
+        expect(yield* found("external")).toBeUndefined()
+        expect(yield* found("impostor")).toBeUndefined()
+        expect(yield* found("conditional")).toBeUndefined()
+        expect(yield* found("builder")).toBeUndefined()
+        expect(yield* found("layered")).toBeUndefined()
+      }),
+    ),
+  )
+
+  effect("walks own members but leaves a type declared outside the project a leaf", () =>
+    mentionsProject((project) =>
+      Effect.gen(function* () {
+        const visited = (name: string) =>
+          Effect.gen(function* () {
+            const seen: Array<string> = []
+            const type = yield* declaredType(project, name)
+            yield* Type.mentions(project, type, (candidate) =>
+              Effect.map(project.typeToString(candidate), (text) => {
+                seen.push(text)
+                return false
+              }),
+            )
+            return seen.sort()
+          })
+
+        expect(yield* visited("promised")).toEqual([
+          '"marker"',
+          "Marker",
+          "Promise<Marker>",
+          "Promise<T>",
+          "T",
+        ])
+        expect(yield* visited("external")).toEqual(["Promise<T>", "Promise<string>", "T", "string"])
+        expect(yield* visited("intersected")).toEqual([
+          '"marker"',
+          "1",
+          "Marker",
+          "Marker & { readonly extra: 1; }",
+          "{ readonly extra: 1; }",
+        ])
+        expect(yield* visited("nested")).toEqual([
+          '"marker"',
+          "Marker",
+          "{ readonly held: Marker; }",
+          "{ readonly inner: { readonly held: Marker; }; }",
+        ])
+      }),
     ),
   )
 })

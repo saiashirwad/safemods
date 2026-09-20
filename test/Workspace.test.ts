@@ -4,6 +4,7 @@ import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Layer, Option, Schema } from "effect"
 import {
+  type ModuleExport,
   ProjectNotInWorkspace,
   SnapshotExpired,
   Workspace,
@@ -225,6 +226,54 @@ describe("workspace snapshots", () => {
         const missing = yield* Effect.flip(named("absent", "src/library.ts"))
         expect(missing._tag).toBe("SymbolNotFound")
       }),
+    ),
+  )
+
+  effect("exportsOf resolves re-exports, star exports and default to canonical symbols", () =>
+    withProject(
+      {
+        "src/origin.ts": [
+          'export interface Shape { readonly tag: "shape" }',
+          "export const build = (): Shape => ({ tag: 'shape' })",
+          "",
+        ].join("\n"),
+        "src/star.ts": "export const extra = 2\n",
+        "src/facade.ts": [
+          'export { build as make } from "./origin.js"',
+          'export type { Shape } from "./origin.js"',
+          'export * from "./star.js"',
+          "export default function entry(): number {",
+          "  return 1",
+          "}",
+          "",
+        ].join("\n"),
+        "src/impostor.ts": "export const make = 3\n",
+      },
+      (project) =>
+        Effect.gen(function* () {
+          const exportsIn = (fileName: string) =>
+            Effect.gen(function* () {
+              const file = yield* project.file(projectPath(fileName))
+              return yield* project.exportsOf(file!)
+            })
+          const symbolOf = (exported: ReadonlyArray<ModuleExport>, name: string) =>
+            exported.find((entry) => entry.name === name)?.symbol
+
+          const facade = yield* exportsIn("src/facade.ts")
+          const origin = yield* exportsIn("src/origin.ts")
+          const impostor = yield* exportsIn("src/impostor.ts")
+
+          expect(facade.map((entry) => entry.name)).toEqual(["Shape", "default", "extra", "make"])
+          expect(symbolOf(facade, "make")).toBe(symbolOf(origin, "build"))
+          expect(symbolOf(facade, "Shape")).toBe(symbolOf(origin, "Shape"))
+          expect(symbolOf(facade, "make")).not.toBe(symbolOf(impostor, "make"))
+          expect(symbolOf(facade, "default")).toBe(
+            yield* project.symbolNamed("entry", { within: projectPath("src/facade.ts") }),
+          )
+          expect(yield* project.declaredIn(symbolOf(facade, "extra")!)).toEqual([
+            { path: expect.stringContaining("src/star.ts"), fileName: "src/star.ts" },
+          ])
+        }),
     ),
   )
 

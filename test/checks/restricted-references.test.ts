@@ -1,6 +1,6 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import { restrictedReferences } from "../../checks/restricted-references.ts"
+import { restrictedReferences } from "../../src/Checks/RestrictedReferences.ts"
 import { projectPath } from "../utils/domain.ts"
 import { findingsOf } from "../utils/check.ts"
 

@@ -1,6 +1,6 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import { layers } from "../../checks/layers.ts"
+import { layers } from "../../src/Checks/Layers.ts"
 import { findingsOf } from "../utils/check.ts"
 
 describe("layers", () => {

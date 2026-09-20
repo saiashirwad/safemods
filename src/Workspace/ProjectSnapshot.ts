@@ -1,10 +1,13 @@
 import * as Path from "node:path"
-import { Data, Effect, Exit, Option, Request, RequestResolver, Schema } from "effect"
+import { Data, Effect, Exit, Option, Order, Request, RequestResolver, Schema } from "effect"
 import type { CallExpression, Expression, Node, SourceFile } from "typescript/unstable/ast"
 import {
+  type IndexInfo,
+  NodeBuilderFlags,
   type NodeHandle,
   SignatureKind,
   SymbolFlags,
+  TypeFlags,
   type Project as NativeProject,
   type Signature as NativeSignature,
   type Symbol as NativeSymbol,
@@ -47,6 +50,21 @@ export interface TextFile {
   readonly text: string
 }
 
+export interface ModuleExport {
+  readonly name: string
+  readonly symbol: NativeSymbol
+}
+
+export interface DeclarationSite {
+  readonly path: string
+  readonly fileName: ProjectRelativePath.Type | undefined
+}
+
+interface FileInfo {
+  readonly sourceFile: SourceFile
+  readonly fileName: ProjectRelativePath.Type | undefined
+}
+
 interface NodeQuestion<A> extends Request.Request<A, ProjectSnapshotError> {
   readonly node: Node
 }
@@ -61,11 +79,15 @@ export interface ProjectSnapshot {
     fileName: ProjectRelativePath.Type,
   ) => Effect.Effect<TextFile | undefined, ProjectSnapshotError>
   readonly files: Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError>
+  readonly hiddenFiles: Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError>
   readonly textFiles: Effect.Effect<ReadonlyArray<TextFile>, ProjectSnapshotError>
   readonly symbolNamed: (
     name: string,
     options: { readonly within: ProjectRelativePath.Type },
   ) => Effect.Effect<NativeSymbol, SymbolNotFound | ProjectSnapshotError>
+  readonly exportsOf: (
+    file: ProjectFile,
+  ) => Effect.Effect<ReadonlyArray<ModuleExport>, ProjectSnapshotError>
   readonly symbolOf: (node: Node) => Effect.Effect<NativeSymbol | undefined, ProjectSnapshotError>
   readonly canonicalSymbol: (
     symbol: NativeSymbol,
@@ -73,20 +95,41 @@ export interface ProjectSnapshot {
   readonly declarationsOf: (
     symbol: NativeSymbol,
   ) => Effect.Effect<ReadonlyArray<Node>, ProjectSnapshotError>
+  readonly declaredIn: (
+    symbol: NativeSymbol,
+  ) => Effect.Effect<ReadonlyArray<DeclarationSite>, ProjectSnapshotError>
   readonly referencesTo: (node: Node) => Effect.Effect<ReadonlyArray<Node>, ProjectSnapshotError>
   readonly typeOf: (node: Node) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
   readonly typeOfSymbol: (
     symbol: NativeSymbol,
   ) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
+  readonly declaredTypeOfSymbol: (
+    symbol: NativeSymbol,
+  ) => Effect.Effect<NativeType, ProjectSnapshotError>
+  readonly symbolOfType: (
+    type: NativeType,
+  ) => Effect.Effect<NativeSymbol | undefined, ProjectSnapshotError>
   readonly contextualTypeOf: (
     expression: Expression,
   ) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
   readonly unionMembersOf: (
     type: NativeType,
   ) => Effect.Effect<ReadonlyArray<NativeType>, ProjectSnapshotError>
+  readonly intersectionMembersOf: (
+    type: NativeType,
+  ) => Effect.Effect<ReadonlyArray<NativeType>, ProjectSnapshotError>
   readonly typeArgumentsOf: (
     type: NativeType,
   ) => Effect.Effect<ReadonlyArray<NativeType>, ProjectSnapshotError>
+  readonly aliasTypeArgumentsOf: (
+    type: NativeType,
+  ) => Effect.Effect<ReadonlyArray<NativeType>, ProjectSnapshotError>
+  readonly genericTargetOf: (
+    type: NativeType,
+  ) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
+  readonly constraintOf: (
+    type: NativeType,
+  ) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
   readonly propertyOf: (
     type: NativeType,
     name: string,
@@ -97,6 +140,12 @@ export interface ProjectSnapshot {
   readonly callSignaturesOf: (
     type: NativeType,
   ) => Effect.Effect<ReadonlyArray<NativeSignature>, ProjectSnapshotError>
+  readonly constructSignaturesOf: (
+    type: NativeType,
+  ) => Effect.Effect<ReadonlyArray<NativeSignature>, ProjectSnapshotError>
+  readonly indexInfosOf: (
+    type: NativeType,
+  ) => Effect.Effect<ReadonlyArray<IndexInfo>, ProjectSnapshotError>
   readonly signatureOf: (
     declaration: Node,
   ) => Effect.Effect<NativeSignature | undefined, ProjectSnapshotError>
@@ -112,7 +161,10 @@ export interface ProjectSnapshot {
   readonly returnTypeOf: (
     signature: NativeSignature,
   ) => Effect.Effect<NativeType | undefined, ProjectSnapshotError>
-  readonly typeToString: (type: NativeType) => Effect.Effect<string, ProjectSnapshotError>
+  readonly typeToString: (
+    type: NativeType,
+    options?: { readonly expandAliases: boolean },
+  ) => Effect.Effect<string, ProjectSnapshotError>
   readonly isTypeAssignableTo: (
     source: NativeType,
     target: NativeType,
@@ -153,9 +205,10 @@ export const make = (options: {
   readonly native: NativeProject
   readonly workspaceRoot: string
   readonly projectRoot: string
+  readonly hidden: ReadonlySet<string>
   readonly ensureActive: Effect.Effect<void, SnapshotExpired>
 }): ProjectSnapshot => {
-  const { configured, native, workspaceRoot, projectRoot, ensureActive } = options
+  const { configured, native, workspaceRoot, projectRoot, hidden, ensureActive } = options
   const { program, checker } = native
 
   const request = <A>(operation: string, evaluate: () => PromiseLike<A>) =>
@@ -175,16 +228,29 @@ export const make = (options: {
     return fileName === undefined ? Option.none() : Option.some(fileName)
   }
 
-  const ownedFileOf = memoize(async (absoluteName: string): Promise<ProjectFile | undefined> => {
-    const fileName = Option.getOrUndefined(relative(absoluteName))
+  const fileInfoOf = memoize(async (absoluteName: string): Promise<FileInfo | undefined> => {
     const sourceFile = await program.getSourceFile(absoluteName)
-    if (fileName === undefined || sourceFile === undefined) return undefined
-    const [isDefaultLibrary, isExternal] = await Promise.all([
+    if (sourceFile === undefined) return undefined
+    const [defaultLibrary, external] = await Promise.all([
       program.isSourceFileDefaultLibrary(sourceFile),
       program.isSourceFileFromExternalLibrary(sourceFile),
     ])
-    return isDefaultLibrary || isExternal ? undefined : { project, fileName, sourceFile }
+    const fileName =
+      defaultLibrary || external ? undefined : Option.getOrUndefined(relative(sourceFile.fileName))
+    return { sourceFile, fileName }
   })
+
+  const projectFileOf = memoize(async (absoluteName: string): Promise<ProjectFile | undefined> => {
+    const info = await fileInfoOf(absoluteName)
+    return info === undefined || info.fileName === undefined
+      ? undefined
+      : { project, fileName: info.fileName, sourceFile: info.sourceFile }
+  })
+
+  const ownedFileOf = async (absoluteName: string): Promise<ProjectFile | undefined> => {
+    const file = await projectFileOf(absoluteName)
+    return file === undefined || hidden.has(file.sourceFile.fileName) ? undefined : file
+  }
 
   const ownedFile = (absoluteName: string) =>
     request("getSourceFile", () => ownedFileOf(absoluteName))
@@ -253,6 +319,10 @@ export const make = (options: {
 
     files,
 
+    hiddenFiles: request("getHiddenFiles", () => Promise.all([...hidden].map(projectFileOf))).pipe(
+      Effect.map((files) => files.filter((file) => file !== undefined)),
+    ),
+
     textFiles: files.pipe(
       Effect.map((files) =>
         files.map((file) => ({ project, fileName: file.fileName, text: file.sourceFile.text })),
@@ -277,12 +347,40 @@ export const make = (options: {
         return yield* project.canonicalSymbol(symbol)
       }),
 
+    exportsOf: (file) =>
+      Effect.gen(function* () {
+        const exported = yield* request("getExportsOfModule", async () => {
+          const [module] = await checker.getSymbolAtLocation([file.sourceFile])
+          return module === undefined ? [] : checker.getExportsOfModule(module)
+        })
+        const entries = yield* Effect.forEach(
+          exported,
+          (symbol) =>
+            Effect.map(project.canonicalSymbol(symbol), (canonical) => ({
+              name: symbol.name,
+              symbol: canonical,
+            })),
+          { concurrency: "unbounded" },
+        )
+        return [...entries].sort((left, right) => Order.String(left.name, right.name))
+      }),
+
     symbolOf: perNode("getSymbolAtLocation", (nodes) => checker.getSymbolAtLocation(nodes)),
 
     canonicalSymbol: (symbol) => request("getCanonicalSymbol", () => canonicalSymbolOf(symbol)),
 
     declarationsOf: (symbol) =>
       request("resolveDeclarations", () => ownedNodes(symbol.declarations)),
+
+    declaredIn: (symbol) =>
+      request("resolveDeclarationSites", () =>
+        Promise.all(
+          symbol.declarations.map(async (handle) => {
+            const info = await fileInfoOf(handle.path)
+            return { path: info?.sourceFile.fileName ?? handle.path, fileName: info?.fileName }
+          }),
+        ),
+      ),
 
     referencesTo: (node) =>
       request("getReferencedSymbolsForNode", async () => {
@@ -297,6 +395,15 @@ export const make = (options: {
 
     typeOfSymbol: (symbol) => request("getTypeOfSymbol", () => checker.getTypeOfSymbol(symbol)),
 
+    declaredTypeOfSymbol: (symbol) =>
+      request("getDeclaredTypeOfSymbol", () => checker.getDeclaredTypeOfSymbol(symbol)),
+
+    symbolOfType: (type) =>
+      request("getSymbolOfType", async () => {
+        const [alias, own] = await Promise.all([type.getAliasSymbol(), type.getSymbol()])
+        return alias ?? own
+      }),
+
     contextualTypeOf: (expression) =>
       request("getContextualType", () => checker.getContextualType(expression)),
 
@@ -305,10 +412,31 @@ export const make = (options: {
         ? request("getTypes", () => type.getTypes())
         : Effect.as(ensureActive, [type]),
 
+    intersectionMembersOf: (type) =>
+      type.isIntersectionType()
+        ? request("getTypes", () => type.getTypes())
+        : Effect.as(ensureActive, []),
+
     typeArgumentsOf: (type) =>
       type.isTypeReference()
         ? request("getTypeArguments", () => checker.getTypeArguments(type))
         : Effect.as(ensureActive, []),
+
+    aliasTypeArgumentsOf: (type) =>
+      request("getAliasTypeArguments", () => type.getAliasTypeArguments()),
+
+    genericTargetOf: (type) =>
+      type.isTypeReference()
+        ? request("getTargetOfType", async () => {
+            const target = await type.getTarget()
+            return target === type ? undefined : target
+          })
+        : Effect.as(ensureActive, undefined),
+
+    constraintOf: (type) =>
+      (type.flags & TypeFlags.TypeParameter) === 0
+        ? Effect.as(ensureActive, undefined)
+        : request("getBaseConstraintOfType", () => checker.getBaseConstraintOfType(type)),
 
     propertyOf: (type, name) =>
       request("getPropertyOfType", () => checker.getPropertyOfType(type, name)),
@@ -317,6 +445,13 @@ export const make = (options: {
 
     callSignaturesOf: (type) =>
       request("getSignaturesOfType", () => checker.getSignaturesOfType(type, SignatureKind.Call)),
+
+    constructSignaturesOf: (type) =>
+      request("getSignaturesOfType", () =>
+        checker.getSignaturesOfType(type, SignatureKind.Construct),
+      ),
+
+    indexInfosOf: (type) => request("getIndexInfosOfType", () => checker.getIndexInfosOfType(type)),
 
     signatureOf: (declaration) =>
       request("getSignatureFromDeclaration", () =>
@@ -341,7 +476,16 @@ export const make = (options: {
     returnTypeOf: (signature) =>
       request("getReturnTypeOfSignature", () => checker.getReturnTypeOfSignature(signature)),
 
-    typeToString: (type) => request("typeToString", () => checker.typeToString(type)),
+    typeToString: (type, options) =>
+      request("typeToString", () =>
+        checker.typeToString(
+          type,
+          undefined,
+          options?.expandAliases === true
+            ? NodeBuilderFlags.NoTruncation | NodeBuilderFlags.InTypeAlias
+            : NodeBuilderFlags.NoTruncation,
+        ),
+      ),
 
     isTypeAssignableTo: (source, target) =>
       request("isTypeAssignableTo", () => assignableTo(target)(source)),

@@ -1,6 +1,6 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import { weakReturns } from "../../checks/weak-returns.ts"
+import { weakReturns } from "../../src/Checks/WeakReturns.ts"
 import { findingsOf } from "../utils/check.ts"
 
 describe("weak-returns", () => {

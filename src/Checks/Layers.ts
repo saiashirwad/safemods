@@ -1,11 +1,7 @@
-/**
- * Enforce a top-to-bottom module order: a module may import only from its own row or from rows
- * listed above it. An entry ending in `/` covers a directory.
- */
 import { Effect } from "effect"
-import * as Check from "safemods/Check"
-import * as Query from "safemods/Query"
-import { WorkspaceSnapshot } from "safemods/Workspace"
+import * as Check from "../Check.ts"
+import * as Query from "../Query.ts"
+import { WorkspaceSnapshot } from "../Workspace/index.ts"
 
 export const layers = (options: {
   readonly within: string

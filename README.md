@@ -93,15 +93,20 @@ export const noUnknownFailures = Check.define(
 )
 ```
 
-List projects and checks in `safemods.config.ts`:
+List projects and checks in `safemods.config.ts`. The rules that ship with the package come from `safemods/Checks`; a rule of your own is a file in your repository.
 
 ```ts
 import type * as Check from "safemods/Check"
+import { apiCompatibility, layers } from "safemods/Checks"
 import { noUnknownFailures } from "./checks/no-unknown-failures.ts"
 
 export default {
   projects: [{ id: "app", config: "tsconfig.json" }],
-  checks: [noUnknownFailures],
+  checks: [
+    layers({ within: "src/**", order: [["src/core.ts"], ["src/app.ts"]] }),
+    noUnknownFailures,
+  ],
+  comparisons: [apiCompatibility({ within: "src/**" })],
 } satisfies Check.Config
 ```
 
@@ -110,9 +115,38 @@ safemods check                                         # exit 1 on findings, 2 i
 safemods check --format json
 safemods check --baseline known.json --update-baseline # accept what exists today
 safemods check --baseline known.json                   # fail only on findings that are new
+safemods check --since main                            # fail only on findings this change added
 ```
 
-`checks/` holds the checks this repository runs on itself as part of `pnpm lint`: the module order below (`layers`), no function whose resolved return type is `any` or `unknown` (`weak-returns`), and `unsafeNative` kept out of recipes and checks (`restricted-references`).
+`--since <ref>` needs no baseline file. It runs the checks twice on the same disk: once over the world as it was at the ref — every file that differs gets its text from `git show`, files added since are hidden, files deleted since come back — and once over the world as it is, then reports what the second run found and the first did not. The working tree is compared, so uncommitted and untracked edits count. `--since` and `--baseline` together are refused.
+
+A check listed under `comparisons` sees both versions at once. `--since` gives it one snapshot holding the current world plus the previous text of each changed file, and the `Comparison` service maps each changed file to that previous version as an ordinary `ProjectFile`. One checker answers questions about both, so types from the two versions can be compared directly. Those findings describe the change itself, so they are reported as they are. Without `--since` there is nothing to compare: the CLI skips them and names them on stderr.
+
+### Rules that ship in `safemods/Checks`
+
+| Rule                   | Reports                                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `layers`               | an import that points at a module listed below the importer; an entry ending in `/` is a folder                                             |
+| `weakReturns`          | a function whose resolved return type is `any` or `unknown`, seen through unions, promises and an Effect's success channel                  |
+| `restrictedReferences` | a use of one declaration outside the files allowed to use it, through any alias or re-export                                                |
+| `typeBoundaries`       | an export whose type mentions a type declared in a forbidden file or package, even with no import of it                                     |
+| `apiCompatibility`     | a comparison: an export that was removed, or whose type no longer fits where the old one did (`breaking`), or only accepts more (`widened`) |
+
+`apiCompatibility` stays quiet about an export whose own printed shape is unchanged: that is ripple from a type it mentions, and the type itself is reported. For an interface the message names the members that were removed, changed and added. It cannot see a change confined to a call signature or to a class's instance members.
+
+This repository runs the first four on itself in `pnpm lint` (see `safemods.config.ts`) and `apiCompatibility` with `pnpm safemods check --since main`.
+
+## Reading the code
+
+Read in this order; each step uses only what came before.
+
+1. `src/Workspace/ProjectSnapshot.ts` — the interface at the top is every question you can ask the compiler. `perNode` is why asking about thousands of nodes costs one call per file.
+2. `src/Query.ts` — a query is a stream of `Selection`s (a node plus where it is). `where` filters with a compiler question.
+3. `src/Check.ts` — a check is a name and an Effect returning reports; `run` turns reports into `path:line:column` findings.
+4. `src/Checks/Layers.ts` — the smallest real rule, thirty lines. Then `WeakReturns.ts` for one that uses types.
+5. `src/bin.ts` — the command: load the config, run the checks, compare with a baseline or a ref, set the exit code.
+6. `src/Comparison.ts` and `src/Git.ts` — only needed for `--since`.
+7. `src/Draft.ts`, `src/Recipe.ts`, `src/Plan.ts`, `src/Verification/`, `src/Application.ts` — the codemod half, in the order a recipe flows through them.
 
 ## Modules
 
@@ -121,11 +155,14 @@ Each module depends only on the ones above it.
 | Module                                       | Responsibility                                                       |
 | -------------------------------------------- | -------------------------------------------------------------------- |
 | `Sha256`, `ProjectId`, `ProjectRelativePath` | branded value types                                                  |
+| `Git`                                        | the files a ref differs from and their text at it                    |
 | `Edit`                                       | hash-guarded text edits and their application                        |
 | `Plan`                                       | the canonical, content-addressed plan: finalize, validate, parse     |
 | `Workspace`                                  | compiler snapshots; every snapshot is a fresh view of disk + overlay |
 | `Query`, `Type`                              | streams of selected syntax nodes; predicates and parsers over types  |
+| `Comparison`                                 | a snapshot holding the previous version of each changed file         |
 | `Draft`, `Check`                             | proposed edits and file operations; findings and their baseline      |
+| `Checks`                                     | the rules that ship with the package                                 |
 | `Recipe`                                     | define a transformation; `run` turns its draft into a plan           |
 | `Verification`                               | preview exact bytes, diff diagnostics, replay, issue a verified plan |
 | `Application`                                | write a verified plan, refusing stale files and symlink escapes      |

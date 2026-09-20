@@ -21,6 +21,16 @@
       "types": "./dist/src/Check.d.ts",
       "default": "./dist/src/Check.js"
     },
+    "./Checks": {
+      "source": "./src/Checks/index.ts",
+      "types": "./dist/src/Checks/index.d.ts",
+      "default": "./dist/src/Checks/index.js"
+    },
+    "./Comparison": {
+      "source": "./src/Comparison.ts",
+      "types": "./dist/src/Comparison.d.ts",
+      "default": "./dist/src/Comparison.js"
+    },
     "./Draft": {
       "source": "./src/Draft.ts",
       "types": "./dist/src/Draft.d.ts",

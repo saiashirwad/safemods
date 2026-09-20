@@ -1,5 +1,5 @@
 import { Effect, Option } from "effect"
-import { TypeFlags, type Type as NativeType } from "typescript/unstable/async"
+import { ObjectFlags, TypeFlags, type Type as NativeType } from "typescript/unstable/async"
 import type { ProjectSnapshot, ProjectSnapshotError } from "./Workspace/index.ts"
 
 export const isAny = (type: NativeType): boolean =>
@@ -74,3 +74,139 @@ export const layer = variance(
   { error: "_E", requirements: "_RIn" },
   { provides: "_ROut" },
 )
+
+const walksInto = (
+  project: ProjectSnapshot,
+  type: NativeType,
+): Effect.Effect<boolean, ProjectSnapshotError> =>
+  Effect.gen(function* () {
+    if (!type.isObjectType()) return false
+    if ((type.objectFlags & ObjectFlags.Anonymous) !== 0) return true
+    const symbol = yield* project.symbolOfType(type)
+    if (symbol === undefined) return false
+    const declared = yield* project.declaredIn(symbol)
+    return declared.some((site) => site.fileName !== undefined)
+  })
+
+const membersOf = (
+  project: ProjectSnapshot,
+  type: NativeType,
+): Effect.Effect<ReadonlyArray<NativeType>, ProjectSnapshotError> =>
+  Effect.gen(function* () {
+    const [properties, calls, constructs, indexes] = yield* Effect.all(
+      [
+        project.propertiesOf(type),
+        project.callSignaturesOf(type),
+        project.constructSignaturesOf(type),
+        project.indexInfosOf(type),
+      ],
+      { concurrency: "unbounded" },
+    )
+    const propertyTypes = yield* Effect.forEach(
+      properties,
+      (property) => project.typeOfSymbol(property),
+      { concurrency: "unbounded" },
+    )
+    const signatureTypes = yield* Effect.forEach(
+      [...calls, ...constructs],
+      (signature) =>
+        Effect.all([project.parameterTypesOf(signature), project.returnTypeOf(signature)], {
+          concurrency: "unbounded",
+        }),
+      { concurrency: "unbounded" },
+    )
+    return [
+      ...propertyTypes,
+      ...indexes.flatMap((index) => [index.keyType, index.valueType]),
+      ...signatureTypes.flatMap(([parameters, returned]) => [...parameters, returned]),
+    ].filter((found) => found !== undefined)
+  })
+
+const originOf = (
+  project: ProjectSnapshot,
+  type: NativeType,
+  aliased: boolean,
+): Effect.Effect<NativeType | undefined, ProjectSnapshotError> =>
+  Effect.gen(function* () {
+    const target = yield* project.genericTargetOf(type)
+    if (target !== undefined) return target
+    if (!aliased) return undefined
+    const symbol = yield* project.symbolOfType(type)
+    if (symbol === undefined) return undefined
+    const declared = yield* project.declaredTypeOfSymbol(symbol)
+    return declared === type ? undefined : declared
+  })
+
+const expansions = new WeakMap<NativeType, ReadonlyArray<NativeType>>()
+
+const expand = (
+  project: ProjectSnapshot,
+  type: NativeType,
+): Effect.Effect<ReadonlyArray<NativeType>, ProjectSnapshotError> =>
+  Effect.gen(function* () {
+    const [typeArguments, aliasTypeArguments] = yield* Effect.all(
+      [project.typeArgumentsOf(type), project.aliasTypeArgumentsOf(type)],
+      { concurrency: "unbounded" },
+    )
+    const origin = yield* originOf(project, type, aliasTypeArguments.length !== 0)
+    if (origin !== undefined) return [...typeArguments, ...aliasTypeArguments, origin]
+    const [union, intersection, constraint] = yield* Effect.all(
+      [
+        project.unionMembersOf(type),
+        project.intersectionMembersOf(type),
+        project.constraintOf(type),
+      ],
+      { concurrency: "unbounded" },
+    )
+    const members = (yield* walksInto(project, type)) ? yield* membersOf(project, type) : []
+    return [
+      ...union,
+      ...intersection,
+      ...typeArguments,
+      ...aliasTypeArguments,
+      ...(constraint === undefined ? [] : [constraint]),
+      ...members,
+    ]
+  })
+
+const mentionedBy = (
+  project: ProjectSnapshot,
+  type: NativeType,
+): Effect.Effect<ReadonlyArray<NativeType>, ProjectSnapshotError> =>
+  Effect.suspend(() => {
+    const known = expansions.get(type)
+    if (known !== undefined) return Effect.succeed(known)
+    return Effect.map(expand(project, type), (mentioned) => {
+      expansions.set(type, mentioned)
+      return mentioned
+    })
+  })
+
+export const mentions = <E, R>(
+  project: ProjectSnapshot,
+  type: NativeType,
+  test: (type: NativeType) => Effect.Effect<boolean, E, R>,
+): Effect.Effect<Option.Option<NativeType>, E | ProjectSnapshotError, R> =>
+  Effect.gen(function* () {
+    const visited = new Set<NativeType>()
+    let frontier: ReadonlyArray<NativeType> = [type]
+    while (frontier.length > 0) {
+      const level: Array<NativeType> = []
+      for (const candidate of frontier) {
+        if (visited.has(candidate)) continue
+        visited.add(candidate)
+        level.push(candidate)
+      }
+      const matches = yield* Effect.forEach(level, test, { concurrency: "unbounded" })
+      for (const [index, candidate] of level.entries()) {
+        if (matches[index] === true) return Option.some(candidate)
+      }
+      const discovered = yield* Effect.forEach(
+        level,
+        (candidate) => mentionedBy(project, candidate),
+        { concurrency: "unbounded" },
+      )
+      frontier = discovered.flat()
+    }
+    return Option.none()
+  })

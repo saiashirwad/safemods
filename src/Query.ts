@@ -302,7 +302,7 @@ export const collect = <A, E, R>(
     ),
   )
 
-const selectionOf = <A extends Node>(
+export const selectionOf = <A extends Node>(
   project: ProjectSnapshot,
   node: A,
 ): Option.Option<Selection<A>> =>

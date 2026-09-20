@@ -1,8 +1,3 @@
-/**
- * Report functions whose resolved return type is `any` or `unknown`, looking through unions,
- * promises and the success channel of an Effect. The checker resolves the type, so inferred
- * returns and aliases declared in other files count.
- */
 import { Effect, Option } from "effect"
 import type { Node } from "typescript/unstable/ast"
 import {
@@ -12,14 +7,14 @@ import {
   isMethodDeclaration,
 } from "typescript/unstable/ast/is"
 import type { Type as NativeType } from "typescript/unstable/async"
-import * as Check from "safemods/Check"
-import * as Query from "safemods/Query"
-import * as Type from "safemods/Type"
+import * as Check from "../Check.ts"
+import * as Query from "../Query.ts"
+import * as Type from "../Type.ts"
 import {
   type ProjectSnapshot,
   type ProjectSnapshotError,
   WorkspaceSnapshot,
-} from "safemods/Workspace"
+} from "../Workspace/index.ts"
 
 const isFunctionLike = (node: Node): node is Node =>
   isFunctionDeclaration(node) ||

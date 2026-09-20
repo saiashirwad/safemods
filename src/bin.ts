@@ -5,6 +5,7 @@ import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Console, Data, Effect, FileSystem, Option, Predicate, Runtime, Schema } from "effect"
 import { Command, Flag } from "effect/unstable/cli"
 import * as Check from "./Check.ts"
+import * as Git from "./Git.ts"
 import * as Workspace from "./Workspace/index.ts"
 
 class FindingsReported extends Data.TaggedError("FindingsReported")<{ readonly count: number }> {
@@ -20,6 +21,8 @@ class InvalidConfig extends Data.TaggedError("InvalidConfig")<{
   readonly path: string
   readonly cause: unknown
 }> {}
+
+class SinceWithBaseline extends Data.TaggedError("SinceWithBaseline")<{}> {}
 
 const KnownFindings = Schema.fromJsonString(Schema.Array(Check.Known))
 
@@ -60,20 +63,46 @@ const check = Command.make(
     updateBaseline: Flag.boolean("update-baseline").pipe(
       Flag.withDescription("Record the current findings in the baseline and succeed"),
     ),
+    since: Flag.optional(
+      Flag.string("since").pipe(
+        Flag.withDescription("Git ref; only findings this change introduced fail"),
+      ),
+    ),
   },
-  ({ config: configFile, format, baseline, updateBaseline }) =>
+  ({ config: configFile, format, baseline, updateBaseline, since }) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
+      const baselinePath = Option.getOrUndefined(baseline)
+      const ref = Option.getOrUndefined(since)
+      if (ref !== undefined && baselinePath !== undefined) return yield* new SinceWithBaseline()
       const configPath = Path.resolve(configFile)
       const config = yield* loadConfig(configPath)
       const definition = yield* Schema.decodeUnknownEffect(Workspace.WorkspaceDefinition.schema)({
         projects: config.projects,
       })
-      const findings = yield* Check.run(config.checks).pipe(
-        Effect.provide(Workspace.layer(definition, Path.dirname(configPath))),
-      )
+      const root = Path.dirname(configPath)
+      const workspace = Workspace.layer(definition, root)
+      const runChecks = (overlay?: Workspace.Overlay) =>
+        Check.run(config.checks, overlay).pipe(Effect.provide(workspace))
+      const comparisons = config.comparisons ?? []
 
-      const baselinePath = Option.getOrUndefined(baseline)
+      if (ref === undefined && comparisons.length > 0) {
+        yield* Console.error(
+          `skipped without --since: ${comparisons.map((check) => check.name).join(", ")}`,
+        )
+      }
+
+      const changes = ref === undefined ? undefined : yield* Git.changesSince(root, ref)
+      const atRef =
+        changes === undefined
+          ? []
+          : yield* runChecks({ files: changes.previous, deleted: changes.added })
+      const findings = yield* runChecks()
+      const compared =
+        changes === undefined
+          ? []
+          : yield* Check.runCompared(comparisons, changes.previous).pipe(Effect.provide(workspace))
+
       if (updateBaseline && baselinePath !== undefined) {
         const known = findings.map(({ check, path, message }) => ({ check, path, message }))
         yield* fs.writeFileString(baselinePath, `${JSON.stringify(known, undefined, 2)}\n`)
@@ -82,19 +111,20 @@ const check = Command.make(
 
       const known =
         baselinePath === undefined
-          ? []
+          ? atRef
           : yield* Effect.flatMap(
               fs.readFileString(baselinePath),
               Schema.decodeEffect(KnownFindings),
             )
-      const introduced = Check.introducedSince(known, findings)
+      const newFindings = Check.introducedSince(known, findings)
+      const introduced = Check.sorted([...newFindings, ...compared])
       yield* Console.log(
         format === "json"
           ? JSON.stringify(introduced, undefined, 2)
           : introduced.map(Check.format).join("\n"),
       )
       yield* Console.error(
-        `${introduced.length} finding(s), ${findings.length - introduced.length} known`,
+        `${introduced.length} finding(s), ${findings.length - newFindings.length} known`,
       )
       if (introduced.length > 0) return yield* new FindingsReported({ count: introduced.length })
     }).pipe(

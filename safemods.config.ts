@@ -1,8 +1,12 @@
 import type * as Check from "safemods/Check"
 import * as ProjectRelativePath from "safemods/ProjectRelativePath"
-import { layers } from "./checks/layers.ts"
-import { restrictedReferences } from "./checks/restricted-references.ts"
-import { weakReturns } from "./checks/weak-returns.ts"
+import {
+  apiCompatibility,
+  layers,
+  restrictedReferences,
+  typeBoundaries,
+  weakReturns,
+} from "safemods/Checks"
 
 export default {
   projects: [{ id: "safemods", config: "tsconfig.json" }],
@@ -10,23 +14,36 @@ export default {
     layers({
       within: "src/**",
       order: [
-        ["src/Sha256.ts", "src/ProjectId.ts", "src/ProjectRelativePath.ts", "src/FileRef.ts"],
+        [
+          "src/Sha256.ts",
+          "src/ProjectId.ts",
+          "src/ProjectRelativePath.ts",
+          "src/FileRef.ts",
+          "src/Git.ts",
+        ],
         ["src/Edit.ts"],
         ["src/Plan.ts"],
         ["src/Workspace/"],
         ["src/Query.ts", "src/Type.ts"],
+        ["src/Comparison.ts"],
         ["src/Draft.ts", "src/Check.ts"],
+        ["src/Checks/"],
         ["src/Recipe.ts"],
         ["src/Verification/"],
         ["src/Application.ts"],
         ["src/bin.ts"],
       ],
     }),
-    weakReturns({ within: "{src,checks,examples}/**" }),
+    weakReturns({ within: "{src,examples}/**" }),
+    typeBoundaries({
+      within: "src/{Sha256,ProjectId,ProjectRelativePath,FileRef,Edit,Plan}.ts",
+      forbidden: { packages: ["typescript"] },
+    }),
     restrictedReferences({
       name: "unsafeNative",
       declaredIn: ProjectRelativePath.schema.make("src/Workspace/ProjectSnapshot.ts"),
       allowedWithin: ["src/Workspace/**", "src/Verification/Diagnostics.ts", "test/**"],
     }),
   ],
+  comparisons: [apiCompatibility({ within: "src/**" })],
 } satisfies Check.Config

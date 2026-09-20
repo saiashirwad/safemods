@@ -5,6 +5,7 @@ import type { FileSystem } from "typescript/unstable/fs"
 export interface Overlay {
   readonly files: ReadonlyMap<string, string>
   readonly deleted: ReadonlySet<string>
+  readonly hidden?: ReadonlySet<string>
 }
 
 const isInside = (directory: string, fileName: string): boolean =>

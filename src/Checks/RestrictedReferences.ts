@@ -1,14 +1,10 @@
-/**
- * Keep references to one declaration inside the files allowed to use it. The checker finds the
- * references, so aliases and re-exports cannot slip past.
- */
 import { matchesGlob } from "node:path"
 import { Effect } from "effect"
 import type { Node } from "typescript/unstable/ast"
-import * as Check from "safemods/Check"
-import type * as ProjectRelativePath from "safemods/ProjectRelativePath"
-import * as Query from "safemods/Query"
-import { WorkspaceSnapshot } from "safemods/Workspace"
+import * as Check from "../Check.ts"
+import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
+import * as Query from "../Query.ts"
+import { WorkspaceSnapshot } from "../Workspace/index.ts"
 
 export const restrictedReferences = (options: {
   readonly name: string

@@ -109,6 +109,7 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
           active ? Effect.void : Effect.fail(new ProjectSnapshot.SnapshotExpired()),
         )
 
+        const hidden = new Set([...(overlay?.hidden ?? [])].map((name) => Path.resolve(name)))
         const projects = new Map(
           definition.projects.flatMap((configured) => {
             const configFile = configFiles.get(configured.id)
@@ -124,6 +125,7 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
                       native: nativeProject,
                       workspaceRoot: root,
                       projectRoot: Path.dirname(configFile),
+                      hidden,
                       ensureActive,
                     }),
                   ] as const,
