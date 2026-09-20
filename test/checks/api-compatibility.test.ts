@@ -63,6 +63,55 @@ const SHAPES = (value: string) =>
   ].join("\n")
 
 describe("api-compatibility", () => {
+  effect("compares removed and changed exports with explicit tsconfig files", () =>
+    Effect.gen(function* () {
+      const findings = yield* comparedFindingsOf(
+        check,
+        {
+          "tsconfig.json": JSON.stringify({
+            compilerOptions: { strict: true, noEmit: true },
+            files: ["src/api.ts"],
+          }),
+          "src/api.ts": "export const value = 1\n",
+        },
+        { "src/api.ts": 'export const value = "old"\nexport const removed = true\n' },
+      )
+      expect(findings).toEqual([
+        "src/api.ts:1:1 api-compatibility removed export removed",
+        'src/api.ts:1:14 api-compatibility breaking change to export value: was "old", now 1',
+      ])
+    }),
+  )
+
+  effect("compares inferred exports against the previous paths-alias dependency", () =>
+    Effect.gen(function* () {
+      const source = 'import { value } from "@model"\nexport const inferred = value\n'
+      const findings = yield* comparedFindingsOf(
+        check,
+        {
+          "tsconfig.json": JSON.stringify({
+            compilerOptions: {
+              strict: true,
+              noEmit: true,
+              module: "NodeNext",
+              moduleResolution: "NodeNext",
+              paths: { "@model": ["./src/model.ts"] },
+            },
+            include: ["src/**/*.ts"],
+          }),
+          "package.json": '{"type":"module"}',
+          "src/api.ts": source,
+          "src/model.ts": "export const value = 1\n",
+        },
+        { "src/api.ts": source, "src/model.ts": 'export const value = "old"\n' },
+      )
+      expect(findings).toEqual([
+        'src/api.ts:2:14 api-compatibility breaking change to export inferred: was "old", now 1',
+        'src/model.ts:1:14 api-compatibility breaking change to export value: was "old", now 1',
+      ])
+    }),
+  )
+
   effect("reports a changed parameter, an optional parameter and a removed export", () =>
     Effect.gen(function* () {
       const findings = yield* comparedFindingsOf(

@@ -16,10 +16,12 @@ const UNCHANGED = [
   "src/billing/invoices.ts",
   "src/users/directory.ts",
   "src/diagnostics/legacy-quota.ts",
+  "src/billing/charges.ts",
+  "src/users/tokens.ts",
 ] as const
 
 describe("positional-to-options", () => {
-  effect("wraps canonical positional createSession calls into an options object", () =>
+  effect("moves callers of every positional overload that has a matching object overload", () =>
     withFixture(
       (root, app) =>
         Effect.gen(function* () {
@@ -32,9 +34,30 @@ describe("positional-to-options", () => {
             verified.diagnosticDiff.unchanged.some((diagnostic) => diagnostic.code === 2322),
           ).toBe(true)
           expect(new Set(verified.preview.files.map((file) => file.fileName))).toEqual(
-            new Set(["src/auth/login.ts", "src/auth/refresh.ts", "src/http/middleware.ts"]),
+            new Set([
+              "src/auth/login.ts",
+              "src/auth/refresh.ts",
+              "src/http/middleware.ts",
+              "src/billing/collect.ts",
+            ]),
           )
-          expect(receipt.written).toHaveLength(3)
+          expect(receipt.written).toHaveLength(4)
+
+          const originalCollect = yield* readUtf8(fixturePath, "src/billing/collect.ts")
+          expect(yield* readUtf8(root, "src/billing/collect.ts")).toBe(
+            originalCollect
+              .replace(
+                "createCharge(customerId, amountCents)",
+                "createCharge({ customerId, amountCents })",
+              )
+              .replace(
+                'createCharge(customerId, amountCents * 2, "eur")',
+                'createCharge({ customerId, amountCents: amountCents * 2, currency: "eur" })',
+              ),
+          )
+          expect(
+            plan.unsupported.map(({ start, end }) => originalCollect.slice(start, end)),
+          ).toEqual(["createCharge(...batch)"])
 
           const originalLogin = yield* readUtf8(fixturePath, "src/auth/login.ts")
           const originalRefresh = yield* readUtf8(fixturePath, "src/auth/refresh.ts")
@@ -57,7 +80,7 @@ describe("positional-to-options", () => {
           expect(refresh).toBe(
             originalRefresh.replaceAll(
               "openSession(userId, ttlSeconds)",
-              "openSession({ userId: userId, ttlSeconds: ttlSeconds })",
+              "openSession({ userId, ttlSeconds })",
             ),
           )
           expect(middleware).toBe(

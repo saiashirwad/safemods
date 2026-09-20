@@ -178,9 +178,11 @@ Each module depends only on the ones above it.
 | -------------------------------------------- | -------------------------------------------------------------------- |
 | `Sha256`, `ProjectId`, `ProjectRelativePath` | branded value types                                                  |
 | `Git`                                        | the files a ref differs from and their text at it                    |
+| `Position`, `ModuleSpecifier`                | line and column of an offset; parse, relate and emit specifiers      |
 | `Edit`                                       | hash-guarded text edits and their application                        |
 | `Plan`                                       | the canonical, content-addressed plan: finalize, validate, parse     |
 | `Workspace`                                  | compiler snapshots; every snapshot is a fresh view of disk + overlay |
+| `Pattern`                                    | syntax shapes with typed captures, combined into tagged matches      |
 | `Query`, `Type`                              | streams of selected syntax nodes; predicates and parsers over types  |
 | `Comparison`                                 | a snapshot holding the previous version of each changed file         |
 | `Draft`, `Check`                             | proposed edits and file operations; findings and their baseline      |

@@ -1,6 +1,6 @@
 /** Convert a non-ambient, unmerged string enum into an `as const` object and value union. */
-import { Data, Effect } from "effect"
-import { SyntaxKind, type EnumDeclaration } from "typescript/unstable/ast"
+import { Data, Effect, Predicate } from "effect"
+import { SyntaxKind, type EnumDeclaration, type EnumMember } from "typescript/unstable/ast"
 import { isEnumDeclaration, isIdentifier, isStringLiteral } from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
 import type * as ProjectRelativePath from "safemods/ProjectRelativePath"
@@ -19,38 +19,43 @@ export class UnsupportedEnum extends Data.TaggedError("UnsupportedEnum")<{
   readonly reasons: ReadonlyArray<string>
 }> {}
 
-const modifiers = (declaration: EnumDeclaration): string =>
+const isAmbient = (declaration: EnumDeclaration): boolean =>
+  declaration.modifiers?.some((modifier) => modifier.kind === SyntaxKind.DeclareKeyword) === true
+
+const prefixOf = (declaration: EnumDeclaration): string =>
   declaration.modifiers
     ?.filter((modifier) => modifier.kind !== SyntaxKind.DeclareKeyword)
-    .map((modifier) => modifier.getText())
-    .join(" ") ?? ""
+    .map((modifier) => `${modifier.getText()} `)
+    .join("") ?? ""
 
-const memberText = (member: EnumDeclaration["members"][number]): string => {
+const memberText = (member: EnumMember): string => {
   const source = member.getSourceFile()
-  const start = member.getFullStart()
-  const trivia = source.text.slice(start, member.getStart(source))
-  return `${trivia}${member.name.getText()}${member.initializer === undefined ? "" : `: ${member.initializer.getText()}`}`
+  const trivia = source.text.slice(member.getFullStart(), member.getStart(source))
+  const value = member.initializer === undefined ? "" : `: ${member.initializer.getText()}`
+  return `${trivia}${member.name.getText()}${value}`
 }
 
 const replacement = (declaration: EnumDeclaration, name: string): string => {
-  const prefix = modifiers(declaration)
+  const prefix = prefixOf(declaration)
   const members = declaration.members.map(memberText).join(",")
-  return `${prefix === "" ? "" : `${prefix} `}const ${name} = {${members}\n} as const\n${prefix === "" ? "" : `${prefix} `}type ${name} = (typeof ${name})[keyof typeof ${name}]`
+  return [
+    `${prefix}const ${name} = {${members}\n} as const`,
+    `${prefix}type ${name} = (typeof ${name})[keyof typeof ${name}]`,
+  ].join("\n")
 }
 
-const reasonFor = (declaration: EnumDeclaration): string | undefined => {
-  if (declaration.modifiers?.some((modifier) => modifier.kind === SyntaxKind.DeclareKeyword)) {
-    return "ambient enums are unsupported"
-  }
-  for (const member of declaration.members) {
-    if (!isIdentifier(member.name)) return "only identifier member names are supported"
-    if (member.initializer === undefined) return "every member must have an explicit string literal"
-    if (!isStringLiteral(member.initializer)) {
-      return "numeric and computed enum members are unsupported"
-    }
-  }
+const memberReason = (member: EnumMember): string | undefined => {
+  if (!isIdentifier(member.name)) return "only identifier member names are supported"
+  if (member.initializer === undefined) return "every member must have an explicit string literal"
+  if (!isStringLiteral(member.initializer))
+    return "numeric and computed enum members are unsupported"
   return undefined
 }
+
+const reasonFor = (declaration: EnumDeclaration): string | undefined =>
+  isAmbient(declaration)
+    ? "ambient enums are unsupported"
+    : declaration.members.map(memberReason).find(Predicate.isNotUndefined)
 
 export const enumToConstObject = Recipe.define("enum-to-const-object", {
   version: "1.0.0",
@@ -68,18 +73,14 @@ export const enumToConstObject = Recipe.define("enum-to-const-object", {
 
       const symbol = yield* project.symbolOf(target.value.name)
       const declarations = symbol === undefined ? [] : yield* project.declarationsOf(symbol)
-      const reasons = [
-        ...(declarations.length > 1 ? ["merged enum declarations are unsupported"] : []),
-        ...declarations.filter(isEnumDeclaration).flatMap((declaration) => {
-          const reason = reasonFor(declaration)
-          return reason === undefined ? [] : [reason]
-        }),
-      ]
+      const merged = declarations.length > 1 ? ["merged enum declarations are unsupported"] : []
+      const unsupported = declarations
+        .filter(isEnumDeclaration)
+        .map(reasonFor)
+        .filter(Predicate.isNotUndefined)
+      const reasons = [...new Set([...merged, ...unsupported])]
       if (reasons.length > 0) {
-        return yield* new UnsupportedEnum({
-          enumName: input.enumName,
-          reasons: [...new Set(reasons)],
-        })
+        return yield* new UnsupportedEnum({ enumName: input.enumName, reasons })
       }
       return Draft.replaceSelection(target, replacement(target.value, input.enumName))
     }),

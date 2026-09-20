@@ -1,13 +1,14 @@
 import { Effect } from "effect"
+import type { ExportSpecifier, ImportSpecifier } from "typescript/unstable/ast"
 import {
   isExportDeclaration,
-  isExportSpecifier,
+  isImportClause,
   isImportDeclaration,
-  isImportSpecifier,
   isNamedExports,
   isNamedImports,
 } from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
+import * as P from "safemods/Pattern"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { WorkspaceSnapshot } from "safemods/Workspace"
@@ -24,13 +25,39 @@ const entryPointByExport = new Map([
   ["ListInvoicesOptions", "billing"],
 ])
 
-const quote = (text: string, specifier: string): string =>
-  `${text.startsWith("'") ? "'" : '"'}${specifier}${text.startsWith("'") ? "'" : '"'}`
+const AMBIGUOUS = `The root entry point is ambiguous here; choose ${ROOT}/auth or ${ROOT}/billing manually`
+const MIXED = "This declaration mixes exports from different package entry points"
 
-const importedName = (specifier: {
-  readonly propertyName?: { readonly text: string }
-  readonly name: { readonly text: string }
-}): string => specifier.propertyName?.text ?? specifier.name.text
+const namedBindings = P.either(
+  P.node(isImportDeclaration, {
+    importClause: P.node(isImportClause, {
+      namedBindings: P.node(isNamedImports, { elements: P.capture("elements") }),
+    }),
+  }),
+  P.node(isExportDeclaration, {
+    exportClause: P.node(isNamedExports, { elements: P.capture("elements") }),
+  }),
+)
+
+const entryPointOf = (element: ImportSpecifier | ExportSpecifier): string | undefined =>
+  entryPointByExport.get(element.propertyName?.text ?? element.name.text)
+
+const split = (selection: Query.Selection<Query.ModuleReference>): Draft.Draft => {
+  const bound = namedBindings.match(selection.value.node)
+  if (bound === undefined) {
+    return Draft.unsupported(selection, AMBIGUOUS)
+  }
+  const entryPoints = new Set([...bound.elements].map(entryPointOf))
+  const [entryPoint] = entryPoints
+  if (entryPoints.size !== 1 || entryPoint === undefined) {
+    return Draft.unsupported(selection, MIXED)
+  }
+  return Draft.replaceStringLiteral(
+    selection.project,
+    selection.value.specifier,
+    `${ROOT}/${entryPoint}`,
+  )
+}
 
 export const packageEntryPointSplit = Recipe.define("package-entry-point-split", {
   version: "1.0.0",
@@ -44,43 +71,6 @@ export const packageEntryPointSplit = Recipe.define("package-entry-point-split",
           Query.collect,
         ),
       )
-      return Draft.concat(
-        ...references.flat().map((selection) => {
-          const { node, specifier } = selection.value
-          const clause = isImportDeclaration(node)
-            ? node.importClause?.namedBindings
-            : isExportDeclaration(node)
-              ? node.exportClause
-              : undefined
-          const elements =
-            clause !== undefined && (isNamedImports(clause) || isNamedExports(clause))
-              ? clause.elements
-              : undefined
-          if (elements === undefined) {
-            return Draft.unsupported(
-              selection,
-              "The root entry point is ambiguous here; choose @acme/sdk/auth or @acme/sdk/billing manually",
-            )
-          }
-          const entryPoints = new Set(
-            elements
-              .filter((element) => isImportSpecifier(element) || isExportSpecifier(element))
-              .map(importedName)
-              .map((name) => entryPointByExport.get(name)),
-          )
-          if (entryPoints.size !== 1 || entryPoints.has(undefined)) {
-            return Draft.unsupported(
-              selection,
-              "This declaration mixes exports from different package entry points",
-            )
-          }
-          const [entryPoint] = entryPoints
-          return Draft.replace(
-            selection.project,
-            specifier,
-            quote(specifier.getText(), `${ROOT}/${entryPoint}`),
-          )
-        }),
-      )
+      return Draft.concat(...references.flat().map(split))
     }),
 })

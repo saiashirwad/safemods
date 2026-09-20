@@ -1,6 +1,7 @@
 import * as Path from "node:path"
 import { Data, Effect, Order, Schema } from "effect"
 import { type Comparison, withComparison } from "./Comparison.ts"
+import * as Position from "./Position.ts"
 import type * as ProjectId from "./ProjectId.ts"
 import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import type { Selection } from "./Query.ts"
@@ -108,13 +109,11 @@ const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
       Effect.gen(function* () {
         const project = yield* snapshot.project(found.projectId)
         const file = yield* project.file(found.fileName)
-        const before = (file?.sourceFile.text ?? "").slice(0, found.start)
         const absolute = yield* workspace.absolutePath(found)
         return {
           check: found.check,
           path: Path.relative(workspace.root, absolute).replaceAll(Path.sep, "/"),
-          line: before.split("\n").length,
-          column: found.start - before.lastIndexOf("\n"),
+          ...Position.at(file?.sourceFile.text ?? "", found.start),
           message: found.message,
         } satisfies Finding
       }),

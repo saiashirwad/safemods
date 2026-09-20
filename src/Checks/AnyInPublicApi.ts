@@ -10,7 +10,7 @@ export const anyInPublicApi = (options: { readonly publicApi: ReadonlyArray<stri
     Effect.gen(function* () {
       const published = yield* publicSymbols(project, options.publicApi)
       return yield* Check.each(
-        [...published].filter((symbol) => (symbol.flags & SymbolFlags.ValueModule) === 0),
+        [...published].filter((symbol) => (symbol.flags & SymbolFlags.Module) === 0),
         (symbol) =>
           Effect.gen(function* () {
             const type = yield* Type.ofSymbol(project, symbol)

@@ -162,6 +162,117 @@ const sortedNames = (selections: ReadonlyArray<Query.Selection<unknown>>) =>
   selections.map(({ fileName }) => fileName).sort()
 
 describe("comparison", () => {
+  effect("adds previous explicit roots without changing current files or inherited options", () =>
+    withFixture(
+      (root, app) =>
+        withComparison(
+          new Map([
+            [Path.join(root, "src/api.ts"), "export const value: string | undefined = undefined\n"],
+          ]),
+          Effect.gen(function* () {
+            const project = yield* fixtureProject(app)
+            const previous = (yield* Comparison).previous
+              .get(app.id)!
+              .get(projectPath("src/api.ts"))!
+            expect(yield* exportTypes(previous)).toEqual({ value: "string | undefined" })
+            expect(yield* exportTypes((yield* project.file(projectPath("src/api.ts")))!)).toEqual({
+              value: "1",
+            })
+            expect((yield* project.files).map((file) => file.fileName)).toEqual(["src/api.ts"])
+            expect(yield* project.file(projectPath("src/api.__before__.ts"))).toBeUndefined()
+          }),
+        ),
+      {
+        fixture: "empty",
+        files: {
+          "base.json": '{ "compilerOptions": { "strict": true, "noEmit": true } }',
+          "tsconfig.json":
+            '{ // JSONC and inherited settings must survive\n "extends": "./base.json", "files": ["src/api.ts"], }',
+          "src/api.ts": "export const value = 1\n",
+          "src/excluded.ts": "export const excluded = true\n",
+        },
+      },
+    ),
+  )
+
+  effect("keeps implicitly included current files while hiding previous siblings", () =>
+    withFixture(
+      (root, app) =>
+        withComparison(
+          new Map([[Path.join(root, "src/api.ts"), 'export const value = "old"\n']]),
+          Effect.gen(function* () {
+            const project = yield* fixtureProject(app)
+            expect((yield* project.files).map((file) => file.fileName).sort()).toEqual([
+              "src/api.ts",
+              "src/other.ts",
+            ])
+            const previous = (yield* Comparison).previous
+              .get(app.id)!
+              .get(projectPath("src/api.ts"))!
+            expect(yield* exportTypes(previous)).toEqual({ value: '"old"' })
+            expect(yield* exportTypes((yield* project.file(projectPath("src/api.ts")))!)).toEqual({
+              value: "1",
+            })
+          }),
+        ),
+      {
+        fixture: "empty",
+        files: {
+          "tsconfig.json": '{ "compilerOptions": { "strict": true, "noEmit": true } }',
+          "src/api.ts": "export const value = 1\n",
+          "src/other.ts": "export const other = true\n",
+        },
+      },
+    ),
+  )
+
+  effect("preserves project-reference source resolution when adding explicit roots", () =>
+    withFixture(
+      (root, app) =>
+        Effect.gen(function* () {
+          const current = Effect.gen(function* () {
+            const project = yield* fixtureProject(app)
+            return yield* exportTypes((yield* project.file(projectPath("src/api.ts")))!)
+          })
+          const workspace = yield* Workspace
+          expect(yield* workspace.withSnapshot(current)).toEqual({ value: "string" })
+          yield* withComparison(
+            new Map([
+              [
+                Path.join(root, "src/api.ts"),
+                'import type { Model } from "../dist/model/index.js"\nexport declare const value: Model["before"]\n',
+              ],
+            ]),
+            Effect.gen(function* () {
+              expect(yield* current).toEqual({ value: "string" })
+              const previous = (yield* Comparison).previous
+                .get(app.id)!
+                .get(projectPath("src/api.ts"))!
+              expect(yield* exportTypes(previous)).toEqual({ value: "number" })
+            }),
+          )
+        }),
+      {
+        fixture: "empty",
+        files: {
+          "tsconfig.json": `{
+            // references must remain on the configured project, not just its base
+            "compilerOptions": { "strict": true, "noEmit": true },
+            "files": ["src/api.ts"],
+            "references": [{ "path": "./model" },],
+          }`,
+          "model/tsconfig.json": JSON.stringify({
+            compilerOptions: { composite: true, rootDir: ".", outDir: "../dist/model" },
+            files: ["index.ts"],
+          }),
+          "model/index.ts": "export interface Model { before: number; now: string }\n",
+          "src/api.ts":
+            'import type { Model } from "../dist/model/index.js"\nexport declare const value: Model["now"]\n',
+        },
+      },
+    ),
+  )
+
   effect("shares unchanged declarations and tells a changed interface apart", () =>
     compared((project, previous) =>
       Effect.gen(function* () {

@@ -3,7 +3,7 @@ import * as Check from "../Check.ts"
 import * as Query from "../Query.ts"
 
 const bodyOf = ({ value }: Query.Selection<Query.NamedFunction>): string => {
-  const text = value.node.getText().replace(/\s+/g, " ")
+  const text = value.node.getText()
   return text.slice(text.indexOf("("))
 }
 

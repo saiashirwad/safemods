@@ -4,14 +4,26 @@
  * partitioned by kind, the checker decides which types the service needs, and consumers are
  * found by where their specifiers resolve. Shapes the recipe cannot split are reported.
  */
-import { dirname, relative } from "node:path/posix"
 import { Effect } from "effect"
-import { type Identifier, type Statement, SyntaxKind } from "typescript/unstable/ast"
+import {
+  type ClassDeclaration,
+  type ExportSpecifier,
+  type FunctionDeclaration,
+  type Identifier,
+  type ImportSpecifier,
+  type InterfaceDeclaration,
+  type Node,
+  type Statement,
+  SyntaxKind,
+  type TypeAliasDeclaration,
+  type VariableStatement,
+} from "typescript/unstable/ast"
 import {
   isClassDeclaration,
   isExportDeclaration,
   isFunctionDeclaration,
   isIdentifier,
+  isImportClause,
   isImportDeclaration,
   isInterfaceDeclaration,
   isNamedExports,
@@ -20,6 +32,8 @@ import {
   isVariableStatement,
 } from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
+import * as ModuleSpecifier from "safemods/ModuleSpecifier"
+import * as P from "safemods/Pattern"
 import * as ProjectRelativePath from "safemods/ProjectRelativePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
@@ -36,18 +50,22 @@ const paths = {
   index: ProjectRelativePath.schema.make("src/accounts/index.ts"),
 }
 
-const isTypeDeclaration = (statement: Statement): boolean =>
-  isInterfaceDeclaration(statement) || isTypeAliasDeclaration(statement)
+type Declaration =
+  | ClassDeclaration
+  | FunctionDeclaration
+  | InterfaceDeclaration
+  | TypeAliasDeclaration
+  | VariableStatement
 
-const isExported = (statement: Statement): boolean =>
-  (
-    statement as Statement & { readonly modifiers?: ReadonlyArray<{ readonly kind: SyntaxKind }> }
-  ).modifiers?.some((modifier) => modifier.kind === SyntaxKind.ExportKeyword) ?? false
+interface Declared {
+  readonly statement: Declaration
+  readonly names: ReadonlyArray<Identifier>
+}
 
-const declaredNames = (statement: Statement): ReadonlyArray<Identifier> | undefined => {
+const declaredIn = (statement: Statement): Declared | undefined => {
   if (isVariableStatement(statement)) {
     const names = statement.declarationList.declarations.map((declaration) => declaration.name)
-    return names.every(isIdentifier) ? names : undefined
+    return names.every(isIdentifier) ? { statement, names } : undefined
   }
   if (
     isInterfaceDeclaration(statement) ||
@@ -55,22 +73,43 @@ const declaredNames = (statement: Statement): ReadonlyArray<Identifier> | undefi
     isFunctionDeclaration(statement) ||
     isClassDeclaration(statement)
   ) {
-    return statement.name === undefined ? undefined : [statement.name]
+    return statement.name === undefined ? undefined : { statement, names: [statement.name] }
   }
   return undefined
 }
 
-const textOf = (statements: ReadonlyArray<Statement>): string =>
-  statements
-    .map((statement) =>
+const isType = ({ statement }: Declared): boolean =>
+  isInterfaceDeclaration(statement) || isTypeAliasDeclaration(statement)
+
+const isExported = ({ statement }: Declared): boolean =>
+  statement.modifiers?.some((modifier) => modifier.kind === SyntaxKind.ExportKeyword) ?? false
+
+const namesOf = (group: ReadonlyArray<Declared>): ReadonlyArray<string> =>
+  group.flatMap(({ names }) => names.map((name) => name.text))
+
+const textOf = (group: ReadonlyArray<Declared>): string =>
+  group
+    .map(({ statement }) =>
       statement.getSourceFile().text.slice(statement.getFullStart(), statement.getEnd()).trim(),
     )
     .join("\n\n")
 
-const specifierTo = (fromFile: string, target: string): string => {
-  const path = relative(dirname(fromFile), target).replace(/\.ts$/, ".js")
-  return path.startsWith(".") ? path : `./${path}`
-}
+const splittableConsumer = P.tagged({
+  import: P.node(isImportDeclaration, {
+    importClause: P.node(isImportClause, {
+      name: undefined,
+      namedBindings: P.node(isNamedImports, { elements: P.capture("elements") }),
+    }),
+  }),
+  export: P.node(isExportDeclaration, {
+    exportClause: P.node(isNamedExports, { elements: P.capture("elements") }),
+  }),
+})
+
+const bindingText = (element: ImportSpecifier | ExportSpecifier): string =>
+  element.propertyName === undefined
+    ? element.name.getText()
+    : `${element.propertyName.getText()} as ${element.name.getText()}`
 
 export const splitModule = Recipe.define("split-module", {
   version: "1.0.0",
@@ -93,7 +132,7 @@ export const splitModule = Recipe.define("split-module", {
         end: statement.getEnd(),
       })
       const statements = [...source.sourceFile.statements]
-      const unsplittable = statements.filter((statement) => declaredNames(statement) === undefined)
+      const unsplittable = statements.filter((statement) => declaredIn(statement) === undefined)
       if (unsplittable.length > 0) {
         return Draft.concat(
           ...unsplittable.map((statement) =>
@@ -102,34 +141,33 @@ export const splitModule = Recipe.define("split-module", {
         )
       }
 
-      const types = statements.filter(isTypeDeclaration)
-      const values = statements.filter((statement) => !isTypeDeclaration(statement))
-      const insideService = (position: number): boolean =>
-        values.some((value) => position >= value.getFullStart() && position < value.getEnd())
+      const declarations = statements.flatMap((statement) => declaredIn(statement) ?? [])
+      const types = declarations.filter(isType)
+      const values = declarations.filter((declared) => !isType(declared))
 
-      const usedByService = yield* Effect.forEach(
-        types,
-        (statement) =>
-          Effect.map(project.referencesTo(declaredNames(statement)![0]!), (references) =>
-            references.some(
-              (reference) =>
-                reference.getSourceFile() === source.sourceFile && insideService(reference.pos),
-            ),
-          ),
-        { concurrency: "unbounded" },
-      )
-      const serviceNeeds = types.filter((_, index) => usedByService[index])
-      const hidden = serviceNeeds.filter((statement) => !isExported(statement))
+      const inService = (reference: Node): boolean =>
+        reference.getSourceFile() === source.sourceFile &&
+        values.some(
+          ({ statement }) =>
+            reference.pos >= statement.getFullStart() && reference.pos < statement.getEnd(),
+        )
+      const usedByService = ({ names }: Declared) =>
+        Effect.map(
+          Effect.forEach(names, (name) => project.referencesTo(name), { concurrency: "unbounded" }),
+          (references) => references.flat().some(inService),
+        )
+      const used = yield* Effect.forEach(types, usedByService, { concurrency: "unbounded" })
+      const serviceNeeds = types.filter((_, index) => used[index])
+
+      const hidden = serviceNeeds.filter((declared) => !isExported(declared))
       if (hidden.length > 0) {
         return Draft.concat(
-          ...hidden.map((statement) =>
+          ...hidden.map(({ statement }) =>
             Draft.unsupported(selectionOf(statement), "the service needs this unexported type"),
           ),
         )
       }
 
-      const namesOf = (group: ReadonlyArray<Statement>): ReadonlyArray<string> =>
-        group.flatMap((statement) => declaredNames(statement)!.map((name) => name.text))
       const typeNames = new Set(namesOf(types))
       const neededTypes = namesOf(serviceNeeds)
       const service =
@@ -141,6 +179,38 @@ export const splitModule = Recipe.define("split-module", {
         `export { ${namesOf(values.filter(isExported)).join(", ")} } from "./service.js"`,
       ].join("\n")
 
+      const splitConsumer = (
+        selection: Query.Selection<Query.ResolvedModuleReference>,
+      ): Draft.Draft => {
+        const { specifier, typeOnly } = selection.value
+        const matched = splittableConsumer(selection.value.node)
+        if (matched === undefined) {
+          return Draft.unsupported(selection, "only named imports and re-exports can be split")
+        }
+        const quote = specifier.getText().startsWith("'") ? "'" : '"'
+        const semicolon = matched.node.getText().endsWith(";") ? ";" : ""
+        const from = (target: string): string =>
+          `${quote}${ModuleSpecifier.emitted(ModuleSpecifier.between(selection.fileName, target))}${quote}`
+        const line = (bindings: ReadonlyArray<string>, modifier: string, target: string): string =>
+          `${matched._tag}${modifier} { ${bindings.join(", ")} } from ${from(target)}${semicolon}`
+        const isTypeBinding = (element: ImportSpecifier | ExportSpecifier): boolean =>
+          typeNames.has((element.propertyName ?? element.name).getText())
+        const elements = [...matched.captures.elements]
+        const fromModel = elements.filter(isTypeBinding).map(bindingText)
+        const fromService = elements
+          .filter((element) => !isTypeBinding(element))
+          .map(
+            (element) => `${element.isTypeOnly && !typeOnly ? "type " : ""}${bindingText(element)}`,
+          )
+        const lines = [
+          fromModel.length === 0 ? undefined : line(fromModel, " type", paths.model),
+          fromService.length === 0
+            ? undefined
+            : line(fromService, typeOnly ? " type" : "", paths.service),
+        ].filter((text) => text !== undefined)
+        return Draft.replace(project, matched.node, lines.join("\n"))
+      }
+
       const consumers = yield* Query.resolvedModuleReferences(project).pipe(
         Query.filter(({ value }) => value.resolved?.fileName === paths.source),
         Query.collect,
@@ -151,46 +221,7 @@ export const splitModule = Recipe.define("split-module", {
         Draft.createFile(project, paths.model, `${textOf(types)}\n`),
         Draft.createFile(project, paths.service, `${service}\n`),
         Draft.createFile(project, paths.index, `${index}\n`),
-        ...consumers.map((selection) => {
-          const { node, specifier } = selection.value
-          const bindings = isImportDeclaration(node)
-            ? node.importClause?.name === undefined
-              ? node.importClause?.namedBindings
-              : undefined
-            : isExportDeclaration(node)
-              ? node.exportClause
-              : undefined
-          if (bindings === undefined || !(isNamedImports(bindings) || isNamedExports(bindings))) {
-            return Draft.unsupported(selection, "only named imports and re-exports can be split")
-          }
-          const keyword = isImportDeclaration(node) ? "import" : "export"
-          const typeOnly = isImportDeclaration(node)
-            ? node.importClause?.phaseModifier !== undefined
-            : isExportDeclaration(node) && node.isTypeOnly
-          const quote = specifier.getText().startsWith("'") ? "'" : '"'
-          const end = node.getText().endsWith(";") ? ";" : ""
-          const line = (names: ReadonlyArray<string>, modifier: string, target: string): string =>
-            `${keyword}${modifier} { ${names.join(", ")} } from ${quote}${specifierTo(selection.fileName, target)}${quote}${end}`
-          const written = bindings.elements.map((element) => ({
-            isType: typeNames.has((element.propertyName ?? element.name).getText()),
-            text:
-              element.propertyName === undefined
-                ? element.name.getText()
-                : `${element.propertyName.getText()} as ${element.name.getText()}`,
-          }))
-          const fromModel = written.filter(({ isType }) => isType).map(({ text }) => text)
-          const fromService = written.filter(({ isType }) => !isType).map(({ text }) => text)
-          return Draft.replace(
-            project,
-            node,
-            [
-              ...(fromModel.length === 0 ? [] : [line(fromModel, " type", paths.model)]),
-              ...(fromService.length === 0
-                ? []
-                : [line(fromService, typeOnly ? " type" : "", paths.service)]),
-            ].join("\n"),
-          )
-        }),
+        ...consumers.map(splitConsumer),
       )
     }),
 })

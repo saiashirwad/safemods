@@ -86,7 +86,7 @@ export interface ProjectSnapshot {
     options: { readonly within: ProjectRelativePath.Type },
   ) => Effect.Effect<NativeSymbol, SymbolNotFound | ProjectSnapshotError>
   readonly exportsOf: (
-    file: ProjectFile,
+    module: ProjectFile | NativeSymbol,
   ) => Effect.Effect<ReadonlyArray<ModuleExport>, ProjectSnapshotError>
   readonly symbolOf: (node: Node) => Effect.Effect<NativeSymbol | undefined, ProjectSnapshotError>
   readonly canonicalSymbol: (
@@ -347,10 +347,13 @@ export const make = (options: {
         return yield* project.canonicalSymbol(symbol)
       }),
 
-    exportsOf: (file) =>
+    exportsOf: (source) =>
       Effect.gen(function* () {
         const exported = yield* request("getExportsOfModule", async () => {
-          const [module] = await checker.getSymbolAtLocation([file.sourceFile])
+          const module =
+            "sourceFile" in source
+              ? (await checker.getSymbolAtLocation([source.sourceFile]))[0]
+              : source
           return module === undefined ? [] : checker.getExportsOfModule(module)
         })
         const entries = yield* Effect.forEach(

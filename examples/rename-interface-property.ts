@@ -13,6 +13,7 @@ import {
   isStringLiteral,
 } from "typescript/unstable/ast/is"
 import * as Draft from "../src/Draft.ts"
+import * as P from "../src/Pattern.ts"
 import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
 import * as Query from "../src/Query.ts"
 import * as Recipe from "../src/Recipe.ts"
@@ -22,11 +23,17 @@ const DECLARATION_FILE = ProjectRelativePath.schema.make("src/account.ts")
 const OLD_NAME = "displayName"
 const NEW_NAME = "label"
 
+const localBinding = P.node(isBindingElement, {
+  propertyName: undefined,
+  name: P.capture("bound"),
+})
+
+const computedAccess = P.node(isElementAccessExpression, {
+  argumentExpression: P.node(isStringLiteral, { text: OLD_NAME }),
+})
+
 const keepsLocalBinding = (node: Identifier): boolean =>
-  isShorthandPropertyAssignment(node.parent) ||
-  (isBindingElement(node.parent) &&
-    node.parent.name === node &&
-    node.parent.propertyName === undefined)
+  isShorthandPropertyAssignment(node.parent) || localBinding.match(node.parent)?.bound === node
 
 export const renameInterfaceProperty = Recipe.define("rename-interface-property", {
   version: "1.0.0",
@@ -52,13 +59,7 @@ export const renameInterfaceProperty = Recipe.define("rename-interface-property"
         ),
         Query.collect,
       )
-      const computed = yield* Query.nodes(project, isElementAccessExpression).pipe(
-        Query.filter(
-          ({ value }) =>
-            isStringLiteral(value.argumentExpression) && value.argumentExpression.text === OLD_NAME,
-        ),
-        Query.collect,
-      )
+      const computed = yield* Query.match(project, { computedAccess }).pipe(Query.collect)
 
       return Draft.concat(
         Draft.replaceEach(references, ({ value }) =>

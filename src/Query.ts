@@ -40,6 +40,7 @@ import {
 } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol, Type as NativeType } from "typescript/unstable/async"
 import * as FileRef from "./FileRef.ts"
+import * as Pattern from "./Pattern.ts"
 import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import type {
   IntrinsicTypeName,
@@ -99,6 +100,44 @@ export const nodes = <A extends Node>(
   guard: (node: Node) => node is A,
 ): Query<A, ProjectSnapshotError> =>
   filesIn(scope).pipe(Stream.flatMap((file) => Stream.fromIterable(selectionsIn(file, guard))))
+
+export const match = <const Patterns extends Pattern.Tagged>(
+  scope: Scope,
+  patterns: Patterns,
+): Query<Pattern.MatchedOf<Patterns>, ProjectSnapshotError> => {
+  const matchedOf = Pattern.tagged(patterns)
+  const guards = Object.values(patterns).map(({ guard }) => guard)
+  return nodes(scope, (node): node is Node => guards.some((guard) => guard(node))).pipe(
+    Stream.map((selection) => ({ ...selection, value: matchedOf(selection.value) })),
+    Stream.filter(
+      (selection): selection is Selection<Pattern.MatchedOf<Patterns>> =>
+        selection.value !== undefined,
+    ),
+  )
+}
+
+export interface Shaped<A extends Node, C> {
+  readonly node: A
+  readonly captures: C
+}
+
+export const shape =
+  <const F extends object>(fields: F) =>
+  <A extends Node, E, R>(
+    self: Query<A, E, R> & Pattern.FieldsError<A, F>,
+  ): Query<Shaped<A, Pattern.CapturesOf<A, F>>, E, R> => {
+    const pattern = Pattern.unguarded<A, F>(fields)
+    return self.pipe(
+      Stream.map((selection) => ({
+        ...selection,
+        value: { node: selection.value, captures: pattern.match(selection.value) },
+      })),
+      Stream.filter(
+        (selection): selection is Selection<Shaped<A, Pattern.CapturesOf<A, F>>> =>
+          selection.value.captures !== undefined,
+      ),
+    )
+  }
 
 export const calls = (scope: Scope): Query<CallExpression, ProjectSnapshotError> =>
   nodes(scope, isCallExpression)
@@ -338,7 +377,12 @@ export const usesOf = (selection: Selection<Node>): Effect.Effect<Uses, ProjectS
     const calls: Array<Selection<CallExpression>> = []
     let escapes = false
     for (const { project, value } of references) {
-      if (value === selection.value || isImportSpecifier(value.parent)) continue
+      if (
+        value === selection.value ||
+        isImportSpecifier(value.parent) ||
+        (isImportClause(value.parent) && value.parent.name === value)
+      )
+        continue
       const callee =
         isPropertyAccessExpression(value.parent) && value.parent.name === value
           ? value.parent
@@ -405,6 +449,38 @@ export const typed = <A extends Node, E, R>(
     ),
     Stream.filter(Option.isSome),
     Stream.map((kept) => kept.value),
+  )
+
+type CaptureTypes<C> = {
+  readonly [K in keyof C as C[K] extends Node ? K : never]: NativeType | undefined
+}
+
+export type WithTypes<M> = M extends { readonly captures: infer C }
+  ? M & { readonly types: CaptureTypes<C> }
+  : never
+
+export const typedCaptures = <M extends { readonly captures: object }, E, R>(
+  self: Query<M, E, R>,
+): Query<WithTypes<M>, E | ProjectSnapshotError, R> =>
+  Stream.mapEffect(
+    self,
+    (selection) =>
+      Effect.map(
+        Effect.forEach(
+          Object.entries(selection.value.captures).filter(([, captured]) =>
+            Pattern.isNode(captured),
+          ),
+          ([name, captured]) =>
+            Effect.map(selection.project.typeOf(captured), (type) => [name, type] as const),
+          { concurrency: "unbounded" },
+        ),
+        (types) =>
+          ({
+            ...selection,
+            value: { ...selection.value, types: Object.fromEntries(types) },
+          }) as Selection<WithTypes<M>>,
+      ),
+    { concurrency: "unbounded" },
   )
 
 export const resolvesTo =

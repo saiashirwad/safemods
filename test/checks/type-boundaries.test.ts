@@ -4,6 +4,29 @@ import { typeBoundaries } from "../../src/Checks/TypeBoundaries.ts"
 import { findingsOf } from "../utils/check.ts"
 
 describe("type-boundaries", () => {
+  effect("reports named, star and import-then-export leaks at the publishing file", () =>
+    Effect.gen(function* () {
+      const findings = yield* findingsOf(
+        typeBoundaries({ within: "src/api-*.ts", forbidden: { files: ["src/secrets.ts"] } }),
+        {
+          "src/secrets.ts": "export interface Secret { readonly token: string }\n",
+          "src/service.ts":
+            'import type { Secret } from "./secrets.js"\nexport declare const load: () => Secret\nexport const safe = 1\n',
+          "src/api-named.ts": 'export { load as renamed, safe } from "./service.js"\n',
+          "src/api-star.ts": 'export * from "./service.js"\n',
+          "src/api-import.ts": 'import { load, safe } from "./service.js"\nexport { load, safe }\n',
+          "src/api-type.ts": 'export type { Secret } from "./secrets.js"\n',
+        },
+      )
+      expect(findings).toEqual([
+        "src/api-import.ts:1:1 type-boundaries exports load with a type mentioning Secret, declared in src/secrets.ts",
+        "src/api-named.ts:1:1 type-boundaries exports renamed with a type mentioning Secret, declared in src/secrets.ts",
+        "src/api-star.ts:1:1 type-boundaries exports load with a type mentioning Secret, declared in src/secrets.ts",
+        "src/api-type.ts:1:1 type-boundaries exports Secret with a type mentioning Secret, declared in src/secrets.ts",
+      ])
+    }),
+  )
+
   effect("reports a leak inferred through another module, but not a lookalike or a local use", () =>
     Effect.gen(function* () {
       const findings = yield* findingsOf(

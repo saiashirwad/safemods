@@ -1,4 +1,4 @@
-import type { Node } from "typescript/unstable/ast"
+import type { Node, StringLiteral } from "typescript/unstable/ast"
 import { textEdit, type TextEdit } from "./Edit.ts"
 import type { FileOperation, UnsupportedFinding } from "./Plan.ts"
 import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
@@ -62,6 +62,15 @@ export const unsupported = <A>(selection: Selection<A>, reason: string): Draft =
 
 export const replace = (project: ProjectSnapshot, node: Node, newText: string): Draft =>
   oneEdit(editBetween(project, node, "node", newText))
+
+export const replaceStringLiteral = (
+  project: ProjectSnapshot,
+  literal: StringLiteral,
+  text: string,
+): Draft => {
+  const quote = literal.getText().startsWith("'") ? "'" : '"'
+  return replace(project, literal, `${quote}${text}${quote}`)
+}
 
 export const replaceSelection = <A extends Node>(selection: Selection<A>, newText: string): Draft =>
   oneEdit(

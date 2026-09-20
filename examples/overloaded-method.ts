@@ -5,9 +5,14 @@
  * rather than guessed at.
  */
 import { Effect } from "effect"
-import type { Node } from "typescript/unstable/ast"
-import { isFunctionDeclaration, isSpreadElement } from "typescript/unstable/ast/is"
+import type { CallExpression, Node } from "typescript/unstable/ast"
+import {
+  isCallExpression,
+  isFunctionDeclaration,
+  isSpreadElement,
+} from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
+import * as P from "safemods/Pattern"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
@@ -23,6 +28,25 @@ const takesCallbackLast = ({ project, value }: Query.Selection<Node>) =>
     const last = (yield* project.parameterTypesOf(signature)).at(-1)
     return last !== undefined && (yield* project.callSignaturesOf(last)).length > 0
   })
+
+const callbackCall = P.tagged({
+  withOptions: P.node(isCallExpression, {
+    arguments: [P.capture("key"), P.capture("options"), P.capture("callback")],
+  }),
+  withoutOptions: P.node(isCallExpression, {
+    arguments: [P.capture("key"), P.capture("callback")],
+  }),
+})
+
+const promiseForm = (call: CallExpression): string | undefined => {
+  if (call.arguments.some(isSpreadElement)) return undefined
+  const matched = callbackCall(call)
+  if (matched === undefined) return undefined
+  const { key, callback } = matched.captures
+  const options = matched._tag === "withOptions" ? matched.captures.options.getText() : "{}"
+  const done = callback.getText()
+  return `${call.expression.getText()}(${key.getText()}, ${options}).then((result) => ${done}(null, result), ${done})`
+}
 
 export const overloadedMethod = Recipe.define("overloaded-method", {
   version: "1.0.0",
@@ -44,16 +68,10 @@ export const overloadedMethod = Recipe.define("overloaded-method", {
 
       return Draft.concat(
         ...calls.map((selection) => {
-          const call = selection.value
-          if (call.arguments.some(isSpreadElement)) {
-            return Draft.unsupported(selection, "spread arguments prevent overload selection")
-          }
-          const callback = call.arguments.at(-1)!.getText()
-          const options = call.arguments.length === 3 ? call.arguments[1]!.getText() : "{}"
-          return Draft.replaceSelection(
-            selection,
-            `${call.expression.getText()}(${call.arguments[0]!.getText()}, ${options}).then((result) => ${callback}(null, result), ${callback})`,
-          )
+          const replacement = promiseForm(selection.value)
+          return replacement === undefined
+            ? Draft.unsupported(selection, "spread arguments prevent overload selection")
+            : Draft.replaceSelection(selection, replacement)
         }),
       )
     }),

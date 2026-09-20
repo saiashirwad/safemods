@@ -26,27 +26,20 @@ export const filesWithin = (project: ProjectSnapshot, patterns: ReadonlyArray<st
 export const publicSymbols = (project: ProjectSnapshot, publicApi: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const published = new Set<NativeSymbol>()
-    const visited = new Set<string>()
-    let files = yield* filesWithin(project, publicApi)
-    while (files.length > 0) {
-      for (const file of files) visited.add(file.fileName)
-      const exported = (yield* Effect.forEach(files, (file) => project.exportsOf(file), {
+    const files = yield* filesWithin(project, publicApi)
+    let exported = (yield* Effect.forEach(files, (file) => project.exportsOf(file), {
+      concurrency: "unbounded",
+    })).flat()
+    while (exported.length > 0) {
+      const namespaces: Array<NativeSymbol> = []
+      for (const { symbol } of exported) {
+        if (published.has(symbol)) continue
+        published.add(symbol)
+        if ((symbol.flags & SymbolFlags.Module) !== 0) namespaces.push(symbol)
+      }
+      exported = (yield* Effect.forEach(namespaces, (symbol) => project.exportsOf(symbol), {
         concurrency: "unbounded",
       })).flat()
-      for (const { symbol } of exported) published.add(symbol)
-      const namespaces = exported.filter(
-        ({ symbol }) => (symbol.flags & SymbolFlags.ValueModule) !== 0,
-      )
-      const sites = (yield* Effect.forEach(namespaces, ({ symbol }) => project.declaredIn(symbol), {
-        concurrency: "unbounded",
-      })).flat()
-      const reached = [
-        ...new Set(sites.flatMap(({ fileName }) => (fileName === undefined ? [] : [fileName]))),
-      ]
-      files = (yield* Effect.forEach(
-        reached.filter((fileName) => !visited.has(fileName)),
-        (fileName) => project.file(fileName),
-      )).filter((file) => file !== undefined)
     }
     return published
   })

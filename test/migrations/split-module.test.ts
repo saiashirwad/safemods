@@ -18,6 +18,42 @@ const exists = (root: string, relative: string) =>
   )
 
 describe("split-module", () => {
+  effect("preserves inline type-only class imports and re-exports from the service", () =>
+    withFixture(
+      (root, project) =>
+        Effect.gen(function* () {
+          const { verified } = yield* executeRecipe(splitModule, { project })
+          expect(verified.diagnosticDiff.introduced).toHaveLength(0)
+          expect(yield* read(root, "src/types.ts")).toBe(
+            'export { type AccountService as Service, findAccount } from "./accounts/service.js"\n',
+          )
+          expect(yield* read(root, "src/consumer.ts")).toContain(
+            'import { type AccountService, findAccount } from "./accounts/service.js"',
+          )
+        }),
+      {
+        fixture,
+        files: {
+          "src/accounts.ts": [
+            "export interface Account { readonly id: string; readonly email: string }",
+            "export type AccountId = string",
+            "export class AccountService {}",
+            "export const findAccount = (id: AccountId): Account | undefined => undefined",
+            "export const saveAccount = (account: Account): void => {}",
+            "",
+          ].join("\n"),
+          "src/types.ts":
+            'export { type AccountService as Service, findAccount } from "./accounts.js"\n',
+          "src/consumer.ts": [
+            'import { type AccountService, findAccount } from "./accounts.js"',
+            "export const consume = (service: AccountService) => findAccount('id')",
+            "",
+          ].join("\n"),
+        },
+      },
+    ),
+  )
+
   effect("derives the split from the source and keeps everything else in its consumers", () =>
     withFixture(
       (root, project) =>

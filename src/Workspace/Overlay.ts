@@ -6,6 +6,7 @@ export interface Overlay {
   readonly files: ReadonlyMap<string, string>
   readonly deleted: ReadonlySet<string>
   readonly hidden?: ReadonlySet<string>
+  readonly rootSiblings?: ReadonlyMap<string, string>
 }
 
 const isInside = (directory: string, fileName: string): boolean =>

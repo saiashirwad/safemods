@@ -5,9 +5,55 @@ import { Effect } from "effect"
 import { commonJsToEsm } from "../../examples/commonjs-to-esm.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
-import { fixturePath, withFixture } from "../utils/fixture.ts"
+import { fixturePath, withFixture, read } from "../utils/fixture.ts"
 
 describe("commonjs-to-esm", () => {
+  effect("converts project ambient global require but preserves lexical shadows", () =>
+    withFixture(
+      (root, project) =>
+        Effect.gen(function* () {
+          const { plan, verified } = yield* executeRecipe(commonJsToEsm, { project })
+          expect(plan.unsupported.some(({ fileName }) => fileName === "src/namespace.ts")).toBe(
+            false,
+          )
+          expect(yield* read(root, "src/namespace.ts")).toContain('require("local")')
+          expect(verified.diagnosticDiff.introduced).toHaveLength(0)
+          expect(yield* read(root, "src/ambient.ts")).toContain('import "./register.js"')
+          expect(yield* read(root, "src/local.ts")).toContain('require("./register.js")')
+          expect(yield* read(root, "src/shadowed.js")).toContain(
+            'const loaded = require("node:path")',
+          )
+        }),
+      {
+        fixture: "migrations/commonjs-to-esm",
+        files: {
+          "tsconfig.json": JSON.stringify({
+            compilerOptions: {
+              allowJs: true,
+              module: "NodeNext",
+              moduleResolution: "NodeNext",
+              noEmit: true,
+            },
+            include: ["src/**/*"],
+          }),
+          "src/globals.d.ts": "declare function require(id: string): unknown\n",
+          "src/augmentation.d.ts":
+            "export {}\ndeclare global { function require(id: string): unknown }\n",
+          "src/namespace.ts": [
+            "export namespace global {",
+            "  export function require(id: string): string { return id }",
+            '  export const loaded = require("local")',
+            "}",
+            "",
+          ].join("\n"),
+          "src/ambient.ts": 'require("./register.js")\nexport {}\n',
+          "src/local.ts":
+            'declare function require(id: string): unknown\nrequire("./register.js")\nexport {}\n',
+        },
+      },
+    ),
+  )
+
   effect("converts safe top-level forms and reports ambiguous ones", () =>
     withFixture(
       (root, app) =>

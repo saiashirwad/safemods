@@ -3,19 +3,32 @@
  * Unsupported CommonJS-shaped statements are reported rather than guessed at.
  */
 import { Effect } from "effect"
-import { type CallExpression, SyntaxKind, type Node, type Statement } from "typescript/unstable/ast"
+import {
+  type BindingElement,
+  type CallExpression,
+  type Node,
+  type NodeArray,
+  type Statement,
+  SyntaxKind,
+} from "typescript/unstable/ast"
 import {
   isBinaryExpression,
+  isBindingElement,
   isCallExpression,
   isElementAccessExpression,
   isExpressionStatement,
   isIdentifier,
+  isFunctionDeclaration,
+  isModuleDeclaration,
   isObjectBindingPattern,
   isPropertyAccessExpression,
   isStringLiteral,
+  isVariableDeclaration,
+  isVariableDeclarationList,
   isVariableStatement,
 } from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
+import * as P from "safemods/Pattern"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
@@ -26,119 +39,164 @@ export interface CommonJsToEsmInput {
 
 const identifier = /^[A-Za-z_$][\w$]*$/
 
-const requireCall = (node: Node) =>
-  isCallExpression(node) &&
-  isIdentifier(node.expression) &&
-  node.expression.text === "require" &&
-  node.arguments.length === 1 &&
-  node.arguments[0] !== undefined &&
-  isStringLiteral(node.arguments[0])
-    ? node.arguments[0]
-    : undefined
+const named = (text: string | ((text: string) => boolean)) => P.node(isIdentifier, { text })
 
-const isGlobalRequire = ({ project, value }: Query.Selection<CallExpression>) =>
-  Effect.gen(function* () {
-    const symbol = yield* project.symbolOf(value.expression)
-    return symbol === undefined || (yield* project.declarationsOf(symbol)).length === 0
+const anyName = P.node(isIdentifier)
+
+const requireCall = P.bind(
+  "call",
+  P.node(isCallExpression, {
+    expression: named("require"),
+    arguments: [P.bind("specifier", P.node(isStringLiteral))],
+  }),
+)
+
+const declares = <Name extends P.Pattern<Node, unknown>, Init extends P.Pattern<Node, unknown>>(
+  name: Name,
+  initializer: Init,
+) =>
+  P.node(isVariableStatement, {
+    declarationList: P.node(isVariableDeclarationList, {
+      declarations: [P.node(isVariableDeclaration, { name, initializer })],
+    }),
   })
 
-const propertyName = (node: Node): string | undefined => {
-  if (isPropertyAccessExpression(node)) return node.name.text
-  if (isElementAccessExpression(node) && isStringLiteral(node.argumentExpression)) {
-    return node.argumentExpression.text
-  }
-  return undefined
+const moduleExports = P.node(isPropertyAccessExpression, {
+  expression: named("module"),
+  name: named("exports"),
+})
+
+const assigns = <Left extends P.Pattern<Node, unknown>>(left: Left) =>
+  P.node(isExpressionStatement, {
+    expression: P.node(isBinaryExpression, {
+      left,
+      operatorToken: P.node((node): node is Node => node.kind === SyntaxKind.EqualsToken),
+      right: P.capture("value"),
+    }),
+  })
+
+const statementOf = P.tagged({
+  sideEffect: P.node(isExpressionStatement, { expression: requireCall }),
+  namespace: declares(P.bind("name", anyName), requireCall),
+  destructured: declares(
+    P.node(isObjectBindingPattern, { elements: P.capture("elements") }),
+    requireCall,
+  ),
+  member: declares(
+    P.bind("name", anyName),
+    P.either(
+      P.node(isPropertyAccessExpression, {
+        expression: requireCall,
+        name: P.bind("member", anyName),
+      }),
+      P.node(isElementAccessExpression, {
+        expression: requireCall,
+        argumentExpression: P.bind("member", P.node(isStringLiteral)),
+      }),
+    ),
+  ),
+  defaultExport: assigns(moduleExports),
+  namedExport: assigns(
+    P.node(isPropertyAccessExpression, {
+      expression: P.either(named("exports"), moduleExports),
+      name: P.bind(
+        "name",
+        named((text) => identifier.test(text)),
+      ),
+    }),
+  ),
+})
+
+const declared = (modifiers: ReadonlyArray<Node> | undefined): boolean =>
+  modifiers?.some((modifier) => modifier.kind === SyntaxKind.DeclareKeyword) === true
+
+const isGlobalBlock = (scope: Node): boolean =>
+  scope.kind === SyntaxKind.ModuleBlock &&
+  isModuleDeclaration(scope.parent) &&
+  scope.parent.keyword !== SyntaxKind.NamespaceKeyword &&
+  declared(scope.parent.modifiers) &&
+  isIdentifier(scope.parent.name) &&
+  scope.parent.name.text === "global"
+
+const isAmbientGlobal = (declaration: Node): boolean => {
+  const statement =
+    declaration.kind === SyntaxKind.VariableDeclaration ? declaration.parent.parent : declaration
+  if (!isVariableStatement(statement) && !isFunctionDeclaration(statement)) return false
+  const source = statement.getSourceFile()
+  if (statement.parent !== source) return isGlobalBlock(statement.parent)
+  return (
+    (source.isDeclarationFile || declared(statement.modifiers)) &&
+    source.externalModuleIndicator === undefined
+  )
 }
 
-const importFor = (
+const isGlobalRequire = ({ project, value }: Query.Selection<{ readonly node: CallExpression }>) =>
+  Effect.gen(function* () {
+    const symbol = yield* project.symbolOf(value.node.expression)
+    return symbol === undefined || (yield* project.declarationsOf(symbol)).every(isAmbientGlobal)
+  })
+
+const renamed = (imported: string, local: string): string =>
+  imported === local ? imported : `${imported} as ${local}`
+
+const plainBinding = P.node(isBindingElement, {
+  dotDotDotToken: undefined,
+  initializer: undefined,
+  name: P.bind("local", anyName),
+})
+
+const bindingsOf = (elements: NodeArray<BindingElement>): string | undefined => {
+  const bindings: Array<string> = []
+  for (const element of elements) {
+    const matched = plainBinding.match(element)
+    if (matched === undefined) return undefined
+    bindings.push(
+      renamed(element.propertyName?.getText() ?? matched.local.text, matched.local.text),
+    )
+  }
+  return bindings.join(", ")
+}
+
+const replacementFor = (
   statement: Statement,
-  requireIsGlobal: (node: Node) => boolean,
+  globalRequires: ReadonlySet<Node>,
 ): string | undefined => {
-  if (isExpressionStatement(statement)) {
-    const specifier = requireCall(statement.expression)
-    return specifier !== undefined && requireIsGlobal(statement.expression)
-      ? `import ${specifier.getText()}`
-      : undefined
+  const matched = statementOf(statement)
+  if (matched === undefined) return undefined
+  if (matched._tag === "defaultExport") return `export default ${matched.captures.value.getText()}`
+  if (matched._tag === "namedExport") {
+    const { name, value } = matched.captures
+    return `export const ${name.text} = ${value.getText()}`
   }
-  if (!isVariableStatement(statement) || statement.declarationList.declarations.length !== 1) {
-    return undefined
-  }
-  const declaration = statement.declarationList.declarations[0]!
-  if (declaration.initializer === undefined) return undefined
-  const direct = requireCall(declaration.initializer)
-  if (direct !== undefined && requireIsGlobal(declaration.initializer)) {
-    if (isIdentifier(declaration.name)) {
-      return `import * as ${declaration.name.text} from ${direct.getText()}`
-    }
-    if (isObjectBindingPattern(declaration.name)) {
-      const bindings: Array<string> = []
-      for (const element of declaration.name.elements) {
-        const name = element.name
-        if (
-          element.dotDotDotToken !== undefined ||
-          element.initializer !== undefined ||
-          name === undefined ||
-          !isIdentifier(name)
-        ) {
-          return undefined
-        }
-        const imported = element.propertyName?.getText() ?? name.getText()
-        bindings.push(imported === name.text ? imported : `${imported} as ${name.text}`)
-      }
-      return `import { ${bindings.join(", ")} } from ${direct.getText()}`
+  if (!globalRequires.has(matched.captures.call)) return undefined
+  const from = matched.captures.specifier.getText()
+  switch (matched._tag) {
+    case "sideEffect":
+      return `import ${from}`
+    case "namespace":
+      return `import * as ${matched.captures.name.text} from ${from}`
+    case "member":
+      return `import { ${renamed(matched.captures.member.text, matched.captures.name.text)} } from ${from}`
+    case "destructured": {
+      const bindings = bindingsOf(matched.captures.elements)
+      return bindings === undefined ? undefined : `import { ${bindings} } from ${from}`
     }
   }
-  if (isIdentifier(declaration.name)) {
-    const member = propertyName(declaration.initializer)
-    const receiver =
-      isPropertyAccessExpression(declaration.initializer) ||
-      isElementAccessExpression(declaration.initializer)
-        ? declaration.initializer.expression
-        : undefined
-    const specifier = receiver === undefined ? undefined : requireCall(receiver)
-    if (
-      receiver !== undefined &&
-      member !== undefined &&
-      specifier !== undefined &&
-      requireIsGlobal(receiver)
-    ) {
-      return `import { ${member === declaration.name.text ? member : `${member} as ${declaration.name.text}`} } from ${specifier.getText()}`
-    }
-  }
-  return undefined
 }
 
-const exportFor = (statement: Statement): string | undefined => {
-  if (!isExpressionStatement(statement) || !isBinaryExpression(statement.expression))
-    return undefined
-  const assignment = statement.expression
-  if (assignment.operatorToken.kind !== SyntaxKind.EqualsToken) return undefined
-  const left = assignment.left
-  if (
-    isPropertyAccessExpression(left) &&
-    isIdentifier(left.expression) &&
-    left.expression.text === "module" &&
-    left.name.text === "exports"
-  ) {
-    return `export default ${assignment.right.getText()}`
-  }
-  if (isPropertyAccessExpression(left)) {
-    const receiver = left.expression
-    const directExports = isIdentifier(receiver) && receiver.text === "exports"
-    const moduleExports =
-      isPropertyAccessExpression(receiver) &&
-      isIdentifier(receiver.expression) &&
-      receiver.expression.text === "module" &&
-      receiver.name.text === "exports"
-    if ((directExports || moduleExports) && identifier.test(left.name.text)) {
-      return `export const ${left.name.text} = ${assignment.right.getText()}`
-    }
-  }
-  return undefined
-}
+const exportsAssignment = /\b(?:module\s*\.\s*exports|exports\s*(?:\.|\[))/
+const requireShaped = /\brequire\s*\(/
 
-const commonJsShaped = (statement: Statement): boolean =>
-  /\b(?:require\s*\(|module\s*\.\s*exports|exports\s*(?:\.|\[))/.test(statement.getText())
+const contains = (statement: Statement, node: Node): boolean =>
+  node.getSourceFile() === statement.getSourceFile() &&
+  node.getStart() >= statement.getStart() &&
+  node.getEnd() <= statement.getEnd()
+
+const isUnsupported = (statement: Statement, globalRequires: ReadonlySet<Node>): boolean => {
+  const text = statement.getText()
+  if (exportsAssignment.test(text)) return true
+  return requireShaped.test(text) && [...globalRequires].some((node) => contains(statement, node))
+}
 
 export const commonJsToEsm = Recipe.define("commonjs-to-esm", {
   version: "1.0.0",
@@ -148,43 +206,33 @@ export const commonJsToEsm = Recipe.define("commonjs-to-esm", {
       const snapshot = yield* WorkspaceSnapshot
       const project = yield* snapshot.project(input.project.id)
       const globalRequires = new Set<Node>(
-        (yield* Query.calls(project).pipe(
-          Query.filter(({ value }) => requireCall(value) !== undefined),
+        (yield* Query.match(project, { require: requireCall }).pipe(
           Query.where(isGlobalRequire),
           Query.collect,
-        )).map(({ value }) => value),
+        )).map(({ value }) => value.node),
       )
-      const requireIsGlobal = (node: Node): boolean => globalRequires.has(node)
       const files = yield* project.files
       const drafts: Array<Draft.Draft> = []
       for (const file of files) {
         for (const statement of file.sourceFile.statements) {
-          const replacement = importFor(statement, requireIsGlobal) ?? exportFor(statement)
+          const replacement = replacementFor(statement, globalRequires)
           if (replacement !== undefined) {
             drafts.push(Draft.replace(project, statement, replacement))
-          } else if (
-            (commonJsShaped(statement) &&
-              [...globalRequires].some(
-                (node) =>
-                  node.getSourceFile() === file.sourceFile &&
-                  node.getStart() >= statement.getStart() &&
-                  node.getEnd() <= statement.getEnd(),
-              )) ||
-            /\b(?:module\s*\.\s*exports|exports\s*(?:\.|\[))/.test(statement.getText())
-          ) {
-            drafts.push(
-              Draft.unsupported(
-                {
-                  value: statement,
-                  project,
-                  fileName: file.fileName,
-                  start: statement.getStart(file.sourceFile),
-                  end: statement.getEnd(),
-                },
-                "CommonJS form is not a supported top-level conversion",
-              ),
-            )
+            continue
           }
+          if (!isUnsupported(statement, globalRequires)) continue
+          drafts.push(
+            Draft.unsupported(
+              {
+                value: statement,
+                project,
+                fileName: file.fileName,
+                start: statement.getStart(file.sourceFile),
+                end: statement.getEnd(),
+              },
+              "CommonJS form is not a supported top-level conversion",
+            ),
+          )
         }
       }
       return Draft.concat(...drafts)

@@ -36,6 +36,16 @@
       "types": "./dist/src/Draft.d.ts",
       "default": "./dist/src/Draft.js"
     },
+    "./ModuleSpecifier": {
+      "source": "./src/ModuleSpecifier.ts",
+      "types": "./dist/src/ModuleSpecifier.d.ts",
+      "default": "./dist/src/ModuleSpecifier.js"
+    },
+    "./Pattern": {
+      "source": "./src/Pattern.ts",
+      "types": "./dist/src/Pattern.d.ts",
+      "default": "./dist/src/Pattern.js"
+    },
     "./Plan": {
       "source": "./src/Plan.ts",
       "types": "./dist/src/Plan.d.ts",

@@ -100,12 +100,21 @@ describe("structure rules", () => {
           "export const wrong: string = 1",
           "export const first = list[0]!",
           "export const safe = list[0] ?? 0",
+          'export const documentation = "// @ts-ignore and /* eslint-disable */"',
+          "export const template = `// @ts-nocheck ${list.length} /* oxlint-disable */`",
+          "export const pattern = /[/*]@ts-expect-error/",
+          "/* eslint-disable no-unused-vars */",
+          "export const count = list.length // oxlint-disable-line",
+          "export const nested = `${/* @ts-ignore */ list.length}`",
           "",
         ].join("\n"),
       })
       expect(findings).toEqual([
         "src/s.ts:2:4 suppressions @ts-expect-error silences the compiler: fix the type it complains about",
         "src/s.ts:4:22 suppressions list[0]! asserts non-null on trust: handle the undefined case",
+        "src/s.ts:9:4 suppressions eslint-disable silences the compiler: fix the type it complains about",
+        "src/s.ts:10:37 suppressions oxlint-disable silences the compiler: fix the type it complains about",
+        "src/s.ts:11:29 suppressions @ts-ignore silences the compiler: fix the type it complains about",
       ])
     }),
   )

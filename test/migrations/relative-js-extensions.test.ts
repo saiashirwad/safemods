@@ -9,6 +9,42 @@ const fixture = "migrations/relative-js-extensions"
 const fixturePath = fixtureDirectory(fixture)
 
 describe("relative-js-extensions", () => {
+  effect("prefers the compiler's directory target over an unresolved .mts candidate", () =>
+    withFixture(
+      (root) =>
+        Effect.gen(function* () {
+          const { verified } = yield* executeRecipe(relativeJsExtensions, undefined)
+          expect(verified.diagnosticDiff.introduced).toHaveLength(0)
+          expect(yield* read(root, "src/consumer.ts")).toBe(
+            'export { createSession } from "./auth/index.js"\n',
+          )
+        }),
+      {
+        fixture,
+        files: {
+          "tsconfig.json": JSON.stringify({
+            compilerOptions: {
+              strict: true,
+              target: "ES2024",
+              module: "ESNext",
+              moduleResolution: "Bundler",
+              noEmit: true,
+            },
+            include: ["src/**/*"],
+          }),
+          "src/auth.mts": [
+            'import type { Session } from "./auth/session.js"',
+            "export const createSession = (userId: string, now = new Date()): Session => ({",
+            '  id: "wrong-target", userId, issuedAt: now, expiresAt: now,',
+            "})",
+            "",
+          ].join("\n"),
+          "src/consumer.ts": 'export { createSession } from "./auth"\n',
+        },
+      },
+    ),
+  )
+
   effect("names the project file a specifier reaches and reports the ones that reach none", () =>
     withFixture(
       (root) =>

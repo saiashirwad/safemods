@@ -5,10 +5,14 @@ import { finalizePlan, type TransformationPlan } from "../src/Plan.ts"
 import type * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
 import * as Query from "../src/Query.ts"
 import * as Recipe from "../src/Recipe.ts"
-import { type DiagnosticRecord, diffDiagnostics } from "../src/Verification/Diagnostics.ts"
+import {
+  collectDiagnostics,
+  type DiagnosticRecord,
+  diffDiagnostics,
+} from "../src/Verification/Diagnostics.ts"
 import * as Verification from "../src/Verification/index.ts"
 import { preview } from "../src/Verification/Preview.ts"
-import type { ConfiguredProject } from "../src/Workspace/index.ts"
+import { type ConfiguredProject, Workspace } from "../src/Workspace/index.ts"
 import { projectPath } from "./utils/domain.ts"
 import { fixtureProject, withFixture, write } from "./utils/fixture.ts"
 
@@ -413,6 +417,29 @@ describe("Verification.verify", () => {
           ).toBe(true)
         }),
       { files: { "src/broken.ts": "missingName;\n" } },
+    ),
+  )
+
+  effect("locates a tsconfig diagnostic in the config file", () =>
+    withFixture(
+      () =>
+        Effect.gen(function* () {
+          const workspace = yield* Workspace
+          const diagnostics = yield* workspace.withSnapshot(collectDiagnostics)
+          expect(
+            diagnostics
+              .filter(({ fileName }) => fileName?.endsWith("tsconfig.json") === true)
+              .map(({ line, column }) => [line, column]),
+          ).toEqual([[4, 5]])
+        }),
+      {
+        fixture: "empty",
+        files: {
+          "tsconfig.json":
+            '{\n  "compilerOptions": {\n    "strict": true,\n    "notAnOption": true\n  },\n  "include": ["src"]\n}\n',
+          "src/a.ts": "export const a = 1\n",
+        },
+      },
     ),
   )
 

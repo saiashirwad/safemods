@@ -1,6 +1,7 @@
 import * as Path from "node:path"
 import { Data, Effect } from "effect"
 import type { Node } from "typescript/unstable/ast"
+import * as Position from "./Position.ts"
 import * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import * as Query from "./Query.ts"
 import * as Type from "./Type.ts"
@@ -21,9 +22,8 @@ interface Target {
 
 const lineText = (node: Node): string => {
   const file = node.getSourceFile()
-  const before = file.text.slice(0, node.getStart(file))
-  const line = before.split("\n").length
-  return `${line}:${before.length - before.lastIndexOf("\n")}  ${file.text.split("\n")[line - 1]!.trim().slice(0, 110)}`
+  const { line, column } = Position.at(file.text, node.getStart(file))
+  return `${line}:${column}  ${file.text.split("\n")[line - 1]!.trim().slice(0, 110)}`
 }
 
 const located = (project: ProjectSnapshot, node: Node): string => {

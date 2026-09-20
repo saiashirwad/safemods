@@ -1,10 +1,47 @@
 import { Effect } from "effect"
-import { isNonNullExpression } from "typescript/unstable/ast/is"
+import { SyntaxKind, type Node, type SourceFile } from "typescript/unstable/ast"
+import {
+  isJsxText,
+  isLiteralExpression,
+  isNonNullExpression,
+  isTemplateLiteralToken,
+} from "typescript/unstable/ast/is"
+import { createScanner } from "typescript/unstable/ast/scanner"
 import * as Check from "../Check.ts"
 import * as Query from "../Query.ts"
 import { filesWithin } from "./Exported.ts"
 
 const directive = /@ts-ignore|@ts-expect-error|@ts-nocheck|(?:eslint|oxlint)-disable/g
+
+const withLiteralsBlanked = (sourceFile: SourceFile): string => {
+  const { text } = sourceFile
+  const chunks: Array<string> = []
+  let end = 0
+  const visit = (node: Node): void => {
+    if (isLiteralExpression(node) || isTemplateLiteralToken(node) || isJsxText(node)) {
+      const start = isJsxText(node) ? node.pos : node.getStart(sourceFile)
+      chunks.push(text.slice(end, start), " ".repeat(node.end - start))
+      end = node.end
+    } else {
+      node.forEachChild(visit)
+    }
+  }
+  visit(sourceFile)
+  return [...chunks, text.slice(end)].join("")
+}
+
+const directivesIn = (sourceFile: SourceFile) => {
+  const scanner = createScanner(false, sourceFile.languageVariant, withLiteralsBlanked(sourceFile))
+  const matches: Array<{ start: number; text: string }> = []
+  for (let kind = scanner.scan(); kind !== SyntaxKind.EndOfFile; kind = scanner.scan()) {
+    if (kind === SyntaxKind.SingleLineCommentTrivia || kind === SyntaxKind.MultiLineCommentTrivia) {
+      for (const match of scanner.getTokenText().matchAll(directive)) {
+        matches.push({ start: scanner.getTokenStart() + match.index, text: match[0] })
+      }
+    }
+  }
+  return matches
+}
 
 export const suppressions = (options: { readonly within: string }) =>
   Check.perProject("suppressions", (project) =>
@@ -16,11 +53,11 @@ export const suppressions = (options: { readonly within: string }) =>
       )
       return [
         ...files.flatMap((file) =>
-          [...file.sourceFile.text.matchAll(directive)].map((match) => ({
+          directivesIn(file.sourceFile).map((match) => ({
             projectId: project.project.id,
             fileName: file.fileName,
-            start: match.index,
-            message: `${match[0]} silences the compiler: fix the type it complains about`,
+            start: match.start,
+            message: `${match.text} silences the compiler: fix the type it complains about`,
           })),
         ),
         ...asserted.map((selection) =>

@@ -137,6 +137,27 @@ describe("slop rules", () => {
     }),
   )
 
+  effect("duplicated-functions preserves whitespace inside strings, templates and regexes", () =>
+    Effect.gen(function* () {
+      const findings = yield* findingsOf(
+        duplicatedFunctions({ within: "src/**", minimumLength: 80 }),
+        {
+          "src/a.ts": [
+            'export const message = (name: string): string => "Welcome  back, " + name.trim() + ". Your account is ready to use."',
+            "export const template = (name: string): string => `Welcome  back, ${name.trim()}. Your account is ready to use.`",
+            "export const pattern = (message: string): boolean => /Welcome  back, valued customer/.test(message.trim().toLowerCase())",
+          ].join("\n"),
+          "src/b.ts": [
+            'export const message = (name: string): string => "Welcome back, " + name.trim() + ". Your account is ready to use."',
+            "export const template = (name: string): string => `Welcome back, ${name.trim()}. Your account is ready to use.`",
+            "export const pattern = (message: string): boolean => /Welcome back, valued customer/.test(message.trim().toLowerCase())",
+          ].join("\n"),
+        },
+      )
+      expect(findings).toEqual([])
+    }),
+  )
+
   effect("duplicated-functions reports copies across files, not short or same-file ones", () =>
     Effect.gen(function* () {
       const body =

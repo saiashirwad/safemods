@@ -1,8 +1,13 @@
 [
   {
     "check": "unjustified-casts",
-    "path": "src/Plan.ts",
-    "message": "narrows {} | null to Json on trust: use a guard, or give the source the narrower type"
+    "path": "src/Pattern.ts",
+    "message": "asserts unknown as C | undefined without checking it: decode or narrow the value instead"
+  },
+  {
+    "check": "unjustified-casts",
+    "path": "src/Pattern.ts",
+    "message": "asserts { _tag: string; node: Node; captures: {} | null; } as the unrelated type MatchedOf<Patterns>: the value is not what its type says"
   },
   {
     "check": "unjustified-casts",
@@ -11,8 +16,18 @@
   },
   {
     "check": "unjustified-casts",
+    "path": "src/Plan.ts",
+    "message": "narrows {} | null to Json on trust: use a guard, or give the source the narrower type"
+  },
+  {
+    "check": "unjustified-casts",
     "path": "src/ProjectRelativePath.ts",
     "message": "narrows string to string & Brand<\"ProjectRelativePath\"> on trust: use a guard, or give the source the narrower type"
+  },
+  {
+    "check": "unjustified-casts",
+    "path": "src/Query.ts",
+    "message": "asserts { project: ProjectSnapshot; fileName: string & Brand<\"Pro... as the unrelated type Selection<WithTypes<M>>: the value is not what its type says"
   },
   {
     "check": "unjustified-casts",

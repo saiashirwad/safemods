@@ -9,6 +9,7 @@ import * as Check from "./Check.ts"
 import * as Git from "./Git.ts"
 import * as Inspect from "./Inspect.ts"
 import type { UnsupportedFinding } from "./Plan.ts"
+import * as Position from "./Position.ts"
 import * as Recipe from "./Recipe.ts"
 import {
   actionOf,
@@ -172,8 +173,8 @@ const capped = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
     : [...lines.slice(0, listed), `  ... and ${lines.length - listed} more`]
 
 const positionIn = (text: string, offset: number): string => {
-  const before = text.slice(0, offset)
-  return `${before.split("\n").length}:${before.length - before.lastIndexOf("\n")}`
+  const { line, column } = Position.at(text, offset)
+  return `${line}:${column}`
 }
 
 const diagnosticLine = (root: string, diagnostic: DiagnosticRecord): string =>

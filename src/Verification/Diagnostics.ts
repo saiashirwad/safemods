@@ -1,5 +1,6 @@
-import { Effect } from "effect"
+import { Effect, FileSystem } from "effect"
 import { DiagnosticCategory, type Diagnostic } from "typescript/unstable/async"
+import * as Position from "../Position.ts"
 import { nativeRequest } from "../Workspace/NativeRequest.ts"
 import { WorkspaceSnapshot } from "../Workspace/index.ts"
 
@@ -27,19 +28,15 @@ const categories = {
   [DiagnosticCategory.Suggestion]: "suggestion",
 } as const
 
-const record = (diagnostic: Diagnostic, text: string | undefined): DiagnosticRecord => {
-  const before = (text ?? "").slice(0, diagnostic.pos)
-  return {
-    code: diagnostic.code,
-    message: diagnostic.text,
-    category: categories[diagnostic.category],
-    fileName: diagnostic.fileName,
-    start: diagnostic.pos,
-    length: diagnostic.end - diagnostic.pos,
-    line: before.split("\n").length,
-    column: before.length - before.lastIndexOf("\n"),
-  }
-}
+const record = (diagnostic: Diagnostic, text: string): DiagnosticRecord => ({
+  code: diagnostic.code,
+  message: diagnostic.text,
+  category: categories[diagnostic.category],
+  fileName: diagnostic.fileName,
+  start: diagnostic.pos,
+  length: diagnostic.end - diagnostic.pos,
+  ...Position.at(text, diagnostic.pos),
+})
 
 const diagnosticKinds = [
   "getConfigFileParsingDiagnostics",
@@ -52,6 +49,7 @@ const diagnosticKinds = [
 
 export const collectDiagnostics = Effect.gen(function* () {
   const snapshot = yield* WorkspaceSnapshot
+  const fs = yield* FileSystem.FileSystem
   const diagnostics: Array<DiagnosticRecord> = []
   for (const project of snapshot.projects) {
     const texts = new Map(
@@ -61,9 +59,13 @@ export const collectDiagnostics = Effect.gen(function* () {
       const found = yield* project.unsafeNative(({ program }) =>
         nativeRequest(kind, () => program[kind]()),
       )
-      diagnostics.push(
-        ...found.map((diagnostic) => record(diagnostic, texts.get(diagnostic.fileName ?? ""))),
-      )
+      for (const diagnostic of found) {
+        const fileName = diagnostic.fileName ?? ""
+        const text =
+          texts.get(fileName) ??
+          (yield* fs.readFileString(fileName).pipe(Effect.orElseSucceed(() => "")))
+        diagnostics.push(record(diagnostic, text))
+      }
     }
   }
   return [

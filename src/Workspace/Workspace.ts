@@ -1,5 +1,8 @@
+import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { Context, Data, Effect, FileSystem, Layer, type PlatformError } from "effect"
+import { SyntaxKind } from "typescript/unstable/ast"
+import { createScanner } from "typescript/unstable/ast/scanner"
 import { API } from "typescript/unstable/async"
 import * as FileRef from "../FileRef.ts"
 import type * as ProjectId from "../ProjectId.ts"
@@ -61,6 +64,16 @@ export class Workspace extends Context.Service<
   }
 >()("safemods/Workspace/Workspace") {}
 
+const configWithRoots = (text: string, files: ReadonlyArray<string>): string => {
+  const scanner = createScanner(true, undefined, text)
+  const tokens: Array<string> = []
+  while (scanner.scan() !== SyntaxKind.EndOfFile) tokens.push(scanner.getTokenText())
+  const withoutCommentsOrTrailingCommas = tokens
+    .filter((token, index) => token !== "," || !["}", "]"].includes(tokens[index + 1]!))
+    .join("")
+  return JSON.stringify({ ...JSON.parse(withoutCommentsOrTrailingCommas), files, include: [] })
+}
+
 const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Service"] => {
   const root = Path.resolve(cwd)
   const configFiles = new Map(
@@ -85,21 +98,56 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
       ),
     withSnapshot: (program, overlay) =>
       Effect.gen(function* () {
+        const configs = new Map<string, string>()
+        const fs = overlay === undefined ? undefined : Overlay.fileSystem(overlay)
         const api = yield* Effect.acquireRelease(
           Effect.try({
             try: () =>
               new API(
                 overlay === undefined
                   ? { cwd: root }
-                  : { cwd: root, fs: Overlay.fileSystem(overlay) },
+                  : {
+                      cwd: root,
+                      fs: {
+                        ...fs,
+                        readFile: (name) => configs.get(name) ?? fs?.readFile?.(name),
+                        fileExists: (name) => configs.has(name) || fs?.fileExists?.(name),
+                      },
+                    },
               ),
             catch: (cause) => new WorkspaceCompilerError({ operation: "createAPI", cause }),
           }),
           (api) => nativeRequest("closeAPI", () => api.close()).pipe(Effect.ignore),
         )
+        if (overlay?.rootSiblings !== undefined) {
+          for (const configFile of configFiles.values()) {
+            const parsed = yield* nativeRequest("parseConfigFile", () =>
+              api.parseConfigFile(configFile),
+            )
+            const roots = new Set(parsed.fileNames)
+            const siblings = parsed.fileNames.flatMap((name) => {
+              const sibling = overlay.rootSiblings?.get(name)
+              return sibling === undefined || roots.has(sibling) ? [] : [sibling]
+            })
+            if (siblings.length === 0) continue
+            const text = yield* nativeRequest(
+              "readConfigFile",
+              async () => fs?.readFile?.(configFile) ?? (await Fs.readFile(configFile, "utf8")),
+            )
+            const updated = yield* Effect.try({
+              try: () => configWithRoots(text, [...parsed.fileNames, ...siblings]),
+              catch: (cause) =>
+                new WorkspaceCompilerError({ operation: "updateConfigRoots", cause }),
+            })
+            configs.set(configFile, updated)
+          }
+        }
         const native = yield* Effect.acquireRelease(
           nativeRequest("updateSnapshot", () =>
-            api.updateSnapshot({ openProjects: [...configFiles.values()] }),
+            api.updateSnapshot({
+              openProjects: [...configFiles.values()],
+              fileChanges: { changed: [...configs.keys()] },
+            }),
           ),
           (snapshot) =>
             nativeRequest("disposeSnapshot", () => snapshot.dispose()).pipe(Effect.ignore),

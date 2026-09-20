@@ -441,6 +441,38 @@ describe("queries", () => {
     ),
   )
 
+  effect("usesOf ignores default import bindings but retains actual escaping uses", () =>
+    withProject(
+      {
+        "src/direct.ts": "export default function direct(value?: number) { return value ?? 1 }\n",
+        "src/escaped.ts": "export default function escaped(value?: number) { return value ?? 1 }\n",
+        "src/consumer.ts": [
+          'import direct from "./direct.js"',
+          'import escaped from "./escaped.js"',
+          "direct()",
+          "direct(2)",
+          "escaped()",
+          "export const callback = escaped",
+          "",
+        ].join("\n"),
+      },
+      (project) =>
+        Effect.gen(function* () {
+          for (const name of ["direct", "escaped"]) {
+            const [selection] = yield* Query.namedFunctions(project).pipe(
+              Query.within(`src/${name}.ts`),
+              Query.collect,
+            )
+            const uses = yield* Query.usesOf({ ...selection!, value: selection!.value.name })
+            expect(uses.calls.map(({ value }) => value.getText())).toEqual(
+              name === "direct" ? ["direct()", "direct(2)"] : ["escaped()"],
+            )
+            expect(uses.escapes).toBe(name === "escaped")
+          }
+        }),
+    ),
+  )
+
   effect("referencesTo follows the checker, not the spelling", () =>
     withProject(
       {

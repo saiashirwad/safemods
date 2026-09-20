@@ -69,14 +69,17 @@ const reportsIn = (project: ProjectSnapshot, file: ProjectFile, place: Place) =>
         Effect.gen(function* () {
           const at = yield* declarationIn(project, symbol, file)
           const type = yield* Type.ofSymbol(project, symbol)
-          if (at === undefined || type === undefined) return []
+          if (type === undefined) return []
           const leaked = yield* Type.mentions(project, type, (candidate) =>
             Effect.map(place(candidate), Option.isSome),
           )
           if (Option.isNone(leaked)) return []
-          return Option.toArray(yield* place(leaked.value)).map((found) =>
-            Check.report(at, `exports ${name} with a type mentioning ${found}`),
-          )
+          return Option.toArray(yield* place(leaked.value)).map((found) => {
+            const message = `exports ${name} with a type mentioning ${found}`
+            return at === undefined
+              ? Check.reportAt(project, file.fileName, message)
+              : Check.report(at, message)
+          })
         }),
       8,
     ),

@@ -32,9 +32,9 @@ const previousTargetOf = (
   siblings: ReadonlyMap<string, string>,
   { specifier, resolved }: Query.ResolvedModuleReference,
 ): string | undefined => {
-  if (!specifier.text.startsWith(".")) return undefined
   const current = resolved === undefined ? undefined : siblingOf(resolved.sourceFile.fileName)
   if (current !== undefined && siblings.has(current)) return current
+  if (!specifier.text.startsWith(".")) return undefined
   const stem = Path.resolve(
     Path.dirname(specifier.getSourceFile().fileName),
     specifier.text.replace(scriptExtension, ""),
@@ -48,7 +48,7 @@ const previousTargetOf = (
 
 const specifierTo = (specifier: string, from: string, target: string): string => {
   const extension =
-    scriptExtension.exec(specifier)?.[0] ??
+    (specifier.startsWith(".") ? scriptExtension.exec(specifier)?.[0] : Path.extname(target)) ??
     (Path.extname(specifier) === "" ? "" : Path.extname(target))
   const relative = Path.relative(Path.dirname(from), target)
   const stem = relative.slice(0, relative.length - Path.extname(relative).length)
@@ -109,6 +109,9 @@ export const withComparison = <A, E, R>(
       files,
       deleted: new Set<string>(),
       hidden: new Set(files.keys()),
+      rootSiblings: new Map(
+        [...previous.keys()].map((name) => [Path.resolve(name), siblingOf(Path.resolve(name))]),
+      ),
     })
     let texts: ReadonlyMap<string, string> = new Map()
     let growing = true
