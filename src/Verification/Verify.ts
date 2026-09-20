@@ -83,10 +83,9 @@ const policyFailure = (
   }
   const errors = diff.introduced.filter((diagnostic) => diagnostic.category === "error")
   if (diagnostics === "no-new-errors" && errors.length > 0) {
-    const summary = errors.map((error) => `TS${error.code}: ${error.message}`).join("; ")
     return {
       policy: "diagnostics",
-      detail: `Introduced ${errors.length} new error diagnostic(s): ${summary}`,
+      detail: `Introduced ${errors.length} new error diagnostic(s)`,
       diagnostics: errors,
     }
   }
@@ -157,9 +156,9 @@ export const verify = <Input, E, R>(
           recipe: validated.recipe,
           projects: validated.projects,
           sources: [...FileRef.entries(captured)].map(([file, bytes]) =>
-            bytes === undefined
-              ? { ...file, kind: "missing" as const }
-              : { ...file, kind: "file" as const, hash: Sha256.digest(bytes) },
+            bytes === undefined ?
+              { ...file, kind: "missing" as const } :
+              { ...file, kind: "file" as const, hash: Sha256.digest(bytes) }
           ),
           edits: draft.edits,
           fileOperations: draft.fileOperations,
@@ -190,9 +189,9 @@ export const verify = <Input, E, R>(
         )
         const changed = replayPreview.files.filter((file) => {
           if (file.before.exists !== file.after.exists) return true
-          return file.before.exists && file.after.exists
-            ? Sha256.digest(file.before.bytes) !== Sha256.digest(file.after.bytes)
-            : false
+          return file.before.exists && file.after.exists ?
+            Sha256.digest(file.before.bytes) !== Sha256.digest(file.after.bytes) :
+            false
         }).length
         return [diagnostics, changed] as const
       }),

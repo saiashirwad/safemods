@@ -1,5 +1,5 @@
 import * as Fs from "node:fs"
-import * as Path from "node:path"
+import type { Path } from "effect"
 import type { FileSystem } from "typescript/unstable/fs"
 
 export interface Overlay {
@@ -7,16 +7,16 @@ export interface Overlay {
   readonly deleted: ReadonlySet<string>
 }
 
-const isInside = (directory: string, fileName: string): boolean =>
-  fileName.startsWith(directory.endsWith(Path.sep) ? directory : directory + Path.sep)
+const isInside = (path: Path.Path, directory: string, fileName: string): boolean =>
+  fileName.startsWith(directory.endsWith(path.sep) ? directory : directory + path.sep)
 
-const diskEntries = (directory: string) => {
+const diskEntries = (path: Path.Path, directory: string) => {
   try {
     const entries = Fs.readdirSync(directory, { withFileTypes: true }).map((entry) => ({
       name: entry.name,
-      kind: entry.isSymbolicLink()
-        ? Fs.statSync(Path.join(directory, entry.name), { throwIfNoEntry: false })
-        : entry,
+      kind: entry.isSymbolicLink() ?
+        Fs.statSync(path.join(directory, entry.name), { throwIfNoEntry: false }) :
+        entry,
     }))
     return {
       files: entries.filter(({ kind }) => kind?.isFile()).map(({ name }) => name),
@@ -35,42 +35,42 @@ const diskEntries = (directory: string) => {
   }
 }
 
-export const fileSystem = (overlay: Overlay): FileSystem => {
-  const files = new Map([...overlay.files].map(([name, text]) => [Path.resolve(name), text]))
-  const deleted = new Set([...overlay.deleted].map((name) => Path.resolve(name)))
+export const fileSystem = (overlay: Overlay, path: Path.Path): FileSystem => {
+  const files = new Map([...overlay.files].map(([name, text]) => [path.resolve(name), text]))
+  const deleted = new Set([...overlay.deleted].map((name) => path.resolve(name)))
   const holdsFile = (directory: string): boolean =>
-    [...files.keys()].some((fileName) => isInside(directory, fileName))
+    [...files.keys()].some((fileName) => isInside(path, directory, fileName))
 
   return {
     readFile: (fileName) => {
-      const resolved = Path.resolve(fileName)
+      const resolved = path.resolve(fileName)
       return deleted.has(resolved) ? null : files.get(resolved)
     },
     fileExists: (fileName) => {
-      const resolved = Path.resolve(fileName)
+      const resolved = path.resolve(fileName)
       if (deleted.has(resolved)) return false
       return files.has(resolved) ? true : undefined
     },
-    directoryExists: (directoryName) => (holdsFile(Path.resolve(directoryName)) ? true : undefined),
-    realpath: (path) => {
-      const resolved = Path.resolve(path)
+    directoryExists: (directoryName) => (holdsFile(path.resolve(directoryName)) ? true : undefined),
+    realpath: (name) => {
+      const resolved = path.resolve(name)
       return files.has(resolved) || holdsFile(resolved) ? resolved : undefined
     },
     getAccessibleEntries: (directoryName) => {
-      const directory = Path.resolve(directoryName)
-      const disk = diskEntries(directory)
-      const isKept = (entry: string) => !deleted.has(Path.join(directory, entry))
+      const directory = path.resolve(directoryName)
+      const disk = diskEntries(path, directory)
+      const isKept = (entry: string) => !deleted.has(path.join(directory, entry))
       const fileNames = new Set(disk?.files.filter(isKept))
       const directories = new Set(disk?.directories)
       for (const fileName of files.keys()) {
-        if (!isInside(directory, fileName)) continue
-        const [first, ...rest] = Path.relative(directory, fileName).split(Path.sep)
+        if (!isInside(path, directory, fileName)) continue
+        const [first, ...rest] = path.relative(directory, fileName).split(path.sep)
         if (rest.length === 0) fileNames.add(first!)
         else directories.add(first!)
       }
-      return disk === undefined && fileNames.size === 0 && directories.size === 0
-        ? undefined
-        : { files: [...fileNames], directories: [...directories] }
+      return disk === undefined && fileNames.size === 0 && directories.size === 0 ?
+        undefined :
+        { files: [...fileNames], directories: [...directories] }
     },
   }
 }

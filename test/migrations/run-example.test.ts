@@ -14,7 +14,7 @@ describe("example runner", () => {
     Effect.gen(function* () {
       const relative = "src/http/gateway.ts"
       const original = yield* Effect.tryPromise(() =>
-        Fs.readFile(Path.join(fixtureRoot, relative), "utf8"),
+        Fs.readFile(Path.join(fixtureRoot, relative), "utf8")
       )
       expect(original).toContain("@acme/legacy-client")
 
@@ -28,7 +28,7 @@ describe("example runner", () => {
       ).toBe(original)
 
       const rewritten = yield* Effect.tryPromise(() =>
-        Fs.readFile(Path.join(result.workspace, relative), "utf8"),
+        Fs.readFile(Path.join(result.workspace, relative), "utf8")
       )
       expect(rewritten).toContain("@acme/client")
       expect(rewritten).not.toContain("@acme/legacy-client")
@@ -36,6 +36,5 @@ describe("example runner", () => {
       expect(result.diff).toContain("@acme/client")
 
       yield* Effect.tryPromise(() => Fs.rm(result.workspace, { recursive: true, force: true }))
-    }),
-  )
+    }))
 })

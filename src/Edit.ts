@@ -51,9 +51,9 @@ export const compareEdits = (left: TextEdit, right: TextEdit): number =>
   Order.String(left.newText, right.newText)
 
 const touches = (insert: TextEdit, other: TextEdit): boolean =>
-  other.start === other.end
-    ? insert.start === other.start
-    : insert.start >= other.start && insert.start < other.end
+  other.start === other.end ?
+    insert.start === other.start :
+    insert.start >= other.start && insert.start < other.end
 
 const editsConflict = (left: TextEdit, right: TextEdit): boolean => {
   if (left.projectId !== right.projectId || left.fileName !== right.fileName) return false

@@ -16,7 +16,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli"
 import { applyVerifiedPlan } from "../src/Application.ts"
 import { run, type Recipe } from "../src/Recipe.ts"
 import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
-import { type PublicFilePreview, verify } from "../src/Verification/index.ts"
+import { actionOf, verify } from "../src/Verification/index.ts"
 import * as Workspace from "../src/Workspace/index.ts"
 import { asAssertionToSatisfies } from "./as-assertion-to-satisfies.ts"
 import { defaultToNamed } from "./default-to-named.ts"
@@ -183,10 +183,9 @@ const copyFixture = Effect.fn("copyFixture")(function* (
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const source = path.resolve(repoRoot, fixture)
-  const workspace =
-    destination === undefined
-      ? yield* fs.makeTempDirectory({ prefix: `safemods-${path.basename(fixture)}-` })
-      : path.resolve(destination)
+  const workspace = destination === undefined ?
+    yield* fs.makeTempDirectory({ prefix: `safemods-${path.basename(fixture)}-` }) :
+    path.resolve(destination)
   if (isInside(fixturesRoot, workspace, path)) {
     return yield* new WritesIntoFixtures({ path: workspace })
   }
@@ -226,9 +225,6 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
     },
     catch: (cause) => new GitFailure({ cwd, args, cause }),
   })
-
-const actionOf = ({ before, after }: PublicFilePreview): string =>
-  before.exists ? (after.exists ? "modify" : "delete") : "create"
 
 export const runExample = Effect.fn("runExample")(function* (
   id: string,
@@ -307,8 +303,8 @@ const command = Command.make(
   ),
 )
 
-const isMain =
-  process.argv[1] !== undefined && NodePath.resolve(process.argv[1]) === import.meta.filename
+const isMain = process.argv[1] !== undefined &&
+  NodePath.resolve(process.argv[1]) === import.meta.filename
 
 if (isMain) {
   NodeRuntime.runMain(

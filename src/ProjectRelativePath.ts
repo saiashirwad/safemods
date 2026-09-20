@@ -33,15 +33,15 @@ export const schema = Schema.String.pipe(
     SchemaTransformation.transformOrFail({
       decode: (value, options) => {
         const path = normalize(value)
-        return path === undefined
-          ? Effect.fail(
-              new SchemaIssue.InvalidValue(
-                { message: "Expected a project-relative path" },
-                value,
-                options,
-              ),
-            )
-          : Effect.succeed(path)
+        return path === undefined ?
+          Effect.fail(
+            new SchemaIssue.InvalidValue(
+              { message: "Expected a project-relative path" },
+              value,
+              options,
+            ),
+          ) :
+          Effect.succeed(path)
       },
       encode: Effect.succeed,
     }),

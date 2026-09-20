@@ -1,17 +1,12 @@
-import * as Fs from "node:fs/promises"
-import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { packageEntryPointSplit } from "../../examples/package-entry-point-split.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { fixturePath as fixtureDirectory, withFixture } from "../utils/fixture.ts"
+import { fixturePath as fixtureDirectory, withFixture, read } from "../utils/fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/package-entry-point-split"
 const fixturePath = fixtureDirectory(fixture)
-const read = (root: string, relative: string) =>
-  Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
-
 describe("package-entry-point-split", () => {
   effect(
     "moves unambiguous imports and exports while reporting declarations needing a choice",

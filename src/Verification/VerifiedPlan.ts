@@ -15,6 +15,9 @@ export interface PublicFilePreview extends Omit<FilePreview, "before" | "after">
   readonly after: PublicFileState
 }
 
+export const actionOf = ({ before, after }: PublicFilePreview): "create" | "modify" | "delete" =>
+  before.exists ? (after.exists ? "modify" : "delete") : "create"
+
 export interface PublicPlanPreview extends Omit<PlanPreview, "sources" | "files"> {
   readonly sources: ReadonlyArray<PublicFilePreview>
   readonly files: ReadonlyArray<PublicFilePreview>

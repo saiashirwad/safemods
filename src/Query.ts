@@ -1,7 +1,10 @@
 import { matchesGlob } from "node:path"
-import { Data, Effect, Order, Predicate, Stream } from "effect"
+import { Effect, Option, Order, Predicate, Stream } from "effect"
 import {
+  type ArrowFunction,
   type CallExpression,
+  type FunctionDeclaration,
+  type FunctionExpression,
   type Identifier,
   type ImportDeclaration,
   type Node,
@@ -9,7 +12,11 @@ import {
   SyntaxKind,
 } from "typescript/unstable/ast"
 import {
+  isArrowFunction,
   isCallExpression,
+  isFunctionDeclaration,
+  isFunctionExpression,
+  isVariableDeclaration,
   isExportDeclaration,
   isExternalModuleReference,
   isIdentifier,
@@ -33,6 +40,7 @@ import {
 } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol, Type as NativeType } from "typescript/unstable/async"
 import * as FileRef from "./FileRef.ts"
+import * as Pattern from "./Pattern.ts"
 import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import type {
   IntrinsicTypeName,
@@ -52,28 +60,6 @@ export interface Selection<A> {
 export type Query<A, E = never, R = never> = Stream.Stream<Selection<A>, E, R>
 
 export type Scope = ProjectSnapshot | ReadonlyArray<ProjectFile>
-
-export interface Criterion<A, E = never, R = never> {
-  readonly id: string
-  readonly select: (
-    selections: ReadonlyArray<Selection<A>>,
-  ) => Effect.Effect<ReadonlyArray<boolean>, E, R>
-}
-
-export class CriterionOutputError extends Data.TaggedError("CriterionOutputError")<{
-  readonly criterionId: string
-  readonly expected: number
-  readonly actual: number
-}> {}
-
-const validateAnswers = (
-  criterionId: string,
-  expected: number,
-  answers: ReadonlyArray<boolean>,
-): Effect.Effect<ReadonlyArray<boolean>, CriterionOutputError> =>
-  answers.length === expected
-    ? Effect.succeed(answers)
-    : Effect.fail(new CriterionOutputError({ criterionId, expected, actual: answers.length }))
 
 const isFiles = (scope: Scope): scope is ReadonlyArray<ProjectFile> => Array.isArray(scope)
 
@@ -114,6 +100,43 @@ export const nodes = <A extends Node>(
   guard: (node: Node) => node is A,
 ): Query<A, ProjectSnapshotError> =>
   filesIn(scope).pipe(Stream.flatMap((file) => Stream.fromIterable(selectionsIn(file, guard))))
+
+export const match = <const Patterns extends Pattern.Tagged>(
+  scope: Scope,
+  patterns: Patterns,
+): Query<Pattern.MatchedOf<Patterns>, ProjectSnapshotError> => {
+  const matchedOf = Pattern.tagged(patterns)
+  const guards = Object.values(patterns).map(({ guard }) => guard)
+  return nodes(scope, (node): node is Node => guards.some((guard) => guard(node))).pipe(
+    Stream.map((selection) => ({ ...selection, value: matchedOf(selection.value) })),
+    Stream.filter(
+      (selection): selection is Selection<Pattern.MatchedOf<Patterns>> =>
+        selection.value !== undefined,
+    ),
+  )
+}
+
+export interface Shaped<A extends Node, C> {
+  readonly node: A
+  readonly captures: C
+}
+
+export const shape = <const F extends object>(fields: F) =>
+<A extends Node, E, R>(
+  self: Query<A, E, R> & Pattern.FieldsError<A, F>,
+): Query<Shaped<A, Pattern.CapturesOf<A, F>>, E, R> => {
+  const pattern = Pattern.unguarded<A, F>(fields)
+  return self.pipe(
+    Stream.map((selection) => ({
+      ...selection,
+      value: { node: selection.value, captures: pattern.match(selection.value) },
+    })),
+    Stream.filter(
+      (selection): selection is Selection<Shaped<A, Pattern.CapturesOf<A, F>>> =>
+        selection.value.captures !== undefined,
+    ),
+  )
+}
 
 export const calls = (scope: Scope): Query<CallExpression, ProjectSnapshotError> =>
   nodes(scope, isCallExpression)
@@ -192,7 +215,7 @@ export const moduleReferences = (scope: Scope): Query<ModuleReference, ProjectSn
     Stream.flatMap((file) =>
       Stream.fromIterable(
         selectionsIn(file, (node): node is Node => moduleReferenceOf(node) !== undefined),
-      ),
+      )
     ),
     Stream.map((selection) => ({ ...selection, value: moduleReferenceOf(selection.value)! })),
   )
@@ -206,11 +229,10 @@ export const resolvedModuleReferences = (
 ): Query<ResolvedModuleReference, ProjectSnapshotError> =>
   moduleReferences(scope).pipe(
     Stream.mapEffect((selection) =>
-      selection.project
-        .resolvedModule(selection.fileName, selection.value.specifier.getStart())
-        .pipe(
-          Effect.map((resolved) => ({ ...selection, value: { ...selection.value, resolved } })),
-        ),
+      Effect.map(selection.project.resolvedModule(selection.value.specifier), (resolved) => ({
+        ...selection,
+        value: { ...selection.value, resolved },
+      }))
     ),
   )
 
@@ -259,8 +281,9 @@ const roleOf = (node: Identifier): ReferenceRole => {
   if (hasTypeAncestor(node)) return "type"
   if (isBinaryExpression(parent) && parent.left === node) {
     const operator = parent.operatorToken.kind
-    if (operator >= SyntaxKind.FirstAssignment && operator <= SyntaxKind.LastAssignment)
+    if (operator >= SyntaxKind.FirstAssignment && operator <= SyntaxKind.LastAssignment) {
       return "write"
+    }
   }
   if (
     (isPrefixUnaryExpression(parent) || isPostfixUnaryExpression(parent)) &&
@@ -290,28 +313,23 @@ export const filter: {
   ): <E, R>(self: Query<A, E, R>) => Query<A, E, R>
 } = Stream.filter
 
-export const within =
-  (pattern: string) =>
-  <A, E, R>(self: Query<A, E, R>): Query<A, E, R> =>
-    Stream.filter(self, ({ fileName }) =>
-      pattern.includes("*")
-        ? matchesGlob(fileName, pattern.replaceAll("\\", "/"))
-        : fileName === pattern,
-    )
+export const within = (pattern: string) => <A, E, R>(self: Query<A, E, R>): Query<A, E, R> =>
+  Stream.filter(self, ({ fileName }) =>
+    pattern.includes("*") ?
+      matchesGlob(fileName, pattern.replaceAll("\\", "/")) :
+      fileName === pattern)
 
 export const where =
-  <A, E2, R2>(criterion: Criterion<A, E2, R2>) =>
-  <E, R>(self: Query<A, E, R>): Query<A, E | E2 | CriterionOutputError, R | R2> =>
+  <A, E2, R2>(test: (selection: Selection<A>) => Effect.Effect<boolean, E2, R2>) =>
+  <E, R>(self: Query<A, E, R>): Query<A, E | E2, R | R2> =>
     self.pipe(
-      Stream.grouped(128),
-      Stream.mapEffect((batch) =>
-        Effect.gen(function* () {
-          const matches = yield* criterion.select(batch)
-          yield* validateAnswers(criterion.id, batch.length, matches)
-          return batch.filter((_, index) => matches[index])
-        }),
+      Stream.mapEffect(
+        (selection) =>
+          Effect.map(test(selection), (keep) => (keep ? Option.some(selection) : Option.none())),
+        { concurrency: "unbounded" },
       ),
-      Stream.flatMap(Stream.fromIterable),
+      Stream.filter(Option.isSome),
+      Stream.map((kept) => kept.value),
     )
 
 export const collect = <A, E, R>(
@@ -324,85 +342,180 @@ export const collect = <A, E, R>(
         Order.String(left.fileName, right.fileName) ||
         left.start - right.start ||
         left.end - right.end,
+    ))
+
+export const selectionOf = <A extends Node>(
+  project: ProjectSnapshot,
+  node: A,
+): Option.Option<Selection<A>> =>
+  Option.map(project.fileNameOf(node.getSourceFile()), (fileName) => ({
+    value: node,
+    project,
+    fileName,
+    start: node.getStart(node.getSourceFile()),
+    end: node.getEnd(),
+  }))
+
+export const referencesTo = (selection: Selection<Node>): Query<Node, ProjectSnapshotError> =>
+  Stream.fromIterableEffect(
+    Effect.map(
+      selection.project.referencesTo(selection.value),
+      (nodes) => nodes.flatMap((node) => Option.toArray(selectionOf(selection.project, node))),
     ),
   )
 
-const perFile =
-  <A extends Node, E>(
-    criterionId: string,
-    selectFile: (
-      project: ProjectSnapshot,
-      fileName: ProjectRelativePath.Type,
-      values: ReadonlyArray<A>,
-    ) => Effect.Effect<ReadonlyArray<boolean>, E>,
-  ): Criterion<A, E | CriterionOutputError>["select"] =>
-  (selections) =>
-    Effect.gen(function* () {
-      const matches = new Map<Selection<A>, boolean>()
-      const groups = Map.groupBy(selections, (selection) => selection.project)
-      for (const [project, inProject] of groups) {
-        for (const [fileName, group] of Map.groupBy(inProject, (selection) => selection.fileName)) {
-          const answers = yield* selectFile(
-            project,
-            fileName,
-            group.map((selection) => selection.value),
-          )
-          yield* validateAnswers(criterionId, group.length, answers)
-          group.forEach((selection, index) => matches.set(selection, answers[index]!))
-        }
-      }
-      return selections.map((selection) => matches.get(selection)!)
-    })
+export interface Uses {
+  readonly calls: ReadonlyArray<Selection<CallExpression>>
+  readonly escapes: boolean
+}
 
-const startOf = (node: Node): number => node.getStart(node.getSourceFile())
+export const usesOf = (selection: Selection<Node>): Effect.Effect<Uses, ProjectSnapshotError> =>
+  Effect.map(collect(referencesTo(selection)), (references) => {
+    const calls: Array<Selection<CallExpression>> = []
+    let escapes = false
+    for (const { project, value } of references) {
+      if (
+        value === selection.value ||
+        isImportSpecifier(value.parent) ||
+        (isImportClause(value.parent) && value.parent.name === value)
+      ) {
+        continue
+      }
+      const callee = isPropertyAccessExpression(value.parent) && value.parent.name === value ?
+        value.parent :
+        value
+      const call = isCallExpression(callee.parent) && callee.parent.expression === callee ?
+        selectionOf(project, callee.parent) :
+        Option.none()
+      if (Option.isSome(call)) calls.push(call.value)
+      else escapes = true
+    }
+    return { calls, escapes }
+  })
+
+export interface NamedFunction {
+  readonly node: FunctionDeclaration | ArrowFunction | FunctionExpression
+  readonly name: Identifier
+}
+
+const namedFunctionOf = (node: Node): NamedFunction | undefined => {
+  if (isFunctionDeclaration(node)) {
+    return node.name === undefined ? undefined : { node, name: node.name }
+  }
+  if (
+    (isArrowFunction(node) || isFunctionExpression(node)) &&
+    isVariableDeclaration(node.parent) &&
+    isIdentifier(node.parent.name)
+  ) {
+    return { node, name: node.parent.name }
+  }
+  return undefined
+}
+
+export const namedFunctions = (scope: Scope): Query<NamedFunction, ProjectSnapshotError> =>
+  nodes(scope, (node): node is Node => namedFunctionOf(node) !== undefined).pipe(
+    Stream.map((selection) => {
+      const value = namedFunctionOf(selection.value)!
+      return {
+        ...selection,
+        value,
+        start: value.name.getStart(value.name.getSourceFile()),
+        end: value.name.getEnd(),
+      }
+    }),
+  )
+
+export interface TypedNode<A extends Node> {
+  readonly node: A
+  readonly type: NativeType
+}
+
+export const typed = <A extends Node, E, R>(
+  self: Query<A, E, R>,
+): Query<TypedNode<A>, E | ProjectSnapshotError, R> =>
+  self.pipe(
+    Stream.mapEffect(
+      (selection) =>
+        Effect.map(selection.project.typeOf(selection.value), (type) =>
+          type === undefined ?
+            Option.none() :
+            Option.some({ ...selection, value: { node: selection.value, type } })),
+      { concurrency: "unbounded" },
+    ),
+    Stream.filter(Option.isSome),
+    Stream.map((kept) => kept.value),
+  )
+
+type CaptureTypes<C> = {
+  readonly [K in keyof C as C[K] extends Node ? K : never]: NativeType | undefined
+}
+
+export type WithTypes<M> = M extends { readonly captures: infer C } ?
+  M & { readonly types: CaptureTypes<C> } :
+  never
+
+export const typedCaptures = <M extends { readonly captures: object }, E, R>(
+  self: Query<M, E, R>,
+): Query<WithTypes<M>, E | ProjectSnapshotError, R> =>
+  Stream.mapEffect(
+    self,
+    (selection) =>
+      Effect.map(
+        Effect.forEach(
+          Object.entries(selection.value.captures).filter(([, captured]) =>
+            Pattern.isNode(captured)
+          ),
+          ([name, captured]) =>
+            Effect.map(selection.project.typeOf(captured), (type) => [name, type] as const),
+          { concurrency: "unbounded" },
+        ),
+        (types) =>
+          ({
+            ...selection,
+            value: { ...selection.value, types: Object.fromEntries(types) },
+          }) as Selection<WithTypes<M>>,
+      ),
+    { concurrency: "unbounded" },
+  )
 
 export const resolvesTo = <A extends Node>(
   symbol: NativeSymbol,
   options?: { readonly location?: (candidate: A) => Node },
-): Criterion<A, ProjectSnapshotError | CriterionOutputError> => {
-  const targets = new Map<ProjectSnapshot, NativeSymbol>()
-  return {
-    id: "resolves-to-symbol",
-    select: perFile("resolves-to-symbol", (project, fileName, values) =>
-      Effect.gen(function* () {
-        let target = targets.get(project)
-        if (target === undefined) {
-          target = yield* project.canonicalSymbol(symbol)
-          targets.set(project, target)
-        }
-        const located = values.map((value) => options?.location?.(value) ?? value)
-        const symbols = yield* project.symbolsAt(fileName, located.map(startOf))
-        const canonical = new Map<NativeSymbol, NativeSymbol>()
-        for (const candidate of new Set(symbols)) {
-          if (candidate !== undefined) {
-            canonical.set(candidate, yield* project.canonicalSymbol(candidate))
-          }
-        }
-        return symbols.map(
-          (candidate) => candidate !== undefined && canonical.get(candidate) === target,
-        )
-      }),
-    ),
-  }
-}
+) =>
+({ project, value }: Selection<A>): Effect.Effect<boolean, ProjectSnapshotError> =>
+  Effect.gen(function* () {
+    const candidate = yield* project.symbolOf(options?.location?.(value) ?? value)
+    if (candidate === undefined) return false
+    return (
+      (yield* project.canonicalSymbol(candidate)) === (yield* project.canonicalSymbol(symbol))
+    )
+  })
 
-export const typeAssignableTo = <A extends Node>(
-  target: NativeType | IntrinsicTypeName,
-): Criterion<A, ProjectSnapshotError | CriterionOutputError> => {
-  const label = Predicate.isString(target) ? target : "custom-type"
-  return {
-    id: `type-assignable-to:${label}`,
-    select: perFile(`type-assignable-to:${label}`, (project, fileName, values) =>
-      Effect.gen(function* () {
-        const expected = Predicate.isString(target) ? yield* project.intrinsicType(target) : target
-        const types = yield* project.typesAt(fileName, values.map(startOf))
-        return yield* Effect.forEach(types, (type) =>
-          Effect.gen(function* () {
-            if (type === undefined) return false
-            return yield* project.isTypeAssignableTo(type, expected)
-          }),
-        )
-      }),
-    ),
-  }
-}
+const sameNode = (left: Node, right: Node): boolean =>
+  left.pos === right.pos &&
+  left.end === right.end &&
+  left.kind === right.kind &&
+  left.getSourceFile().fileName === right.getSourceFile().fileName
+
+export const resolvesToSignature =
+  (declarations: ReadonlyArray<Node>) =>
+  ({ project, value }: Selection<CallExpression>): Effect.Effect<boolean, ProjectSnapshotError> =>
+    Effect.gen(function* () {
+      const signature = yield* project.resolvedSignature(value)
+      if (signature === undefined) return false
+      const resolved = yield* project.signatureDeclaration(signature)
+      return (
+        resolved !== undefined &&
+        declarations.some((declaration) => sameNode(declaration, resolved))
+      )
+    })
+
+export const typeAssignableTo =
+  <A extends Node>(target: NativeType | IntrinsicTypeName) =>
+  ({ project, value }: Selection<A>): Effect.Effect<boolean, ProjectSnapshotError> =>
+    Effect.gen(function* () {
+      const type = yield* project.typeOf(value)
+      if (type === undefined) return false
+      const expected = Predicate.isString(target) ? yield* project.intrinsicType(target) : target
+      return yield* project.isTypeAssignableTo(type, expected)
+    })

@@ -1,17 +1,12 @@
-import * as Fs from "node:fs/promises"
-import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { jsxButtonProps } from "../../examples/jsx-button-props.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { fixturePath as fixtureDirectory, withFixture } from "../utils/fixture.ts"
+import { fixturePath as fixtureDirectory, withFixture, read as readUtf8 } from "../utils/fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/jsx-button-props"
 const fixturePath = fixtureDirectory(fixture)
-const readUtf8 = (root: string, relative: string) =>
-  Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
-
 describe("jsx-button-props", () => {
   effect("migrates only safe props on the canonical component", () =>
     withFixture(
@@ -41,11 +36,13 @@ describe("jsx-button-props", () => {
           const diagnostic = yield* readUtf8(root, "src/features/preexisting-error.tsx")
           expect(diagnostic).toContain("<Button label={123} />")
 
-          for (const relative of [
-            "src/ui/button.tsx",
-            "src/ui/index.tsx",
-            "src/features/unrelated.tsx",
-          ]) {
+          for (
+            const relative of [
+              "src/ui/button.tsx",
+              "src/ui/index.tsx",
+              "src/features/unrelated.tsx",
+            ]
+          ) {
             const [actual, original] = yield* Effect.all([
               readUtf8(root, relative),
               readUtf8(fixturePath, relative),
@@ -58,6 +55,5 @@ describe("jsx-button-props", () => {
           expect(second.unsupported).toHaveLength(4)
         }),
       { fixture },
-    ),
-  )
+    ))
 })

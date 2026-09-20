@@ -2,21 +2,38 @@
   "name": "safemods",
   "version": "0.2.0",
   "description": "Type-directed codemods for TypeScript 7+ projects, built on Effect.",
-  "files": [
-    "dist"
-  ],
-  "type": "module",
   "sideEffects": false,
+  "type": "module",
   "exports": {
     "./Application": {
       "source": "./src/Application.ts",
       "types": "./dist/src/Application.d.ts",
       "default": "./dist/src/Application.js"
     },
+    "./Check": {
+      "source": "./src/Check.ts",
+      "types": "./dist/src/Check.d.ts",
+      "default": "./dist/src/Check.js"
+    },
+    "./Checks": {
+      "source": "./src/Checks/index.ts",
+      "types": "./dist/src/Checks/index.d.ts",
+      "default": "./dist/src/Checks/index.js"
+    },
     "./Draft": {
       "source": "./src/Draft.ts",
       "types": "./dist/src/Draft.d.ts",
       "default": "./dist/src/Draft.js"
+    },
+    "./ModuleSpecifier": {
+      "source": "./src/ModuleSpecifier.ts",
+      "types": "./dist/src/ModuleSpecifier.d.ts",
+      "default": "./dist/src/ModuleSpecifier.js"
+    },
+    "./Pattern": {
+      "source": "./src/Pattern.ts",
+      "types": "./dist/src/Pattern.d.ts",
+      "default": "./dist/src/Pattern.js"
     },
     "./Plan": {
       "source": "./src/Plan.ts",
@@ -43,6 +60,11 @@
       "types": "./dist/src/Recipe.d.ts",
       "default": "./dist/src/Recipe.js"
     },
+    "./Type": {
+      "source": "./src/Type.ts",
+      "types": "./dist/src/Type.d.ts",
+      "default": "./dist/src/Type.js"
+    },
     "./Verification": {
       "source": "./src/Verification/index.ts",
       "types": "./dist/src/Verification/index.d.ts",
@@ -54,37 +76,44 @@
       "default": "./dist/src/Workspace/index.js"
     }
   },
+  "bin": {
+    "safemods": "./dist/src/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "prepack": "pnpm build",
     "check": "pnpm fmt:check && pnpm typecheck && pnpm lint && pnpm test",
     "check:fast": "pnpm fmt:check && pnpm typecheck && pnpm lint",
-    "fmt": "oxfmt --disable-nested-config",
-    "fmt:check": "oxfmt --check --disable-nested-config",
+    "fmt": "dprint fmt",
+    "fmt:check": "dprint check",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint && knip",
+    "lint": "oxlint && knip && pnpm safemods check",
     "prepare": "effect-tsgo patch --no-typescript --oxlint",
     "test": "vitest run",
-    "example": "node --conditions=source examples/run.ts"
+    "example": "node --conditions=source examples/run.ts",
+    "safemods": "node --conditions=source src/bin.ts"
   },
   "dependencies": {
+    "@effect/platform-node": "4.0.0-rc.109",
     "effect": "4.0.0-rc.109",
     "typescript": "7.0.2"
   },
   "devDependencies": {
-    "@effect/platform-node": "4.0.0-rc.109",
     "@effect/tsgo": "^0.36.5",
     "@effect/vitest": "4.0.0-rc.109",
     "@types/node": "26.2.0",
+    "dprint": "^0.57.4",
     "is-kit": "1.14.1",
     "knip": "^6.34.0",
-    "oxfmt": "^0.63.0",
     "oxlint": "^1.78.0",
     "oxlint-tsgolint": "^7.0.2001",
     "vitest": "4.1.10"
   },
+  "packageManager": "pnpm@11.17.0",
   "engines": {
     "node": ">=24"
-  },
-  "packageManager": "pnpm@11.17.0"
+  }
 }

@@ -29,7 +29,7 @@ describe("enum-to-const-object", () => {
           expect(plan.edits).toHaveLength(1)
           expect(verified.diagnosticDiff.introduced).toHaveLength(0)
           const text = yield* Effect.tryPromise(() =>
-            Fs.readFile(Path.join(root, "src/status.ts"), "utf8"),
+            Fs.readFile(Path.join(root, "src/status.ts"), "utf8")
           )
           expect(text).toContain("export const Status = {")
           expect(text).toContain('Pending: "pending"')
@@ -39,8 +39,22 @@ describe("enum-to-const-object", () => {
           expect((yield* Recipe.run(enumToConstObject, input)).edits).toHaveLength(0)
         }),
       { fixture },
-    ),
-  )
+    ))
+
+  effect("ignores a same-named enum that is a different symbol", () =>
+    withFixture(
+      (root, app) =>
+        Effect.gen(function* () {
+          const { plan } = yield* executeRecipe(enumToConstObject, inputFor(app))
+          expect(plan.edits.map((edit) => edit.fileName)).toEqual(["src/status.ts"])
+          expect(
+            yield* Effect.tryPromise(() =>
+              Fs.readFile(Path.join(root, "src/other/status.ts"), "utf8")
+            ),
+          ).toBe('export enum Status {\n  On = "on",\n}\n')
+        }),
+      { fixture, files: { "src/other/status.ts": 'export enum Status {\n  On = "on",\n}\n' } },
+    ))
 
   effect("rejects numeric, computed, and merged enums", () =>
     withFixture(
@@ -50,7 +64,7 @@ describe("enum-to-const-object", () => {
             Fs.writeFile(
               Path.join(root, "src/unsupported.ts"),
               'enum Numeric { A = 1 }\nconst value = "x"\nenum Computed { A = value }\nenum Merged { A = "a" }\nenum Merged { B = "b" }\n',
-            ),
+            )
           )
           for (const enumName of ["Numeric", "Computed", "Merged"]) {
             const failure = yield* Recipe.run(enumToConstObject, {
@@ -61,14 +75,13 @@ describe("enum-to-const-object", () => {
             expect(failure).toMatchObject({
               _tag: "UnsupportedEnum",
               reasons: expect.arrayContaining([
-                enumName === "Merged"
-                  ? "merged enum declarations are unsupported"
-                  : "numeric and computed enum members are unsupported",
+                enumName === "Merged" ?
+                  "merged enum declarations are unsupported" :
+                  "numeric and computed enum members are unsupported",
               ]),
             })
           }
         }),
       { fixture },
-    ),
-  )
+    ))
 })

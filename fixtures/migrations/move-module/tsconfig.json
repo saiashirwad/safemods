@@ -6,5 +6,5 @@
     "moduleResolution": "NodeNext",
     "noEmit": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.mts"]
 }

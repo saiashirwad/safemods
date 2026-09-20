@@ -1,8 +1,8 @@
-import * as Path from "node:path"
-import { Context, Data, Effect, FileSystem, Layer, type PlatformError } from "effect"
+import { Context, Data, Effect, FileSystem, Layer, Path, type PlatformError } from "effect"
 import { API } from "typescript/unstable/async"
 import * as FileRef from "../FileRef.ts"
 import type * as ProjectId from "../ProjectId.ts"
+import * as ProjectRelativePath from "../ProjectRelativePath.ts"
 import { nativeRequest, WorkspaceCompilerError } from "./NativeRequest.ts"
 import * as Overlay from "./Overlay.ts"
 import * as ProjectSnapshot from "./ProjectSnapshot.ts"
@@ -60,16 +60,20 @@ export class Workspace extends Context.Service<
   }
 >()("safemods/Workspace/Workspace") {}
 
-const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Service"] => {
-  const root = Path.resolve(cwd)
+const make = (
+  definition: WorkspaceDefinition.Type,
+  cwd: string,
+  path: Path.Path,
+): Workspace["Service"] => {
+  const root = path.resolve(cwd)
   const configFiles = new Map(
-    definition.projects.map((project) => [project.id, Path.join(root, project.config)]),
+    definition.projects.map((project) => [project.id, path.join(root, project.config)]),
   )
   const projectRoot = (projectId: ProjectId.Type) => {
     const configFile = configFiles.get(projectId)
-    return configFile === undefined
-      ? Effect.fail(new ProjectNotInWorkspace({ projectId }))
-      : Effect.succeed(Path.dirname(configFile))
+    return configFile === undefined ?
+      Effect.fail(new ProjectNotInWorkspace({ projectId })) :
+      Effect.succeed(path.dirname(configFile))
   }
 
   return {
@@ -78,19 +82,18 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
     projectRoot,
     absolutePath: (file) =>
       Effect.map(projectRoot(file.projectId), (projectRoot) =>
-        file.fileName.startsWith("../")
-          ? Path.join(root, file.fileName.slice(3))
-          : Path.join(projectRoot, file.fileName),
-      ),
+        file.fileName.startsWith("../") ?
+          path.join(root, file.fileName.slice(3)) :
+          path.join(projectRoot, file.fileName)),
     withSnapshot: (program, overlay) =>
       Effect.gen(function* () {
         const api = yield* Effect.acquireRelease(
           Effect.try({
             try: () =>
               new API(
-                overlay === undefined
-                  ? { cwd: root }
-                  : { cwd: root, fs: Overlay.fileSystem(overlay) },
+                overlay === undefined ?
+                  { cwd: root } :
+                  { cwd: root, fs: Overlay.fileSystem(overlay, path) },
               ),
             catch: (cause) => new WorkspaceCompilerError({ operation: "createAPI", cause }),
           }),
@@ -98,44 +101,46 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
         )
         const native = yield* Effect.acquireRelease(
           nativeRequest("updateSnapshot", () =>
-            api.updateSnapshot({ openProjects: [...configFiles.values()] }),
-          ),
+            api.updateSnapshot({ openProjects: [...configFiles.values()] })),
           (snapshot) =>
-            nativeRequest("disposeSnapshot", () => snapshot.dispose()).pipe(Effect.ignore),
+            nativeRequest("disposeSnapshot", () =>
+              snapshot.dispose()).pipe(Effect.ignore),
         )
 
         let active = true
         const ensureActive = Effect.suspend(() =>
-          active ? Effect.void : Effect.fail(new ProjectSnapshot.SnapshotExpired()),
+          active ? Effect.void : Effect.fail(new ProjectSnapshot.SnapshotExpired())
         )
 
         const projects = new Map(
           definition.projects.flatMap((configured) => {
             const configFile = configFiles.get(configured.id)
-            const nativeProject =
-              configFile === undefined ? undefined : native.getProject(configFile)
-            return configFile === undefined || nativeProject === undefined
-              ? []
-              : [
-                  [
-                    configured.id,
-                    ProjectSnapshot.make({
-                      configured,
-                      native: nativeProject,
-                      workspaceRoot: root,
-                      projectRoot: Path.dirname(configFile),
-                      ensureActive,
-                    }),
-                  ] as const,
-                ]
+            const nativeProject = configFile === undefined ?
+              undefined :
+              native.getProject(configFile)
+            return configFile === undefined || nativeProject === undefined ?
+              [] :
+              [
+                [
+                  configured.id,
+                  ProjectSnapshot.make({
+                    configured,
+                    native: nativeProject,
+                    path,
+                    workspaceRoot: root,
+                    projectRoot: path.dirname(configFile),
+                    ensureActive,
+                  }),
+                ] as const,
+              ]
           }),
         )
         const ownership = new Map<string, Array<ProjectId.Type>>()
         for (const project of projects.values()) {
           const configFile = configFiles.get(project.project.id)!
           for (const file of yield* project.files) {
-            const absolute = Path.resolve(
-              file.fileName.startsWith("../") ? root : Path.dirname(configFile),
+            const absolute = path.resolve(
+              file.fileName.startsWith("../") ? root : path.dirname(configFile),
               file.fileName.startsWith("../") ? file.fileName.slice(3) : file.fileName,
             )
             const owners = ownership.get(absolute) ?? []
@@ -155,9 +160,9 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
           projects: [...projects.values()],
           project: (projectId) => {
             const project = projects.get(projectId)
-            return project === undefined
-              ? Effect.fail(new ProjectNotInSnapshot({ projectId }))
-              : Effect.succeed(project)
+            return project === undefined ?
+              Effect.fail(new ProjectNotInSnapshot({ projectId })) :
+              Effect.succeed(project)
           },
           capture: Effect.gen(function* () {
             const fs = yield* FileSystem.FileSystem
@@ -167,7 +172,10 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
               const configFile = configFiles.get(configured.id)!
               FileRef.set(
                 captured,
-                { projectId: configured.id, fileName: configured.config },
+                {
+                  projectId: configured.id,
+                  fileName: ProjectRelativePath.schema.make(path.basename(configFile)),
+                },
                 yield* fs.readFile(configFile),
               )
               for (const file of yield* project.files) {
@@ -175,9 +183,9 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
                   captured,
                   { projectId: configured.id, fileName: file.fileName },
                   yield* fs.readFile(
-                    file.fileName.startsWith("../")
-                      ? Path.join(root, file.fileName.slice(3))
-                      : Path.join(Path.dirname(configFile), file.fileName),
+                    file.fileName.startsWith("../") ?
+                      path.join(root, file.fileName.slice(3)) :
+                      path.join(path.dirname(configFile), file.fileName),
                   ),
                 )
               }
@@ -198,5 +206,13 @@ const make = (definition: WorkspaceDefinition.Type, cwd: string): Workspace["Ser
   }
 }
 
-export const layer = (definition: WorkspaceDefinition.Type, root: string): Layer.Layer<Workspace> =>
-  Layer.succeed(Workspace, make(definition, root))
+export const layer = (
+  definition: WorkspaceDefinition.Type,
+  root: string,
+): Layer.Layer<Workspace, never, Path.Path> =>
+  Layer.effect(
+    Workspace,
+    Effect.gen(function* () {
+      return make(definition, root, yield* Path.Path)
+    }),
+  )

@@ -1,16 +1,11 @@
-import * as Fs from "node:fs/promises"
-import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { overloadedMethod } from "../../examples/overloaded-method.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { fixturePath, withFixture } from "../utils/fixture.ts"
+import { fixturePath, withFixture, read } from "../utils/fixture.ts"
 import { executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/overloaded-method"
-const read = (root: string, file: string) =>
-  Effect.tryPromise(() => Fs.readFile(Path.join(root, file), "utf8"))
-
 describe("overloaded-method", () => {
   effect("migrates only the callback overload and reports spreads", () =>
     withFixture(
@@ -45,12 +40,14 @@ describe("overloaded-method", () => {
           expect(actual).toContain('client.lookup("already-promise")')
           expect(actual).toContain("client.lookup(...keys, done)")
           expect(actual).toContain('unrelated.lookup("unrelated", done)')
+          expect(yield* read(root, "src/lookalike.ts")).toBe(
+            yield* read(fixturePath(fixture), "src/lookalike.ts"),
+          )
 
           const second = yield* Recipe.run(overloadedMethod, input)
           expect(second.edits).toHaveLength(0)
           expect(second.unsupported).toHaveLength(1)
         }),
       { fixture },
-    ),
-  )
+    ))
 })

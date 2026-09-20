@@ -2,9 +2,10 @@
  * Move a module, rewriting every relative import and re-export that points at
  * it, plus the moved module's own relative specifiers.
  */
-import { dirname, normalize, relative } from "node:path/posix"
+import { dirname, normalize } from "node:path/posix"
 import { Effect } from "effect"
 import * as Draft from "safemods/Draft"
+import * as ModuleSpecifier from "safemods/ModuleSpecifier"
 import type * as ProjectRelativePath from "safemods/ProjectRelativePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
@@ -16,13 +17,37 @@ export interface MoveModuleInput {
   readonly to: ProjectRelativePath.Type
 }
 
-const resolve = (fromFile: string, specifier: string): string =>
+const isRelative = ({ value }: Query.Selection<Query.ResolvedModuleReference>): boolean =>
+  ModuleSpecifier.parse(value.specifier.text)._tag !== "Package"
+
+const pathNamedBy = (fromFile: string, specifier: string): string =>
   normalize(`${dirname(fromFile)}/${specifier}`)
 
-const specifierTo = (fromFile: string, target: string): string => {
-  const rel = relative(dirname(fromFile), target)
-  return rel.startsWith(".") ? rel : `./${rel}`
+const sameExtensionAs = (path: string, specifier: string): string => {
+  const target = ModuleSpecifier.parse(path)
+  const stem = target._tag === "Source" || target._tag === "Runtime" ? target.stem : path
+  const written = ModuleSpecifier.parse(specifier)
+  return written._tag === "Source" || written._tag === "Runtime" ?
+    `${stem}${written.extension}` :
+    stem
 }
+
+const rewrite =
+  (input: MoveModuleInput) =>
+  (selection: Query.Selection<Query.ResolvedModuleReference>): ReadonlyArray<Draft.Draft> => {
+    const { project, fileName, value } = selection
+    const specifier = value.specifier
+    const insideMoved = fileName === input.from
+    const pointsAtMoved = value.resolved?.fileName === input.from
+    if (!insideMoved && !pointsAtMoved) return []
+
+    const from = insideMoved ? input.to : fileName
+    const next = pointsAtMoved ?
+      sameExtensionAs(ModuleSpecifier.between(from, input.to), specifier.text) :
+      ModuleSpecifier.between(from, pathNamedBy(fileName, specifier.text))
+    if (next === specifier.text) return []
+    return [Draft.replaceStringLiteral(project, specifier, next)]
+  }
 
 export const moveModule = Recipe.define("move-module", {
   version: "1.0.0",
@@ -34,39 +59,11 @@ export const moveModule = Recipe.define("move-module", {
       const moved = yield* project.file(input.from)
       if (moved === undefined) return Draft.empty
 
-      const pointsAtMoved = (fileName: string, specifier: string): boolean =>
-        resolve(fileName, specifier).replace(/\.js$/, ".ts") === input.from
-
-      const specifierAfterMove = (fileName: string, specifier: string): string =>
-        specifierTo(
-          fileName === input.from ? input.to : fileName,
-          pointsAtMoved(fileName, specifier)
-            ? input.to.replace(/\.ts$/, ".js")
-            : resolve(fileName, specifier),
-        )
-
-      const references = yield* Query.moduleReferences(project).pipe(
-        Query.filter(({ value, fileName }) => {
-          const specifier = value.specifier.text
-          return (
-            specifier.startsWith(".") &&
-            (fileName === input.from || pointsAtMoved(fileName, specifier)) &&
-            specifierAfterMove(fileName, specifier) !== specifier
-          )
-        }),
+      const references = yield* Query.resolvedModuleReferences(project).pipe(
+        Query.filter(isRelative),
         Query.collect,
       )
 
-      return Draft.concat(
-        Draft.moveFile(moved, input.to),
-        Draft.concat(
-          ...references.map(({ project, value, fileName }) => {
-            const specifier = value.specifier
-            const quote = specifier.getText().startsWith("'") ? "'" : '"'
-            const next = specifierAfterMove(fileName, specifier.text)
-            return Draft.replace(project, specifier, `${quote}${next}${quote}`)
-          }),
-        ),
-      )
+      return Draft.concat(Draft.moveFile(moved, input.to), ...references.flatMap(rewrite(input)))
     }),
 })

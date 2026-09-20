@@ -1,5 +1,6 @@
-import { Effect } from "effect"
+import { Effect, FileSystem } from "effect"
 import { DiagnosticCategory, type Diagnostic } from "typescript/unstable/async"
+import * as Position from "../Position.ts"
 import { nativeRequest } from "../Workspace/NativeRequest.ts"
 import { WorkspaceSnapshot } from "../Workspace/index.ts"
 
@@ -10,6 +11,8 @@ export interface DiagnosticRecord {
   readonly fileName: string | undefined
   readonly start: number
   readonly length: number
+  readonly line: number
+  readonly column: number
 }
 
 export interface DiagnosticDiff {
@@ -25,13 +28,14 @@ const categories = {
   [DiagnosticCategory.Suggestion]: "suggestion",
 } as const
 
-const record = (diagnostic: Diagnostic): DiagnosticRecord => ({
+const record = (diagnostic: Diagnostic, text: string): DiagnosticRecord => ({
   code: diagnostic.code,
   message: diagnostic.text,
   category: categories[diagnostic.category],
   fileName: diagnostic.fileName,
   start: diagnostic.pos,
   length: diagnostic.end - diagnostic.pos,
+  ...Position.at(text, diagnostic.pos),
 })
 
 const diagnosticKinds = [
@@ -45,16 +49,37 @@ const diagnosticKinds = [
 
 export const collectDiagnostics = Effect.gen(function* () {
   const snapshot = yield* WorkspaceSnapshot
+  const fs = yield* FileSystem.FileSystem
   const diagnostics: Array<DiagnosticRecord> = []
   for (const project of snapshot.projects) {
+    const texts = new Map(
+      (yield* project.files).map(({ sourceFile }) => [sourceFile.fileName, sourceFile.text]),
+    )
     for (const kind of diagnosticKinds) {
       const found = yield* project.unsafeNative(({ program }) =>
-        nativeRequest(kind, () => program[kind]()),
+        nativeRequest(kind, () => program[kind]())
       )
-      diagnostics.push(...found.map(record))
+      for (const diagnostic of found) {
+        const fileName = diagnostic.fileName ?? ""
+        const text = texts.get(fileName) ??
+          (yield* fs.readFileString(fileName).pipe(Effect.orElseSucceed(() => "")))
+        diagnostics.push(record(diagnostic, text))
+      }
     }
   }
-  return diagnostics
+  return [
+    ...new Map(
+      diagnostics.map((diagnostic) => [
+        JSON.stringify([
+          diagnostic.fileName,
+          diagnostic.start,
+          diagnostic.code,
+          diagnostic.message,
+        ]),
+        diagnostic,
+      ]),
+    ).values(),
+  ]
 })
 
 const identity = ({ category, code, fileName }: DiagnosticRecord): string =>
@@ -68,10 +93,9 @@ export const diffDiagnostics = (
   const remaining = Map.groupBy(
     baseline.map((diagnostic) => ({
       ...diagnostic,
-      fileName:
-        diagnostic.fileName === undefined
-          ? undefined
-          : (moves.get(diagnostic.fileName) ?? diagnostic.fileName),
+      fileName: diagnostic.fileName === undefined ?
+        undefined :
+        (moves.get(diagnostic.fileName) ?? diagnostic.fileName),
     })),
     identity,
   )

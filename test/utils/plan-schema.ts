@@ -86,7 +86,7 @@ const withOperation = (
 ): PlanInput => ({
   ...input,
   fileOperations: input.fileOperations.map((operation, current) =>
-    current === index ? patch(operation) : operation,
+    current === index ? patch(operation) : operation
   ),
 })
 
@@ -166,15 +166,21 @@ export const semanticMutations: ReadonlyArray<{
   {
     name: "move to an existing source",
     mutate: (value) =>
-      withOperation(value, 2, (operation) =>
-        operation.kind === "move" ? { ...operation, toFileName: "src/index.ts" } : operation,
+      withOperation(
+        value,
+        2,
+        (operation) =>
+          operation.kind === "move" ? { ...operation, toFileName: "src/index.ts" } : operation,
       ),
   },
   {
     name: "move to the same path",
     mutate: (value) =>
-      withOperation(value, 2, (operation) =>
-        operation.kind === "move" ? { ...operation, toFileName: operation.fileName } : operation,
+      withOperation(
+        value,
+        2,
+        (operation) =>
+          operation.kind === "move" ? { ...operation, toFileName: operation.fileName } : operation,
       ),
   },
   {
@@ -209,8 +215,13 @@ export const semanticMutations: ReadonlyArray<{
   {
     name: "unsafe move target path",
     mutate: (value) =>
-      withOperation(value, 2, (operation) =>
-        operation.kind === "move" ? { ...operation, toFileName: uncheckedPath("../x") } : operation,
+      withOperation(
+        value,
+        2,
+        (operation) =>
+          operation.kind === "move" ?
+            { ...operation, toFileName: uncheckedPath("../x") } :
+            operation,
       ),
   },
   {

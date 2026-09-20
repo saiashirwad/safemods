@@ -1,4 +1,4 @@
-import type { Node } from "typescript/unstable/ast"
+import type { Node, StringLiteral } from "typescript/unstable/ast"
 import { textEdit, type TextEdit } from "./Edit.ts"
 import type { FileOperation, UnsupportedFinding } from "./Plan.ts"
 import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
@@ -63,46 +63,40 @@ export const unsupported = <A>(selection: Selection<A>, reason: string): Draft =
 export const replace = (project: ProjectSnapshot, node: Node, newText: string): Draft =>
   oneEdit(editBetween(project, node, "node", newText))
 
-export const replaceSelection = <A>(selection: Selection<A>, newText: string): Draft => {
-  const sourceFile =
-    "getSourceFile" in (selection.value as object)
-      ? (selection.value as Node).getSourceFile()
-      : undefined
-  if (sourceFile === undefined) throw new Error("Selection value is not a syntax node")
-  return oneEdit(
+export const replaceStringLiteral = (
+  project: ProjectSnapshot,
+  literal: StringLiteral,
+  text: string,
+): Draft => {
+  const quote = literal.getText().startsWith("'") ? "'" : '"'
+  return replace(project, literal, `${quote}${text}${quote}`)
+}
+
+export const replaceSelection = <A extends Node>(selection: Selection<A>, newText: string): Draft =>
+  oneEdit(
     textEdit({
       projectId: selection.project.project.id,
       fileName: selection.fileName,
-      sourceText: sourceFile.text,
+      sourceText: selection.value.getSourceFile().text,
       start: selection.start,
       end: selection.end,
       newText,
     }),
   )
-}
 
-export const replaceRange = <A>(
+export const replaceRange = <A extends Node>(
   selection: Selection<A>,
   range: { readonly start: number; readonly end: number },
   newText: string,
 ): Draft => {
-  const sourceFile =
-    "getSourceFile" in (selection.value as object)
-      ? (selection.value as Node).getSourceFile()
-      : undefined
-  if (
-    sourceFile === undefined ||
-    range.start < 0 ||
-    range.end < range.start ||
-    selection.start + range.end > selection.end
-  ) {
+  if (range.start < 0 || range.end < range.start || selection.start + range.end > selection.end) {
     throw new Error("Range is outside selection")
   }
   return oneEdit(
     textEdit({
       projectId: selection.project.project.id,
       fileName: selection.fileName,
-      sourceText: sourceFile.text,
+      sourceText: selection.value.getSourceFile().text,
       start: selection.start + range.start,
       end: selection.start + range.end,
       newText,

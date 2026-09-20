@@ -4,18 +4,24 @@
  */
 import { Effect } from "effect"
 import { and, refineDefinedKey, refineKey } from "is-kit"
-import { SyntaxKind } from "typescript/unstable/ast"
+import {
+  type ExportSpecifier,
+  type FunctionDeclaration,
+  type NamedImportBindings,
+  SyntaxKind,
+} from "typescript/unstable/ast"
 import {
   isExportDeclaration,
+  isExportSpecifier,
   isFunctionDeclaration,
   isIdentifier,
   isImportClause,
   isImportDeclaration,
   isNamedExports,
   isNamedImports,
-  isStringLiteral,
 } from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
+import * as P from "safemods/Pattern"
 import type * as ProjectRelativePath from "safemods/ProjectRelativePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
@@ -28,21 +34,16 @@ export interface DefaultToNamedInput {
   readonly exportName: string
 }
 
-const pointsAtDeclaration = (specifier: string, declarationFile: string): boolean => {
-  const modulePath = declarationFile.replace(/\.ts$/, ".js")
-  const baseName = modulePath.slice(modulePath.lastIndexOf("/") + 1)
-  return (
-    specifier === `./${baseName}` || specifier === modulePath || specifier.endsWith(`/${baseName}`)
-  )
-}
+const named = (text: string) => P.node(isIdentifier, { text })
 
-const namedBinding = (localName: string, exportName: string): string =>
-  localName === exportName ? exportName : `${exportName} as ${localName}`
+const reexportedNames = P.node(isExportDeclaration, {
+  exportClause: P.node(isNamedExports, { elements: P.capture("elements") }),
+})
 
-const rewriteDefaultReexport = (source: string, exportName: string): string => {
-  const aliased = source.replace(`default as ${exportName}`, exportName)
-  return aliased === source ? source.replace("{ default }", `{ ${exportName} }`) : aliased
-}
+const defaultSpecifier = P.tagged({
+  aliased: P.node(isExportSpecifier, { propertyName: named("default"), name: P.capture("local") }),
+  bare: P.node(isExportSpecifier, { propertyName: undefined, name: named("default") }),
+})
 
 const isDefaultImport = and(
   isImportDeclaration,
@@ -50,6 +51,29 @@ const isDefaultImport = and(
 )
 
 const hasDefaultImport = refineKey("value", isDefaultImport)
+
+const exportsDefault = (declaration: FunctionDeclaration): boolean =>
+  declaration.modifiers?.some((modifier) => modifier.kind === SyntaxKind.DefaultKeyword) === true
+
+const namedBinding = (localName: string, exportName: string): string =>
+  localName === exportName ? exportName : `${exportName} as ${localName}`
+
+const importClauseText = (binding: string, existing: NamedImportBindings | undefined): string => {
+  if (existing === undefined || !isNamedImports(existing)) return `{ ${binding} }`
+  const kept = existing
+    .getText()
+    .replace(/^\{\s*/, "")
+    .replace(/\s*\}$/, "")
+  return `{ ${binding}, ${kept} }`
+}
+
+const rebinding = (element: ExportSpecifier, exportName: string): string | undefined => {
+  const matched = defaultSpecifier(element)
+  if (matched === undefined) return undefined
+  return matched._tag === "bare" ?
+    exportName :
+    namedBinding(matched.captures.local.getText(), exportName)
+}
 
 export const defaultToNamed = Recipe.define("default-to-named", {
   version: "1.0.0",
@@ -64,12 +88,7 @@ export const defaultToNamed = Recipe.define("default-to-named", {
 
       const defaultFunctions = yield* Query.nodes(project, isFunctionDeclaration).pipe(
         Query.within(input.declarationFile),
-        Query.filter(
-          ({ value }) =>
-            value.name?.text === input.exportName &&
-            (value.modifiers?.some((modifier) => modifier.kind === SyntaxKind.DefaultKeyword) ??
-              false),
-        ),
+        Query.filter(({ value }) => value.name?.text === input.exportName && exportsDefault(value)),
         Query.collect,
       )
 
@@ -83,49 +102,34 @@ export const defaultToNamed = Recipe.define("default-to-named", {
         Query.collect,
       )
 
-      const defaultReexports = yield* Query.nodes(project, isExportDeclaration).pipe(
-        Query.filter(({ value }) => {
-          if (
-            value.moduleSpecifier === undefined ||
-            !isStringLiteral(value.moduleSpecifier) ||
-            !pointsAtDeclaration(value.moduleSpecifier.text, input.declarationFile)
-          ) {
-            return false
-          }
-          const clause = value.exportClause
-          return (
-            clause !== undefined &&
-            isNamedExports(clause) &&
-            clause.elements.some(
-              (element) => (element.propertyName ?? element.name).getText() === "default",
-            )
-          )
-        }),
+      const reexports = yield* Query.resolvedModuleReferences(project).pipe(
+        Query.filter(
+          ({ value }) =>
+            value.kind === "export" && value.resolved?.fileName === input.declarationFile,
+        ),
         Query.collect,
       )
 
+      const importEdits = defaultImports.map(({ project, value }) => {
+        const clause = value.importClause
+        const binding = namedBinding(clause.name.text, input.exportName)
+        return Draft.replace(project, clause, importClauseText(binding, clause.namedBindings))
+      })
+
+      const reexportEdits = reexports.flatMap(({ project, value }) => {
+        const clause = reexportedNames.match(value.node)
+        if (clause === undefined) return []
+        return clause.elements.flatMap((element) => {
+          const binding = rebinding(element, input.exportName)
+          return binding === undefined ? [] : [Draft.replace(project, element, binding)]
+        })
+      })
+
       return Draft.concat(
         Draft.replaceEach(defaultFunctions, ({ value }) =>
-          value.getText().replace(/^export\s+default\s+/, "export "),
-        ),
-        Draft.concat(
-          ...defaultImports.map(({ project, value }) => {
-            const clause = value.importClause
-            const binding = namedBinding(clause.name.text, input.exportName)
-            const namedBindings = clause.namedBindings
-            if (namedBindings !== undefined && isNamedImports(namedBindings)) {
-              const inner = namedBindings
-                .getText()
-                .replace(/^\{\s*/, "")
-                .replace(/\s*\}$/, "")
-              return Draft.replace(project, clause, `{ ${binding}, ${inner} }`)
-            }
-            return Draft.replace(project, clause, `{ ${binding} }`)
-          }),
-        ),
-        Draft.replaceEach(defaultReexports, ({ value }) =>
-          rewriteDefaultReexport(value.getText(), input.exportName),
-        ),
+          value.getText().replace(/^export\s+default\s+/, "export ")),
+        ...importEdits,
+        ...reexportEdits,
       )
     }),
 })
