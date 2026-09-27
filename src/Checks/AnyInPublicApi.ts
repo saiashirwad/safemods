@@ -2,13 +2,12 @@ import { Effect, Option } from "effect"
 import { SymbolFlags } from "typescript/unstable/async"
 import * as Check from "../Check.ts"
 import * as Type from "../Type.ts"
-import { publicSymbols } from "./Exported.ts"
 import * as Query from "../Query.ts"
 
 export const anyInPublicApi = (options: { readonly publicApi: ReadonlyArray<string> }) =>
   Check.perProject("any-in-public-api", (project) =>
     Effect.gen(function* () {
-      const published = yield* publicSymbols(project, options.publicApi)
+      const published = yield* Query.publicSymbols(project, options.publicApi)
       return yield* Check.each(
         [...published].filter((symbol) => (symbol.flags & SymbolFlags.Module) === 0),
         (symbol) =>

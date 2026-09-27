@@ -1,8 +1,7 @@
-import { matchesGlob } from "node:path"
 import { Effect, Option } from "effect"
 import type { Node } from "typescript/unstable/ast"
 import * as Check from "../Check.ts"
-import { declarationIn, filesWithin, nameOf, publicSymbols } from "./Exported.ts"
+import * as Query from "../Query.ts"
 
 export const unusedCode = (options: {
   readonly within: string
@@ -11,22 +10,24 @@ export const unusedCode = (options: {
 }) =>
   Check.perProject("unused-code", (project) =>
     Effect.gen(function* () {
-      const isPublic = yield* publicSymbols(project, options.publicApi)
+      const isPublic = yield* Query.publicSymbols(project, options.publicApi)
       const isTest = (node: Node): boolean =>
         Option.exists(
           project.fileNameOf(node.getSourceFile()),
-          (fileName) => matchesGlob(fileName, options.tests),
+          (fileName) => Query.isWithin(fileName, options.tests),
         )
       return yield* Check.each(
-        yield* filesWithin(project, [options.within]),
+        yield* Query.files(project, [options.within]),
         (file) =>
           Effect.flatMap(project.exportsOf(file), (exported) =>
             Check.each(
               exported.filter(({ symbol }) => !isPublic.has(symbol)),
               ({ name, symbol }) =>
                 Effect.gen(function* () {
-                  const declaration = yield* declarationIn(project, symbol, file)
-                  const named = declaration === undefined ? undefined : nameOf(declaration.value)
+                  const declaration = yield* Query.declarationIn(project, symbol, file)
+                  const named = declaration === undefined ?
+                    undefined :
+                    Query.nameOf(declaration.value)
                   if (declaration === undefined || named === undefined) return []
                   const uses = (yield* project.referencesTo(named)).filter((use) => use !== named)
                   if (uses.length === 0) {

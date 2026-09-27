@@ -1,9 +1,7 @@
-import { matchesGlob } from "node:path"
 import { Effect } from "effect"
 import * as Check from "../Check.ts"
 import type * as WorkspacePath from "../WorkspacePath.ts"
 import * as Query from "../Query.ts"
-import { nameOf } from "./Exported.ts"
 
 export const restrictedReferences = (options: {
   readonly name: string
@@ -14,7 +12,9 @@ export const restrictedReferences = (options: {
     Effect.gen(function* () {
       const declarations = yield* Query.identifiers(project).pipe(
         Query.within(options.declaredIn),
-        Query.filter(({ value }) => value.text === options.name && nameOf(value.parent) === value),
+        Query.filter(({ value }) =>
+          value.text === options.name && Query.nameOf(value.parent) === value
+        ),
         Query.collect,
       )
       const references = yield* Effect.forEach(declarations, (declaration) =>
@@ -25,7 +25,7 @@ export const restrictedReferences = (options: {
           .filter(
             ({ fileName }) =>
               !options.allowedWithin.some((pattern) =>
-                matchesGlob(fileName, pattern)
+                Query.isWithin(fileName, pattern)
               ),
           )
           .map((reference) => [`${reference.fileName}:${reference.start}`, reference]),

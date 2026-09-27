@@ -1,7 +1,7 @@
-import { matchesGlob } from "node:path"
 import { Effect, Option } from "effect"
 import type { Type as NativeType } from "typescript/unstable/async"
 import * as Check from "../Check.ts"
+import * as Query from "../Query.ts"
 import * as Type from "../Type.ts"
 import type {
   DeclarationSite,
@@ -9,7 +9,6 @@ import type {
   ProjectSnapshot,
   ProjectSnapshotError,
 } from "../Workspace/index.ts"
-import { declarationIn, filesWithin } from "./Exported.ts"
 
 interface Forbidden {
   readonly files?: ReadonlyArray<string> | undefined
@@ -19,7 +18,7 @@ interface Forbidden {
 const placeOf = (forbidden: Forbidden, site: DeclarationSite): string | undefined => {
   const fileName = site.fileName
   if (fileName !== undefined) {
-    return forbidden.files?.some((pattern) => matchesGlob(fileName, pattern)) === true ?
+    return forbidden.files?.some((pattern) => Query.isWithin(fileName, pattern)) === true ?
       fileName :
       undefined
   }
@@ -67,7 +66,7 @@ const reportsIn = (project: ProjectSnapshot, file: ProjectFile, place: Place) =>
       exported,
       ({ name, symbol }) =>
         Effect.gen(function* () {
-          const at = yield* declarationIn(project, symbol, file)
+          const at = yield* Query.declarationIn(project, symbol, file)
           const type = yield* Type.ofSymbol(project, symbol)
           if (type === undefined) return []
           const leaked = yield* Type.mentions(
@@ -92,6 +91,6 @@ export const typeBoundaries = (options: {
 }) =>
   Check.perProject("type-boundaries", (project) => {
     const place = memoized(project, options.forbidden)
-    return Effect.flatMap(filesWithin(project, [options.within]), (files) =>
+    return Effect.flatMap(Query.files(project, [options.within]), (files) =>
       Check.each(files, (file) => reportsIn(project, file, place), 8))
   })

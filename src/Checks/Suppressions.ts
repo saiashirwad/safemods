@@ -9,7 +9,6 @@ import {
 import { createScanner } from "typescript/unstable/ast/scanner"
 import * as Check from "../Check.ts"
 import * as Query from "../Query.ts"
-import { filesWithin } from "./Exported.ts"
 
 const directive = /@ts-ignore|@ts-expect-error|@ts-nocheck|(?:eslint|oxlint)-disable/g
 
@@ -46,7 +45,7 @@ const directivesIn = (sourceFile: SourceFile) => {
 export const suppressions = (options: { readonly within: string }) =>
   Check.perProject("suppressions", (project) =>
     Effect.gen(function* () {
-      const files = yield* filesWithin(project, [options.within])
+      const files = yield* Query.files(project, [options.within])
       const asserted = yield* Query.nodes(project, isNonNullExpression).pipe(
         Query.within(options.within),
         Query.collect,

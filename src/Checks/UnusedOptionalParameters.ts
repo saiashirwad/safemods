@@ -2,7 +2,6 @@ import { Effect } from "effect"
 import { isSpreadElement } from "typescript/unstable/ast/is"
 import * as Check from "../Check.ts"
 import * as Query from "../Query.ts"
-import { publicSymbols } from "./Exported.ts"
 
 export const unusedOptionalParameters = (options: {
   readonly within: string
@@ -10,7 +9,7 @@ export const unusedOptionalParameters = (options: {
 }) =>
   Check.perProject("unused-optional-parameters", (project) =>
     Effect.gen(function* () {
-      const isPublic = yield* publicSymbols(project, options.publicApi)
+      const isPublic = yield* Query.publicSymbols(project, options.publicApi)
       const functions = yield* Query.namedFunctions(project).pipe(
         Query.within(options.within),
         Query.collect,

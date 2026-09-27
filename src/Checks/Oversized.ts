@@ -1,7 +1,6 @@
 import { Effect } from "effect"
 import * as Check from "../Check.ts"
 import * as Query from "../Query.ts"
-import { filesWithin } from "./Exported.ts"
 
 const linesOf = (text: string): number => text.split("\n").length
 
@@ -13,7 +12,7 @@ export const oversized = (options: {
 }) =>
   Check.perProject("oversized", (project) =>
     Effect.gen(function* () {
-      const files = yield* filesWithin(project, [options.within])
+      const files = yield* Query.files(project, [options.within])
       const functions = yield* Query.namedFunctions(project).pipe(
         Query.within(options.within),
         Query.collect,

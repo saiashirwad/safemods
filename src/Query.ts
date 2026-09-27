@@ -38,7 +38,11 @@ import {
   isShorthandPropertyAssignment,
   isTypeNode,
 } from "typescript/unstable/ast/is"
-import type { Symbol as NativeSymbol, Type as NativeType } from "typescript/unstable/async"
+import {
+  type Symbol as NativeSymbol,
+  SymbolFlags,
+  type Type as NativeType,
+} from "typescript/unstable/async"
 import * as Pattern from "./Pattern.ts"
 import type * as WorkspacePath from "./WorkspacePath.ts"
 import type {
@@ -307,11 +311,59 @@ export const filter: {
   ): <E, R>(self: Query<A, E, R>) => Query<A, E, R>
 } = Stream.filter
 
+export const isWithin = (fileName: string, pattern: string): boolean =>
+  matchesGlob(fileName, pattern.replaceAll("\\", "/"))
+
 export const within = (pattern: string) => <A, E, R>(self: Query<A, E, R>): Query<A, E, R> =>
-  Stream.filter(self, ({ fileName }) =>
-    pattern.includes("*") ?
-      matchesGlob(fileName, pattern.replaceAll("\\", "/")) :
-      fileName === pattern)
+  Stream.filter(self, ({ fileName }) => isWithin(fileName, pattern))
+
+export const files = (
+  project: ProjectSnapshot,
+  patterns: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError> =>
+  Effect.map(
+    project.files,
+    (all) => all.filter((file) => patterns.some((pattern) => isWithin(file.fileName, pattern))),
+  )
+
+export const nameOf = (declaration: Node): Node | undefined =>
+  "name" in declaration && Pattern.isNode(declaration.name) ? declaration.name : undefined
+
+export const declarationIn = (
+  project: ProjectSnapshot,
+  symbol: NativeSymbol,
+  file: ProjectFile,
+): Effect.Effect<Selection<Node> | undefined, ProjectSnapshotError> =>
+  Effect.map(project.declarationsOf(symbol), (declarations) =>
+    declarations
+      .flatMap((declaration) => Option.toArray(selectionOf(project, declaration)))
+      .find((selection) => selection.fileName === file.fileName))
+
+export const publicSymbols = (
+  project: ProjectSnapshot,
+  patterns: ReadonlyArray<string>,
+): Effect.Effect<ReadonlySet<NativeSymbol>, ProjectSnapshotError> =>
+  Effect.gen(function* () {
+    const published = new Set<NativeSymbol>()
+    const exportsOf = (modules: ReadonlyArray<ProjectFile | NativeSymbol>) =>
+      Effect.map(
+        Effect.forEach(modules, (module) => project.exportsOf(module), {
+          concurrency: "unbounded",
+        }),
+        (exported) => exported.flat(),
+      )
+    let exported = yield* exportsOf(yield* files(project, patterns))
+    while (exported.length > 0) {
+      const namespaces: Array<NativeSymbol> = []
+      for (const { symbol } of exported) {
+        if (published.has(symbol)) continue
+        published.add(symbol)
+        if ((symbol.flags & SymbolFlags.Module) !== 0) namespaces.push(symbol)
+      }
+      exported = yield* exportsOf(namespaces)
+    }
+    return published
+  })
 
 export const where =
   <A, E2, R2>(test: (selection: Selection<A>) => Effect.Effect<boolean, E2, R2>) =>
