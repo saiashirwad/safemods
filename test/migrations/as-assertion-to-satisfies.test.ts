@@ -16,7 +16,7 @@ describe("as-assertion-to-satisfies", () => {
             const { plan, verified } = yield* executeRecipe(asAssertionToSatisfies, undefined)
 
             expect(plan.edits).toHaveLength(2)
-            expect(plan.unsupported.map(({ reason }) => reason).sort()).toEqual([
+            expect(plan.unsupported.map(({ message }) => message).sort()).toEqual([
               "chained assertion requires manual review",
               "const assertion is not a type conformance check",
               "parenthesized assertion requires manual review",

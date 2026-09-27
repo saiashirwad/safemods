@@ -12,7 +12,7 @@ import {
 } from "safemods/Checks"
 
 const publicApi = [
-  "src/{Application,Check,Draft,Inspect,ModuleSpecifier,Pattern,Plan,ProjectId,WorkspacePath,Query,Recipe,Type,bin}.ts",
+  "src/{Application,Check,Draft,Finding,Inspect,ModuleSpecifier,Pattern,Plan,ProjectId,WorkspacePath,Query,Recipe,Type,bin}.ts",
   "src/{Checks,Verification,Workspace}/index.ts",
 ]
 
@@ -27,6 +27,7 @@ export default {
           "src/ProjectId.ts",
           "src/WorkspacePath.ts",
           "src/Position.ts",
+          "src/Finding.ts",
           "src/ModuleSpecifier.ts",
         ],
         ["src/Edit.ts"],

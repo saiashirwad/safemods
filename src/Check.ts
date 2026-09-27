@@ -1,30 +1,26 @@
-import { Data, Effect, Order, Schema } from "effect"
-import * as Position from "./Position.ts"
-import type * as WorkspacePath from "./WorkspacePath.ts"
+import { Data, Effect, Order } from "effect"
+import * as Finding from "./Finding.ts"
 import type { Selection } from "./Query.ts"
+import type * as WorkspacePath from "./WorkspacePath.ts"
 import { type ProjectSnapshot, Workspace, WorkspaceSnapshot } from "./Workspace/index.ts"
 
-export interface Report {
-  readonly fileName: WorkspacePath.Type
-  readonly start: number
-  readonly message: string
-}
-
-export const report = <A>(selection: Selection<A>, message: string): Report => ({
+export const report = <A>(selection: Selection<A>, message: string): Finding.Finding => ({
   fileName: selection.fileName,
   start: selection.start,
+  end: selection.end,
   message,
 })
 
-export const reportAt = (fileName: WorkspacePath.Type, message: string): Report => ({
+export const reportAt = (fileName: WorkspacePath.Type, message: string): Finding.Finding => ({
   fileName,
   start: 0,
+  end: 0,
   message,
 })
 
 export interface Check<E = never, R = WorkspaceSnapshot> {
   readonly name: string
-  readonly run: Effect.Effect<ReadonlyArray<Report>, E, R>
+  readonly run: Effect.Effect<ReadonlyArray<Finding.Finding>, E, R>
 }
 
 export class CheckError extends Data.TaggedError("CheckError")<{
@@ -34,19 +30,19 @@ export class CheckError extends Data.TaggedError("CheckError")<{
 
 export const define = <E, R>(
   name: string,
-  run: Effect.Effect<ReadonlyArray<Report>, E, R>,
+  run: Effect.Effect<ReadonlyArray<Finding.Finding>, E, R>,
 ): Check<E, R> => ({ name, run })
 
 export const each = <A, E, R>(
   items: Iterable<A>,
-  reportsFor: (item: A) => Effect.Effect<ReadonlyArray<Report>, E, R>,
+  reportsFor: (item: A) => Effect.Effect<ReadonlyArray<Finding.Finding>, E, R>,
   concurrency: number | "unbounded" = "unbounded",
-): Effect.Effect<ReadonlyArray<Report>, E, R> =>
+): Effect.Effect<ReadonlyArray<Finding.Finding>, E, R> =>
   Effect.map(Effect.forEach(items, reportsFor, { concurrency }), (reports) => reports.flat())
 
 export const perProject = <E, R>(
   name: string,
-  reportsFor: (project: ProjectSnapshot) => Effect.Effect<ReadonlyArray<Report>, E, R>,
+  reportsFor: (project: ProjectSnapshot) => Effect.Effect<ReadonlyArray<Finding.Finding>, E, R>,
 ): Check<E, R | WorkspaceSnapshot> =>
   define(
     name,
@@ -58,25 +54,17 @@ export interface Config {
   readonly checks: ReadonlyArray<Check<unknown>>
 }
 
-export const Finding = Schema.Struct({
-  check: Schema.String,
-  path: Schema.String,
-  line: Schema.Int,
-  column: Schema.Int,
-  message: Schema.String,
-})
-export type Finding = typeof Finding.Type
+export interface Result extends Finding.Located {
+  readonly check: string
+}
 
 const byPosition = Order.Struct({
-  path: Order.String,
+  fileName: Order.String,
   line: Order.Number,
   column: Order.Number,
   check: Order.String,
   message: Order.String,
 })
-
-export const sorted = (findings: ReadonlyArray<Finding>): ReadonlyArray<Finding> =>
-  [...findings].sort(byPosition)
 
 const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
   Effect.gen(function* () {
@@ -90,21 +78,16 @@ const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
         ),
       { concurrency: "unbounded" },
     )
-    const findings = yield* Effect.forEach(reported.flat(), (found) =>
+    const results = yield* Effect.forEach(reported.flat(), (found) =>
       Effect.gen(function* () {
         const file = yield* snapshot.file(found.fileName)
-        return {
-          check: found.check,
-          path: found.fileName,
-          ...Position.at(file?.sourceFile.text ?? "", found.start),
-          message: found.message,
-        } satisfies Finding
+        return Finding.locate(found, file?.sourceFile.text ?? "")
       }))
-    return sorted([...new Map(findings.map((found) => [format(found), found])).values()])
+    return [...new Map(results.map((result) => [format(result), result])).values()].sort(byPosition)
   })
 
 export const run = <E>(checks: ReadonlyArray<Check<E>>) =>
   Effect.flatMap(Workspace, (workspace) => workspace.withSnapshot(collect(checks)))
 
-export const format = ({ check, path, line, column, message }: Finding): string =>
-  `${path}:${line}:${column} ${check} ${message}`
+export const format = ({ check, fileName, line, column, message }: Result): string =>
+  `${fileName}:${line}:${column} ${check} ${message}`

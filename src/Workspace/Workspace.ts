@@ -1,11 +1,23 @@
-import { Context, Data, Effect, FileSystem, Layer, Path, type PlatformError } from "effect"
+import {
+  Context,
+  Data,
+  Effect,
+  FileSystem,
+  Layer,
+  Option,
+  Path,
+  type PlatformError,
+  Schema,
+} from "effect"
 import { API } from "typescript/unstable/async"
 import type * as ProjectId from "../ProjectId.ts"
-import type * as WorkspacePath from "../WorkspacePath.ts"
+import * as WorkspacePath from "../WorkspacePath.ts"
 import { nativeRequest, WorkspaceCompilerError } from "./NativeRequest.ts"
 import * as Overlay from "./Overlay.ts"
 import * as ProjectSnapshot from "./ProjectSnapshot.ts"
 import type * as WorkspaceDefinition from "./WorkspaceDefinition.ts"
+
+const decodePath = Schema.decodeOption(WorkspacePath.schema)
 
 export class ProjectNotInSnapshot extends Data.TaggedError("ProjectNotInSnapshot")<{
   readonly projectId: ProjectId.Type
@@ -38,6 +50,7 @@ export class Workspace extends Context.Service<
     readonly definition: WorkspaceDefinition.Type
     readonly root: string
     readonly absolutePath: (fileName: WorkspacePath.Type) => string
+    readonly relativePath: (absolute: string) => WorkspacePath.Type | undefined
     readonly withSnapshot: <A, E, R>(
       program: Effect.Effect<A, E, R | WorkspaceSnapshot>,
       overlay?: Overlay.Overlay,
@@ -56,11 +69,14 @@ const make = (
 ): Workspace["Service"] => {
   const root = path.resolve(cwd)
   const absolutePath = (fileName: WorkspacePath.Type) => path.join(root, fileName)
+  const relativePath = (absolute: string) =>
+    Option.getOrUndefined(decodePath(path.relative(root, path.resolve(root, absolute))))
 
   return {
     definition,
     root,
     absolutePath,
+    relativePath,
     withSnapshot: (program, overlay) =>
       Effect.gen(function* () {
         const api = yield* Effect.acquireRelease(

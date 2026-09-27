@@ -28,9 +28,9 @@ const diagnostic = (overrides: Partial<DiagnosticRecord>): DiagnosticRecord => (
   code: 2304,
   message: "Cannot find name 'foo'",
   category: "error",
-  fileName: "a.ts",
+  fileName: workspacePath("a.ts"),
   start: 10,
-  length: 3,
+  end: 13,
   line: 1,
   column: 11,
   ...overrides,
@@ -40,7 +40,7 @@ describe("diagnostic diffs", () => {
   it("separates introduced, resolved, and unchanged diagnostics", () => {
     const kept = diagnostic({ code: 6133, category: "warning" })
     const fixed = diagnostic({ code: 2304 })
-    const added = diagnostic({ code: 2322, fileName: "b.ts" })
+    const added = diagnostic({ code: 2322, fileName: workspacePath("b.ts") })
     expect(diffDiagnostics([fixed, kept], [kept, added])).toEqual({
       introduced: [added],
       resolved: [fixed],
@@ -49,15 +49,15 @@ describe("diagnostic diffs", () => {
   })
 
   it("treats diagnostics in moved files as unchanged", () => {
-    const before = diagnostic({ fileName: "/workspace/src/a.ts" })
-    const after = diagnostic({ fileName: "/workspace/src/moved.ts" })
-    expect(
-      diffDiagnostics(
-        [before],
-        [after],
-        new Map([["/workspace/src/a.ts", "/workspace/src/moved.ts"]]),
-      ),
-    ).toEqual({ introduced: [], resolved: [], unchanged: [after] })
+    const from = workspacePath("src/a.ts")
+    const to = workspacePath("src/moved.ts")
+    const before = diagnostic({ fileName: from })
+    const after = diagnostic({ fileName: to })
+    expect(diffDiagnostics([before], [after], new Map([[from, to]]))).toEqual({
+      introduced: [],
+      resolved: [],
+      unchanged: [after],
+    })
   })
 
   it("treats changed error text as the same diagnostic kind", () => {
@@ -286,7 +286,7 @@ describe("Verification.verify", () => {
           expect(verified.diagnosticDiff.resolved).toEqual([])
           expect(
             verified.diagnosticDiff.unchanged.some((diagnostic) =>
-              diagnostic.fileName?.endsWith("/moved/broken.ts")
+              diagnostic.fileName === "src/moved/broken.ts"
             ),
           ).toBe(true)
         }),

@@ -162,15 +162,11 @@ export const verify = <Input, E, R>(
       overlayOf(workspace, [...preview.sources, ...preview.files], "after"),
     )
 
-    const moves = new Map<string, string>()
-    for (const operation of plan.fileOperations) {
-      if (operation.kind === "move") {
-        moves.set(
-          workspace.absolutePath(operation.fileName),
-          workspace.absolutePath(operation.toFileName),
-        )
-      }
-    }
+    const moves = new Map(
+      plan.fileOperations.flatMap((operation) =>
+        operation.kind === "move" ? [[operation.fileName, operation.toFileName] as const] : []
+      ),
+    )
     const diagnosticDiff = diffDiagnostics(baseline, proposed, moves)
     const failure = policyFailure(recipe, preview, diagnosticDiff, replayed)
     if (failure !== undefined) return yield* failure

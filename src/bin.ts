@@ -5,8 +5,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli"
 import { applyVerifiedPlan } from "./Application.ts"
 import * as Check from "./Check.ts"
 import * as Inspect from "./Inspect.ts"
-import type { UnsupportedFinding } from "./Plan.ts"
-import * as Position from "./Position.ts"
+import * as Finding from "./Finding.ts"
 import type * as Recipe from "./Recipe.ts"
 import { actionOf, type FilePreview, verify } from "./Verification/index.ts"
 import * as Workspace from "./Workspace/index.ts"
@@ -112,17 +111,12 @@ const capped = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
 
 const unresolvedLine = (
   sources: ReadonlyArray<FilePreview>,
-  finding: UnsupportedFinding,
+  finding: Finding.Finding,
 ): string => {
-  const source = sources.find(
-    (file) => file.fileName === finding.fileName,
-  )
-  const at = source?.before.exists === true ?
-    Position.at(source.before.text, finding.start) :
-    undefined
-  return `  ${finding.fileName}:${
-    at === undefined ? "?" : `${at.line}:${at.column}`
-  } ${finding.reason}`
+  const source = sources.find((file) => file.fileName === finding.fileName)
+  if (source?.before.exists !== true) return `  ${finding.fileName}:? ${finding.message}`
+  const { fileName, line, column, message } = Finding.locate(finding, source.before.text)
+  return `  ${fileName}:${line}:${column} ${message}`
 }
 
 const run = Command.make(
@@ -167,9 +161,7 @@ const run = Command.make(
                 capped(
                   (failure.diagnostics ?? []).map(
                     ({ fileName, line, column, code, message }) =>
-                      `  ${
-                        fileName === undefined ? "" : path.relative(root, fileName)
-                      }:${line}:${column} TS${code} ${message.split("\n")[0]}`,
+                      `  ${fileName ?? ""}:${line}:${column} TS${code} ${message.split("\n")[0]}`,
                   ),
                 ).join("\n"),
               )

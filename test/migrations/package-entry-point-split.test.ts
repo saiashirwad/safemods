@@ -40,7 +40,7 @@ describe("package-entry-point-split", () => {
               'export const packageName = "@acme/sdk"',
             )
 
-            const reasons = plan.unsupported.map(({ reason }) => reason)
+            const reasons = plan.unsupported.map(({ message }) => message)
             expect(reasons).toContain(
               "This declaration mixes exports from different package entry points",
             )

@@ -56,6 +56,7 @@ export const suppressions = (options: { readonly within: string }) =>
           directivesIn(file.sourceFile).map((match) => ({
             fileName: file.fileName,
             start: match.start,
+            end: match.start + match.text.length,
             message: `${match.text} silences the compiler: fix the type it complains about`,
           }))
         ),

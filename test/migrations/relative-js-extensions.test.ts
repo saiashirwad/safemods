@@ -59,7 +59,7 @@ describe("relative-js-extensions", () => {
             expect(extra).toContain('from "./auth/index.js"')
             expect(extra).toContain('from "./config.local.js"')
             expect(extra).toContain('from "./missing"')
-            expect(plan.unsupported.map(({ fileName, reason }) => [fileName, reason])).toEqual([
+            expect(plan.unsupported.map(({ fileName, message }) => [fileName, message])).toEqual([
               ["src/extra.ts", "./missing names no project file"],
             ])
           }),

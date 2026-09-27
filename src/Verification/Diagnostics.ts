@@ -1,18 +1,15 @@
 import { Effect, FileSystem } from "effect"
 import { DiagnosticCategory, type Diagnostic } from "typescript/unstable/async"
+import type * as Finding from "../Finding.ts"
 import * as Position from "../Position.ts"
 import { nativeRequest } from "../Workspace/NativeRequest.ts"
-import { WorkspaceSnapshot } from "../Workspace/index.ts"
+import { Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"
+import type * as WorkspacePath from "../WorkspacePath.ts"
 
-export interface DiagnosticRecord {
+export interface DiagnosticRecord extends Omit<Finding.Located, "fileName"> {
+  readonly fileName: WorkspacePath.Type | undefined
   readonly code: number
-  readonly message: string
   readonly category: "error" | "warning" | "message" | "suggestion"
-  readonly fileName: string | undefined
-  readonly start: number
-  readonly length: number
-  readonly line: number
-  readonly column: number
 }
 
 export interface DiagnosticDiff {
@@ -28,13 +25,17 @@ const categories = {
   [DiagnosticCategory.Suggestion]: "suggestion",
 } as const
 
-const record = (diagnostic: Diagnostic, text: string): DiagnosticRecord => ({
-  code: diagnostic.code,
-  message: diagnostic.text,
-  category: categories[diagnostic.category],
-  fileName: diagnostic.fileName,
+const record = (
+  diagnostic: Diagnostic,
+  fileName: WorkspacePath.Type | undefined,
+  text: string,
+): DiagnosticRecord => ({
+  fileName,
   start: diagnostic.pos,
-  length: diagnostic.end - diagnostic.pos,
+  end: diagnostic.end,
+  message: diagnostic.text,
+  code: diagnostic.code,
+  category: categories[diagnostic.category],
   ...Position.at(text, diagnostic.pos),
 })
 
@@ -50,6 +51,7 @@ const diagnosticKinds = [
 export const collectDiagnostics = Effect.gen(function* () {
   const snapshot = yield* WorkspaceSnapshot
   const fs = yield* FileSystem.FileSystem
+  const workspace = yield* Workspace
   const diagnostics: Array<DiagnosticRecord> = []
   for (const project of snapshot.projects) {
     const texts = new Map(
@@ -60,10 +62,13 @@ export const collectDiagnostics = Effect.gen(function* () {
         nativeRequest(kind, () => program[kind]())
       )
       for (const diagnostic of found) {
-        const fileName = diagnostic.fileName ?? ""
-        const text = texts.get(fileName) ??
-          (yield* fs.readFileString(fileName).pipe(Effect.orElseSucceed(() => "")))
-        diagnostics.push(record(diagnostic, text))
+        const absolute = diagnostic.fileName ?? ""
+        const text = texts.get(absolute) ??
+          (yield* fs.readFileString(absolute).pipe(Effect.orElseSucceed(() => "")))
+        const fileName = diagnostic.fileName === undefined ?
+          undefined :
+          workspace.relativePath(absolute)
+        diagnostics.push(record(diagnostic, fileName, text))
       }
     }
   }
@@ -88,7 +93,7 @@ const identity = ({ category, code, fileName }: DiagnosticRecord): string =>
 export const diffDiagnostics = (
   baseline: ReadonlyArray<DiagnosticRecord>,
   proposed: ReadonlyArray<DiagnosticRecord>,
-  moves: ReadonlyMap<string, string> = new Map(),
+  moves: ReadonlyMap<WorkspacePath.Type, WorkspacePath.Type> = new Map(),
 ): DiagnosticDiff => {
   const remaining = Map.groupBy(
     baseline.map((diagnostic) => ({

@@ -16,7 +16,7 @@ describe("overloaded-method", () => {
           expect(plan.unsupported).toHaveLength(1)
           expect(plan.unsupported[0]).toMatchObject({
             fileName: "src/consumer.ts",
-            reason: "spread arguments prevent overload selection",
+            message: "spread arguments prevent overload selection",
           })
 
           const original = yield* read(fixturePath(fixture), "src/consumer.ts")

@@ -15,7 +15,7 @@ describe("rename-interface-property", () => {
 
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
             expect(plan.unsupported).toHaveLength(1)
-            expect(plan.unsupported[0]?.reason).toContain("Computed Account")
+            expect(plan.unsupported[0]?.message).toContain("Computed Account")
             const account = yield* read(root, "src/account.ts")
             expect(account).toContain("readonly label: string")
             expect(account).toContain('{ label: displayName, id: "acc_1" }')

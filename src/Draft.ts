@@ -42,14 +42,14 @@ const oneOperation = (operation: FileOperation): Draft => ({
   fileOperations: [operation],
 })
 
-export const unsupported = <A>(selection: Selection<A>, reason: string): Draft => ({
+export const unsupported = <A>(selection: Selection<A>, message: string): Draft => ({
   ...empty,
   unsupported: [
     {
       fileName: selection.fileName,
       start: selection.start,
       end: selection.end,
-      reason,
+      message,
     },
   ],
 })

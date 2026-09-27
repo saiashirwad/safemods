@@ -1,5 +1,6 @@
 import { Data, Effect } from "effect"
 import { firstConflict, type TextEdit } from "./Edit.ts"
+import type { Finding } from "./Finding.ts"
 import type * as WorkspacePath from "./WorkspacePath.ts"
 
 export type { TextEdit } from "./Edit.ts"
@@ -13,13 +14,6 @@ export type FileOperation =
     readonly toFileName: WorkspacePath.Type
   }
 
-export interface UnsupportedFinding {
-  readonly fileName: WorkspacePath.Type
-  readonly start: number
-  readonly end: number
-  readonly reason: string
-}
-
 export interface PlanPolicies {
   readonly maxAffectedFiles?: number
   readonly diagnostics: "no-new-errors" | "allow-new-errors"
@@ -29,7 +23,7 @@ export interface PlanPolicies {
 export interface Plan {
   readonly edits: ReadonlyArray<TextEdit>
   readonly fileOperations: ReadonlyArray<FileOperation>
-  readonly unsupported: ReadonlyArray<UnsupportedFinding>
+  readonly unsupported: ReadonlyArray<Finding>
 }
 
 export type Contents = ReadonlyMap<WorkspacePath.Type, Uint8Array | undefined>

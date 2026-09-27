@@ -15,7 +15,7 @@ describe("jsx-button-props", () => {
 
           expect(verified.diagnosticDiff.introduced).toEqual([])
           expect(receipt.written).toHaveLength(2)
-          expect(plan.unsupported.map(({ reason }) => reason)).toEqual([
+          expect(plan.unsupported.map(({ message }) => message)).toEqual([
             "oldLabel: duplicate label prop",
             "oldLabel: JSX spread may contain label",
             "oldLabel: JSX spread may contain label",

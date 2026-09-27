@@ -68,7 +68,9 @@ describe("checks", () => {
             expect(JSON.parse(first.stdout)).toEqual([
               {
                 check: "layers",
-                path: "src/core.ts",
+                fileName: "src/core.ts",
+                start: 0,
+                end: 30,
                 line: 1,
                 column: 1,
                 message: "imports src/app.ts, which is listed below it",
