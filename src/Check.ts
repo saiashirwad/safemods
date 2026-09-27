@@ -49,11 +49,6 @@ export const perProject = <E, R>(
     WorkspaceSnapshot.use((snapshot) => each(snapshot.projects, reportsFor)),
   )
 
-export interface Config {
-  readonly projects: ReadonlyArray<{ readonly id: string; readonly config: string }>
-  readonly checks: ReadonlyArray<Check<unknown>>
-}
-
 export interface Result extends Finding.Located {
   readonly check: string
 }

@@ -3,20 +3,9 @@ import type { Node } from "typescript/unstable/ast"
 import * as Position from "./Position.ts"
 import * as Query from "./Query.ts"
 import * as Type from "./Type.ts"
-import {
-  type ProjectFile,
-  type ProjectSnapshot,
-  Workspace,
-  WorkspaceSnapshot,
-} from "./Workspace/index.ts"
+import { type ProjectSnapshot, Workspace, WorkspaceSnapshot } from "./Workspace/index.ts"
 
 export class NotFound extends Data.TaggedError("NotFound")<{ readonly what: string }> {}
-
-interface Target {
-  readonly project: ProjectSnapshot
-  readonly file: ProjectFile
-  readonly node: Node
-}
 
 const lineText = (node: Node): string => {
   const file = node.getSourceFile()
@@ -54,7 +43,7 @@ const fileNamed = (named: string) =>
     if (file === undefined) {
       return yield* new NotFound({ what: `${named} is not a file of any configured project` })
     }
-    return { project: file.project, file }
+    return file
   })
 
 const targetAt = (position: string) =>
@@ -63,16 +52,24 @@ const targetAt = (position: string) =>
     if (path === undefined || line === undefined) {
       return yield* new NotFound({ what: `${position} is not path:line:column` })
     }
-    const { project, file } = yield* fileNamed(path)
-    const lines = file.sourceFile.text.split("\n").slice(0, Number(line) - 1)
-    const offset = lines.reduce((total, text) => total + text.length + 1, 0) + Number(column ?? 1) -
-      1
-    return { project, file, node: innermost(file.sourceFile, offset) } satisfies Target
+    const file = yield* fileNamed(path)
+    const offset = Position.offset(file.sourceFile.text, {
+      line: Number(line),
+      column: Number(column ?? 1),
+    })
+    const node = innermost(file.sourceFile, offset)
+    return {
+      value: node,
+      project: file.project,
+      fileName: file.fileName,
+      start: node.getStart(file.sourceFile),
+      end: node.getEnd(),
+    } satisfies Query.Selection<Node>
   })
 
 export const type = (position: string) =>
   Effect.gen(function* () {
-    const { project, node } = yield* targetAt(position)
+    const { project, value: node } = yield* targetAt(position)
     const found = yield* project.typeOf(node)
     const symbol = yield* project.symbolOf(node)
     const declared = symbol === undefined ? [] : yield* project.declarationsOf(symbol)
@@ -85,15 +82,15 @@ export const type = (position: string) =>
 
 export const refs = (position: string) =>
   Effect.gen(function* () {
-    const { project, node } = yield* targetAt(position)
+    const { project, value: node } = yield* targetAt(position)
     const references = yield* project.referencesTo(node)
     return references.map((reference) => located(project, reference)).sort()
   })
 
 export const calls = (position: string) =>
   Effect.gen(function* () {
-    const { project, file, node } = yield* targetAt(position)
-    const selection = { value: node, project, fileName: file.fileName, start: 0, end: 0 }
+    const selection = yield* targetAt(position)
+    const { project } = selection
     const { calls: found, escapes } = yield* Query.usesOf(selection)
     return [
       ...found.map(({ value }) => located(project, value)).sort(),
@@ -105,7 +102,8 @@ export const calls = (position: string) =>
 
 export const exports = (path: string) =>
   Effect.gen(function* () {
-    const { project, file } = yield* fileNamed(path)
+    const file = yield* fileNamed(path)
+    const { project } = file
     const exported = yield* project.exportsOf(file)
     return yield* Effect.forEach(
       exported,
@@ -130,7 +128,8 @@ const edges = (project: ProjectSnapshot) =>
 
 export const deps = (path: string) =>
   Effect.gen(function* () {
-    const { project, file } = yield* fileNamed(path)
+    const file = yield* fileNamed(path)
+    const { project } = file
     const all = yield* edges(project)
     const unique = (names: ReadonlyArray<string>) => [...new Set(names)].sort()
     return [

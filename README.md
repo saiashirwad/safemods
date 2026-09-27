@@ -109,7 +109,7 @@ export const noUnknownFailures = (options: { readonly within: string }) =>
 List projects and checks in `safemods.config.ts`. Every path — a project config, a `within` glob, an edit, a finding — is relative to the directory holding that file. The rules that ship with the package come from `safemods/Checks`; a rule of your own is a file in your repository.
 
 ```ts
-import type * as Check from "safemods/Check"
+import type * as Config from "safemods/Config"
 import { layers } from "safemods/Checks"
 import { noUnknownFailures } from "./checks/no-unknown-failures.ts"
 
@@ -119,7 +119,7 @@ export default {
     layers({ within: "src/**", order: [["src/core.ts"], ["src/app.ts"]] }),
     noUnknownFailures({ within: "src/**" }),
   ],
-} satisfies Check.Config
+} satisfies Config.Config
 ```
 
 ```sh
@@ -178,7 +178,6 @@ Each module depends only on the ones above it.
 | Module                                   | Responsibility                                                        |
 | ---------------------------------------- | --------------------------------------------------------------------- |
 | `Sha256`, `ProjectId`, `WorkspacePath`   | branded value types                                                   |
-| `Git`                                    | the files a ref differs from and their text at it                     |
 | `Position`, `Finding`, `ModuleSpecifier` | line and column; a located message; parse, relate and emit specifiers |
 | `Edit`                                   | hash-guarded text edits and their application                         |
 | `Plan`                                   | edits and file operations, and the rules a valid plan obeys           |
@@ -190,10 +189,11 @@ Each module depends only on the ones above it.
 | `Recipe`                                 | define a transformation: name, version, policies, input schema, run   |
 | `Verification`                           | run a recipe, preview exact bytes, diff diagnostics, replay           |
 | `Application`                            | write a verified plan, refusing stale files and symlink escapes       |
+| `Config`                                 | load `safemods.config.ts` and the workspace it describes              |
 | `Inspect`                                | answers for `map`, `deps`, `exports`, `type`, `refs` and `calls`      |
 | `bin`                                    | the `safemods` command                                                |
 
-Application checks real paths immediately before each mutation. The portable filesystem API does not offer directory handles or atomic no-follow operations, so this confines normal symlink layouts but cannot guarantee safety against a hostile process swapping symlinks between a check and mutation.
+Application checks real paths once before writing anything, then again right before it moves aside or writes each file. The portable filesystem API does not offer directory handles or atomic no-follow operations, so this confines normal symlink layouts but cannot guarantee safety against a hostile process swapping symlinks between a check and mutation.
 
 ## Examples
 

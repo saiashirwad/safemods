@@ -9,7 +9,12 @@ import {
   type PlatformError,
 } from "effect"
 import * as Sha256 from "./Sha256.ts"
-import { type FilePreview, StalePlanError, type VerifiedPlan } from "./Verification/index.ts"
+import {
+  type FilePreview,
+  type FileState,
+  StalePlanError,
+  type VerifiedPlan,
+} from "./Verification/index.ts"
 import { Workspace } from "./Workspace/index.ts"
 
 export interface ApplicationOperationFailure {
@@ -30,196 +35,183 @@ export interface ApplicationReceipt {
   readonly removed: ReadonlyArray<FilePreview>
 }
 
-export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(function* (
-  verified: VerifiedPlan,
-) {
-  const { preview } = verified
+interface Target {
+  readonly file: FilePreview
+  readonly path: string
+  readonly mode: number | undefined
+}
+
+interface Journal {
+  readonly backups: Array<{ readonly target: string; readonly backup: string }>
+  readonly written: Set<string>
+  readonly temporaries: Set<string>
+}
+
+const failed = (cause: unknown) => new ApplicationFailure({ reason: "filesystem", cause })
+
+const nearestExisting = (
+  target: string,
+): Effect.Effect<string, ApplicationFailure, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const exists = yield* fs.exists(target).pipe(Effect.mapError(failed))
+    return exists ? target : yield* nearestExisting(path.dirname(target))
+  })
+
+const confine = Effect.fn("Application.confine")(function* (file: FilePreview) {
   const workspace = yield* Workspace
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const crypto = yield* Crypto.Crypto
-
-  const failed = (cause: unknown) => new ApplicationFailure({ reason: "filesystem", cause })
-
-  const isWithin = (directory: string, candidate: string): boolean => {
-    const relative = path.relative(directory, candidate)
-    return (
-      relative === "" ||
-      (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
-    )
+  const target = workspace.absolutePath(file.fileName)
+  const realWorkspace = yield* fs.realPath(workspace.root).pipe(Effect.mapError(failed))
+  const realAnchor = yield* fs.realPath(yield* nearestExisting(target)).pipe(
+    Effect.mapError(failed),
+  )
+  const relative = path.relative(realWorkspace, realAnchor)
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    return yield* new ApplicationFailure({ reason: "path-escape" })
   }
-  const nearestExisting = (target: string): Effect.Effect<string, ApplicationFailure> =>
-    fs.exists(target).pipe(
-      Effect.mapError(failed),
-      Effect.flatMap((exists) =>
-        exists ? Effect.succeed(target) : nearestExisting(path.dirname(target))
-      ),
-    )
-  const confinedTarget = Effect.fn(function* (file: FilePreview) {
-    const target = workspace.absolutePath(file.fileName)
-    const realWorkspace = yield* fs.realPath(workspace.root).pipe(Effect.mapError(failed))
-    const anchor = yield* nearestExisting(target)
-    const realAnchor = yield* fs.realPath(anchor).pipe(Effect.mapError(failed))
-    if (!isWithin(realWorkspace, realAnchor)) {
-      return yield* new ApplicationFailure({ reason: "path-escape" })
-    }
-    return target
-  })
-  const requireUnchanged = Effect.fn(function* (file: FilePreview, target: string) {
-    const stale = new StalePlanError({ fileName: file.fileName })
-    const exists = yield* fs.exists(target).pipe(Effect.mapError(failed))
-    if (exists !== file.before.exists) return yield* stale
-    if (!file.before.exists) return
-    const bytes = yield* fs.readFile(target).pipe(Effect.mapError(failed))
-    if (Sha256.digest(bytes) !== Sha256.digest(file.before.bytes)) return yield* stale
-  })
+  return target
+})
 
-  const checkedSources = []
-  for (const source of preview.sources) {
-    const target = yield* confinedTarget(source)
-    yield* requireUnchanged(source, target)
-    checkedSources.push({ file: source, target })
+const requireState = Effect.fn("Application.requireState")(function* (
+  file: FilePreview,
+  target: string,
+  expected: FileState,
+) {
+  const fs = yield* FileSystem.FileSystem
+  const stale = new StalePlanError({ fileName: file.fileName })
+  const exists = yield* fs.exists(target).pipe(Effect.mapError(failed))
+  if (exists !== expected.exists) return yield* stale
+  if (!expected.exists) return
+  const bytes = yield* fs.readFile(target).pipe(Effect.mapError(failed))
+  if (Sha256.digest(bytes) !== Sha256.digest(expected.bytes)) return yield* stale
+})
+
+const preflight = Effect.fn("Application.preflight")(function* (verified: VerifiedPlan) {
+  const fs = yield* FileSystem.FileSystem
+  const sources = new Map<string, string>()
+  for (const source of verified.preview.sources) {
+    const target = yield* confine(source)
+    yield* requireState(source, target, source.before)
+    sources.set(source.fileName, target)
   }
-  const targets: Array<{
-    file: FilePreview
-    target: string
-    mode: number | undefined
-  }> = []
-  for (const file of preview.files) {
-    const target = yield* confinedTarget(file)
-    const modeSource = file.movedFrom ?
-      checkedSources.find(
-        ({ file: source }) => source.fileName === file.movedFrom,
-      )?.target :
+  const targets: Array<Target> = []
+  for (const file of verified.preview.files) {
+    const path = yield* confine(file)
+    const modeSource = file.movedFrom !== undefined ?
+      sources.get(file.movedFrom) :
       file.before.exists ?
-      target :
+      path :
       undefined
-    const mode = modeSource ?
-      (yield* fs.stat(modeSource).pipe(Effect.mapError(failed))).mode :
-      undefined
-    targets.push({ file, target, mode })
+    const mode = modeSource === undefined ?
+      undefined :
+      (yield* fs.stat(modeSource).pipe(Effect.mapError(failed))).mode
+    targets.push({ file, path, mode })
   }
+  return targets
+})
 
-  const backups: Array<{ target: string; backup: string }> = []
-  const written = new Set<string>()
-  const temporaries = new Set<string>()
-  const attempt = Effect.fn(function* (
-    phase: ApplicationOperationFailure["phase"],
-    operation: ApplicationOperationFailure["operation"],
-    target: string,
-    action: Effect.Effect<void, PlatformError.PlatformError>,
-  ) {
-    const exit = yield* Effect.exit(action)
-    if (Exit.isSuccess(exit)) return
-    return {
-      phase,
-      operation,
-      path: target,
-      cause: exit.cause,
-    } satisfies ApplicationOperationFailure
-  })
-  const rollback = Effect.fn(function* (
-    cause: Cause.Cause<ApplicationFailure | StalePlanError>,
-  ): Effect.fn.Return<never, ApplicationFailure | StalePlanError> {
-    const failures: Array<ApplicationOperationFailure> = []
-    for (const target of written) {
-      const failure = yield* attempt(
-        "rollback",
-        "remove",
-        target,
-        fs.remove(target, { force: true }),
-      )
-      if (failure !== undefined) failures.push(failure)
-    }
-    for (const { target, backup } of backups.toReversed()) {
-      const failure = yield* attempt("rollback", "restore", target, fs.rename(backup, target))
-      if (failure !== undefined) failures.push(failure)
-    }
-    for (const temporary of temporaries) {
-      const failure = yield* attempt(
-        "rollback",
-        "cleanup-temporary",
-        temporary,
-        fs.remove(temporary, { force: true }),
-      )
-      if (failure !== undefined) failures.push(failure)
-    }
-    if (failures.length > 0) {
-      return yield* new ApplicationFailure({
-        reason: "recovery",
-        cause,
-        failures,
-      })
-    }
-    return yield* Effect.failCause(cause)
-  })
-  const write = Effect.fn(function* (
-    file: FilePreview,
-    target: string,
-    bytes: Uint8Array,
-    mode: number | undefined,
-  ) {
-    yield* confinedTarget(file)
-    yield* fs.makeDirectory(path.dirname(target), { recursive: true }).pipe(Effect.mapError(failed))
-    yield* confinedTarget(file)
-    const temporary = `${target}.safemods-${yield* crypto.randomUUIDv4.pipe(
-      Effect.mapError(failed),
-    )}.tmp`
-    temporaries.add(temporary)
-    yield* fs.writeFile(temporary, bytes, { flag: "wx", mode }).pipe(Effect.mapError(failed))
-    yield* confinedTarget(file)
-    written.add(target)
-    yield* fs.rename(temporary, target).pipe(Effect.mapError(failed))
-    temporaries.delete(temporary)
-  })
+const uniqueName = (target: string, suffix: string) =>
+  Effect.map(
+    Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4),
+    (id) => `${target}.safemods-${id}.${suffix}`,
+  ).pipe(Effect.mapError(failed))
+
+const moveAside = Effect.fn("Application.moveAside")(function* (target: Target, journal: Journal) {
+  const fs = yield* FileSystem.FileSystem
+  yield* requireState(target.file, target.path, target.file.before)
+  if (!target.file.before.exists) return
+  const backup = yield* uniqueName(target.path, "backup")
+  yield* confine(target.file)
+  yield* fs.rename(target.path, backup).pipe(Effect.mapError(failed))
+  journal.backups.push({ target: target.path, backup })
+})
+
+const write = Effect.fn("Application.write")(function* (target: Target, journal: Journal) {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  yield* requireState(target.file, target.path, { exists: false })
+  if (!target.file.after.exists) return
+  yield* fs.makeDirectory(path.dirname(target.path), { recursive: true }).pipe(
+    Effect.mapError(failed),
+  )
+  const temporary = yield* uniqueName(target.path, "tmp")
+  yield* confine(target.file)
+  journal.temporaries.add(temporary)
+  yield* fs.writeFile(temporary, target.file.after.bytes, { flag: "wx", mode: target.mode }).pipe(
+    Effect.mapError(failed),
+  )
+  journal.written.add(target.path)
+  yield* fs.rename(temporary, target.path).pipe(Effect.mapError(failed))
+  journal.temporaries.delete(temporary)
+})
+
+const attempt = (
+  phase: ApplicationOperationFailure["phase"],
+  operation: ApplicationOperationFailure["operation"],
+  path: string,
+  action: Effect.Effect<void, PlatformError.PlatformError>,
+) =>
+  Effect.map(
+    Effect.exit(action),
+    (exit): ReadonlyArray<ApplicationOperationFailure> =>
+      Exit.isSuccess(exit) ? [] : [{ phase, operation, path, cause: exit.cause }],
+  )
+
+const rollback = Effect.fn("Application.rollback")(function* (
+  journal: Journal,
+  cause: Cause.Cause<ApplicationFailure | StalePlanError>,
+): Effect.fn.Return<never, ApplicationFailure | StalePlanError, FileSystem.FileSystem> {
+  const fs = yield* FileSystem.FileSystem
+  const failures = [
+    ...(yield* Effect.forEach(
+      journal.written,
+      (target) => attempt("rollback", "remove", target, fs.remove(target, { force: true })),
+    )),
+    ...(yield* Effect.forEach(
+      journal.backups.toReversed(),
+      ({ target, backup }) => attempt("rollback", "restore", target, fs.rename(backup, target)),
+    )),
+    ...(yield* Effect.forEach(
+      journal.temporaries,
+      (temporary) =>
+        attempt("rollback", "cleanup-temporary", temporary, fs.remove(temporary, { force: true })),
+    )),
+  ].flat()
+  if (failures.length > 0) {
+    return yield* new ApplicationFailure({ reason: "recovery", cause, failures })
+  }
+  return yield* Effect.failCause(cause)
+})
+
+const cleanup = Effect.fn("Application.cleanup")(function* (journal: Journal) {
+  const fs = yield* FileSystem.FileSystem
+  const failures = (yield* Effect.forEach(journal.backups, ({ backup }) =>
+    attempt("cleanup", "cleanup-backup", backup, fs.remove(backup, { force: true })))).flat()
+  if (failures.length > 0) {
+    return yield* new ApplicationFailure({ reason: "committed", failures })
+  }
+})
+
+export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(function* (
+  verified: VerifiedPlan,
+) {
+  const targets = yield* preflight(verified)
+  const journal: Journal = { backups: [], written: new Set(), temporaries: new Set() }
   const commit = Effect.gen(function* () {
-    for (const { file, target } of targets) {
-      yield* confinedTarget(file)
-      yield* requireUnchanged(file, target)
-      if (!file.before.exists) continue
-      const backup = `${target}.safemods-${yield* crypto.randomUUIDv4.pipe(
-        Effect.mapError(failed),
-      )}.backup`
-      yield* fs.rename(target, backup).pipe(Effect.mapError(failed))
-      backups.push({ target, backup })
-    }
-    for (const { file, target, mode } of targets) {
-      yield* confinedTarget(file)
-      yield* requireUnchanged(
-        { ...file, before: file.before.exists ? { exists: false } : file.before },
-        target,
-      )
-      if (file.after.exists) yield* write(file, target, file.after.bytes, mode)
-    }
+    for (const target of targets) yield* moveAside(target, journal)
+    for (const target of targets) yield* write(target, journal)
   })
   yield* Effect.uninterruptibleMask((restore) =>
     restore(commit).pipe(
-      Effect.catchCause(rollback),
-      Effect.andThen(
-        Effect.gen(function* () {
-          const cleanupFailures: Array<ApplicationOperationFailure> = []
-          for (const { backup } of backups) {
-            const failure = yield* attempt(
-              "cleanup",
-              "cleanup-backup",
-              backup,
-              fs.remove(backup, { force: true }),
-            )
-            if (failure !== undefined) cleanupFailures.push(failure)
-          }
-          if (cleanupFailures.length > 0) {
-            return yield* new ApplicationFailure({
-              reason: "committed",
-              failures: cleanupFailures,
-            })
-          }
-        }),
-      ),
+      Effect.catchCause((cause) => rollback(journal, cause)),
+      Effect.andThen(cleanup(journal)),
     )
   )
-
   return {
-    written: preview.files.filter((file) => file.after.exists),
-    removed: preview.files.filter((file) => !file.after.exists),
+    written: verified.preview.files.filter((file) => file.after.exists),
+    removed: verified.preview.files.filter((file) => !file.after.exists),
   } satisfies ApplicationReceipt
 })

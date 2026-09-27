@@ -1,4 +1,4 @@
-import type * as Check from "safemods/Check"
+import type * as Config from "safemods/Config"
 import * as WorkspacePath from "safemods/WorkspacePath"
 import {
   duplicatedFunctions,
@@ -13,7 +13,7 @@ import {
 import { noUnknownFailures } from "./examples/no-unknown-failures.ts"
 
 const publicApi = [
-  "src/{Application,Check,Draft,Finding,Inspect,ModuleSpecifier,Pattern,Plan,ProjectId,WorkspacePath,Query,Recipe,Type,bin}.ts",
+  "src/{Application,Check,Config,Draft,Finding,Inspect,ModuleSpecifier,Pattern,Plan,ProjectId,WorkspacePath,Query,Recipe,Type,bin}.ts",
   "src/{Checks,Verification,Workspace}/index.ts",
 ]
 
@@ -40,7 +40,7 @@ export default {
         ["src/Checks/"],
         ["src/Recipe.ts"],
         ["src/Verification/"],
-        ["src/Application.ts"],
+        ["src/Application.ts", "src/Config.ts"],
         ["src/bin.ts"],
       ],
     }),
@@ -60,4 +60,4 @@ export default {
       allowedWithin: ["src/Workspace/**", "src/Verification/Diagnostics.ts", "test/**"],
     }),
   ],
-} satisfies Check.Config
+} satisfies Config.Config

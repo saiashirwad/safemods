@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
-import { Console, Data, Effect, FileSystem, Path, Predicate, Runtime, Schema } from "effect"
+import { Console, Data, Effect, Predicate, Runtime, Schema } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
 import { applyVerifiedPlan } from "./Application.ts"
 import * as Check from "./Check.ts"
+import * as Config from "./Config.ts"
 import * as Inspect from "./Inspect.ts"
 import * as Finding from "./Finding.ts"
 import type * as Recipe from "./Recipe.ts"
@@ -15,67 +16,35 @@ class FindingsReported extends Data.TaggedError("FindingsReported")<{ readonly c
   readonly [Runtime.errorReported] = false
 }
 
-class CheckFailed extends Data.TaggedError("CheckFailed")<{ readonly cause: unknown }> {
-  readonly [Runtime.errorExitCode] = 2
-}
-
-class InvalidConfig extends Data.TaggedError("InvalidConfig")<{
-  readonly path: string
-  readonly cause: unknown
-}> {}
-
 class PlanRejected extends Data.TaggedError("PlanRejected")<{}> {
   readonly [Runtime.errorExitCode] = 1
   readonly [Runtime.errorReported] = false
 }
 
-const isConfig = (value: unknown): value is Check.Config =>
-  Predicate.isObject(value) &&
-  "projects" in value &&
-  Array.isArray(value.projects) &&
-  "checks" in value &&
-  Array.isArray(value.checks)
+class CommandFailed extends Data.TaggedError("CommandFailed")<{ readonly cause: unknown }> {
+  readonly [Runtime.errorExitCode] = 2
+}
 
-const loadModule = (file: string) =>
-  Effect.gen(function* () {
-    const path = yield* Path.Path
-    const url = yield* path.toFileUrl(file)
-    return yield* Effect.tryPromise({
-      try: () => import(url.href) as Promise<Readonly<Record<string, unknown>>>,
-      catch: (cause) => new InvalidConfig({ path: file, cause }),
-    })
-  })
+const failed = (cause: unknown) =>
+  cause instanceof FindingsReported || cause instanceof PlanRejected ?
+    cause :
+    new CommandFailed({ cause })
 
-const loadConfig = (path: string) =>
-  loadModule(path).pipe(
-    Effect.flatMap((module) =>
-      isConfig(module.default) ?
-        Effect.succeed(module.default) :
-        new InvalidConfig({ path, cause: "the default export needs `projects` and `checks`" })
-    ),
-  )
+const configFlag = Flag.file("config").pipe(
+  Flag.withDefault("safemods.config.ts"),
+  Flag.withDescription("Module whose default export lists projects and checks"),
+)
 
 const check = Command.make(
   "check",
   {
-    config: Flag.file("config").pipe(
-      Flag.withDefault("safemods.config.ts"),
-      Flag.withDescription("Module whose default export lists projects and checks"),
-    ),
+    config: configFlag,
     format: Flag.choice("format", ["text", "json"]).pipe(Flag.withDefault("text")),
   },
   ({ config: configFile, format }) =>
     Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem
-      const path = yield* Path.Path
-      const configPath = yield* fs.realPath(configFile)
-      const config = yield* loadConfig(configPath)
-      const definition = yield* Schema.decodeUnknownEffect(Workspace.WorkspaceDefinition.schema)({
-        projects: config.projects,
-      })
-      const findings = yield* Check.run(config.checks).pipe(
-        Effect.provide(Workspace.layer(definition, path.dirname(configPath))),
-      )
+      const { config, workspace } = yield* Config.load(configFile)
+      const findings = yield* Check.run(config.checks).pipe(Effect.provide(workspace))
       yield* Console.log(
         format === "json" ?
           JSON.stringify(findings, undefined, 2) :
@@ -83,16 +52,10 @@ const check = Command.make(
       )
       yield* Console.error(`${findings.length} finding(s)`)
       if (findings.length > 0) return yield* new FindingsReported({ count: findings.length })
-    }).pipe(
-      Effect.mapError((cause) =>
-        cause instanceof FindingsReported ? cause : new CheckFailed({ cause })
-      ),
-    ),
+    }).pipe(Effect.mapError(failed)),
 ).pipe(Command.withDescription("Run whole-program checks and fail on findings"))
 
 type Answer = ReturnType<typeof Inspect.type> | typeof Inspect.map
-
-const configFlag = Flag.file("config").pipe(Flag.withDefault("safemods.config.ts"))
 
 const isRecipe = (value: unknown): value is Recipe.Recipe<unknown> =>
   Predicate.isObject(value) &&
@@ -134,17 +97,10 @@ const run = Command.make(
   },
   ({ config: configFile, recipe: recipeFile, input: inputJson, apply }) =>
     Effect.gen(function* () {
-      const path = yield* Path.Path
-      const configPath = path.resolve(configFile)
-      const root = path.dirname(configPath)
-      const config = yield* loadConfig(configPath)
-      const definition = yield* Schema.decodeUnknownEffect(Workspace.WorkspaceDefinition.schema)({
-        projects: config.projects,
-      })
-      const recipePath = path.resolve(recipeFile)
-      const recipe = Object.values(yield* loadModule(recipePath)).find(isRecipe)
+      const { workspace } = yield* Config.load(configFile)
+      const recipe = Object.values(yield* Config.importModule(recipeFile)).find(isRecipe)
       if (recipe === undefined) {
-        return yield* new InvalidConfig({ path: recipePath, cause: "no export is a recipe" })
+        return yield* new Config.InvalidConfig({ path: recipeFile, cause: "no export is a recipe" })
       }
       const json = yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(inputJson)
       const input = recipe.schema === undefined ?
@@ -190,26 +146,18 @@ const run = Command.make(
         if (!apply) return yield* Console.log("not written: pass --apply")
         yield* applyVerifiedPlan(verified)
         yield* Console.log(`applied to ${verified.preview.files.length} file(s)`)
-      }).pipe(Effect.provide(Workspace.layer(definition, root)))
-    }).pipe(
-      Effect.mapError((cause) =>
-        cause instanceof PlanRejected ? cause : new CheckFailed({ cause })
-      ),
-    ),
+      }).pipe(Effect.provide(workspace))
+    }).pipe(Effect.mapError(failed)),
 ).pipe(Command.withDescription("Plan a recipe, verify it, and write it only with --apply"))
 
 const inspecting = (configFile: string, answer: Answer) =>
   Effect.gen(function* () {
-    const path = yield* Path.Path
-    const configPath = path.resolve(configFile)
-    const config = yield* loadConfig(configPath)
-    const definition = yield* Schema.decodeUnknownEffect(Workspace.WorkspaceDefinition.schema)({
-      projects: config.projects,
-    })
-    const lines = yield* Workspace.Workspace.use((workspace) => workspace.withSnapshot(answer))
-      .pipe(Effect.provide(Workspace.layer(definition, path.dirname(configPath))))
+    const { workspace } = yield* Config.load(configFile)
+    const lines = yield* Workspace.Workspace.use((service) => service.withSnapshot(answer)).pipe(
+      Effect.provide(workspace),
+    )
     yield* Console.log(lines.join("\n"))
-  }).pipe(Effect.mapError((cause) => new CheckFailed({ cause })))
+  }).pipe(Effect.mapError(failed))
 
 const at = (name: string, description: string, answer: (position: string) => Answer) =>
   Command.make(

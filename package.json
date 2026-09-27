@@ -20,6 +20,11 @@
       "types": "./dist/src/Checks/index.d.ts",
       "default": "./dist/src/Checks/index.js"
     },
+    "./Config": {
+      "source": "./src/Config.ts",
+      "types": "./dist/src/Config.d.ts",
+      "default": "./dist/src/Config.js"
+    },
     "./Draft": {
       "source": "./src/Draft.ts",
       "types": "./dist/src/Draft.d.ts",
