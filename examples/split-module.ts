@@ -34,7 +34,7 @@ import {
 import * as Draft from "safemods/Draft"
 import * as ModuleSpecifier from "safemods/ModuleSpecifier"
 import * as P from "safemods/Pattern"
-import * as ProjectRelativePath from "safemods/ProjectRelativePath"
+import * as WorkspacePath from "safemods/WorkspacePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
@@ -44,10 +44,10 @@ export interface SplitModuleInput {
 }
 
 const paths = {
-  source: ProjectRelativePath.schema.make("src/accounts.ts"),
-  model: ProjectRelativePath.schema.make("src/accounts/model.ts"),
-  service: ProjectRelativePath.schema.make("src/accounts/service.ts"),
-  index: ProjectRelativePath.schema.make("src/accounts/index.ts"),
+  source: WorkspacePath.schema.make("src/accounts.ts"),
+  model: WorkspacePath.schema.make("src/accounts/model.ts"),
+  service: WorkspacePath.schema.make("src/accounts/service.ts"),
+  index: WorkspacePath.schema.make("src/accounts/index.ts"),
 }
 
 type Declaration =
@@ -219,9 +219,9 @@ export const splitModule = Recipe.define("split-module", {
 
       return Draft.concat(
         Draft.deleteFile(source),
-        Draft.createFile(project, paths.model, `${textOf(types)}\n`),
-        Draft.createFile(project, paths.service, `${service}\n`),
-        Draft.createFile(project, paths.index, `${index}\n`),
+        Draft.createFile(paths.model, `${textOf(types)}\n`),
+        Draft.createFile(paths.service, `${service}\n`),
+        Draft.createFile(paths.index, `${index}\n`),
         ...consumers.map(splitConsumer),
       )
     }),

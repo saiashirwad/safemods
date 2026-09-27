@@ -79,7 +79,7 @@ const reportsIn = (project: ProjectSnapshot, file: ProjectFile, place: Place) =>
           return Option.toArray(yield* place(leaked.value)).map((found) => {
             const message = `exports ${name} with a type mentioning ${found}`
             return at === undefined ?
-              Check.reportAt(project, file.fileName, message) :
+              Check.reportAt(file.fileName, message) :
               Check.report(at, message)
           })
         }),

@@ -7,20 +7,15 @@ import * as Draft from "../src/Draft.ts"
 import * as Query from "../src/Query.ts"
 import * as Recipe from "../src/Recipe.ts"
 import * as Verification from "../src/Verification/index.ts"
-import type { ConfiguredProject } from "../src/Workspace/index.ts"
-import { projectPath } from "./utils/domain.ts"
+import { workspacePath } from "./utils/domain.ts"
 import { executeRecipe } from "./utils/execute-recipe.ts"
 import { exists, fixtureProject, read, withFixture, write } from "./utils/fixture.ts"
 
-const createFile = (app: ConfiguredProject.Type, fileName: string, content: string) =>
+const createFile = (fileName: string, content: string) =>
   Recipe.define(`create-${fileName}`, {
     version: "1.0.0",
     policies: { diagnostics: "allow-new-errors" },
-    run: () =>
-      Effect.map(
-        fixtureProject(app),
-        (project) => Draft.createFile(project, projectPath(fileName), content),
-      ),
+    run: () => Effect.succeed(Draft.createFile(workspacePath(fileName), content)),
   })
 
 const verified = <E, R>(recipe: Recipe.Recipe<undefined, E, R>) =>
@@ -42,14 +37,14 @@ describe("Application.applyVerifiedPlan", () => {
               run: () =>
                 Effect.gen(function* () {
                   const project = yield* fixtureProject(app)
-                  const library = (yield* project.file(projectPath("src/library.ts")))!
-                  const empty = (yield* project.file(projectPath("src/empty.ts")))!
-                  const doomed = (yield* project.file(projectPath("src/doomed.ts")))!
+                  const library = (yield* project.file(workspacePath("src/library.ts")))!
+                  const empty = (yield* project.file(workspacePath("src/empty.ts")))!
+                  const doomed = (yield* project.file(workspacePath("src/doomed.ts")))!
                   return Draft.concat(
-                    Draft.createFile(project, projectPath("src/created-empty.ts"), ""),
-                    Draft.moveFile(library, projectPath("src/shared/core.ts")),
+                    Draft.createFile(workspacePath("src/created-empty.ts"), ""),
+                    Draft.moveFile(library, workspacePath("src/shared/core.ts")),
                     Draft.insertBefore(project, library.sourceFile.statements[0]!, "// core\n"),
-                    Draft.moveFile(empty, projectPath("src/moved-empty.ts")),
+                    Draft.moveFile(empty, workspacePath("src/moved-empty.ts")),
                     Draft.deleteFile(doomed),
                   )
                 }),
@@ -89,7 +84,7 @@ describe("Application.applyVerifiedPlan", () => {
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                const file = (yield* project.file(projectPath("src/script.ts")))!
+                const file = (yield* project.file(workspacePath("src/script.ts")))!
                 return Draft.insertAfter(project, file.sourceFile.statements[0]!, "\nexport {}")
               }),
           })
@@ -115,8 +110,8 @@ describe("Application.applyVerifiedPlan", () => {
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
                 return Draft.moveFile(
-                  (yield* project.file(projectPath("src/script.ts")))!,
-                  projectPath("src/moved.ts"),
+                  (yield* project.file(workspacePath("src/script.ts")))!,
+                  workspacePath("src/moved.ts"),
                 )
               }),
           })
@@ -133,14 +128,14 @@ describe("Application.applyVerifiedPlan", () => {
   effect(
     "refuses to write through a symlink that leaves the project",
     () =>
-      withFixture((root, app) =>
+      withFixture((root) =>
         Effect.gen(function* () {
           const outside = yield* Effect.promise(() =>
             Fs.mkdtemp(Path.join(Path.dirname(root), "safemods-outside-"))
           )
           yield* Effect.promise(() => Fs.symlink(outside, Path.join(root, "src/escape"), "dir"))
 
-          const plan = yield* verified(createFile(app, "src/escape/outside.ts", "export {}\n"))
+          const plan = yield* verified(createFile("src/escape/outside.ts", "export {}\n"))
           const failure = yield* Effect.flip(Application.applyVerifiedPlan(plan))
           expect(failure._tag).toBe("ApplicationFailure")
           expect(yield* exists(outside, "outside.ts")).toBe(false)
@@ -184,9 +179,9 @@ describe("Application.applyVerifiedPlan", () => {
   effect(
     "rejects when an untouched fingerprinted dependency changes after verification",
     () =>
-      withFixture((root, app) =>
+      withFixture((root) =>
         Effect.gen(function* () {
-          const plan = yield* verified(createFile(app, "src/created.ts", ""))
+          const plan = yield* verified(createFile("src/created.ts", ""))
           yield* write(root, "tsconfig.json", '{ "compilerOptions": { "strict": false } }\n')
           const failure = yield* Effect.flip(Application.applyVerifiedPlan(plan))
           expect(failure).toMatchObject({ _tag: "StalePlanError", fileName: "tsconfig.json" })
@@ -198,9 +193,9 @@ describe("Application.applyVerifiedPlan", () => {
   effect(
     "does not overwrite a file that appeared at a create target",
     () =>
-      withFixture((root, app) =>
+      withFixture((root) =>
         Effect.gen(function* () {
-          const plan = yield* verified(createFile(app, "src/raced.ts", ""))
+          const plan = yield* verified(createFile("src/raced.ts", ""))
           yield* write(root, "src/raced.ts", "created by another process\n")
           const failure = yield* Effect.flip(Application.applyVerifiedPlan(plan))
           expect(failure._tag).toBe("StalePlanError")
@@ -214,14 +209,17 @@ describe("Application.applyVerifiedPlan", () => {
     () =>
       withFixture((root, app) =>
         Effect.gen(function* () {
-          const target = projectPath("src/raced.ts")
+          const target = workspacePath("src/raced.ts")
           const recipe = Recipe.define("move", {
             version: "1.0.0",
             policies: { diagnostics: "allow-new-errors" },
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                return Draft.moveFile((yield* project.file(projectPath("src/library.ts")))!, target)
+                return Draft.moveFile(
+                  (yield* project.file(workspacePath("src/library.ts")))!,
+                  target,
+                )
               }),
           })
           const plan = yield* verified(recipe)
@@ -236,9 +234,9 @@ describe("Application.applyVerifiedPlan", () => {
   effect(
     "rolls back a file whose temporary rename succeeds but reports failure",
     () =>
-      withFixture((root, app) =>
+      withFixture((root) =>
         Effect.gen(function* () {
-          const recipe = createFile(app, "src/created.ts", "export const created = true\n")
+          const recipe = createFile("src/created.ts", "export const created = true\n")
           const plan = yield* verified(recipe)
           let injected = false
 
@@ -273,8 +271,8 @@ describe("Application.applyVerifiedPlan", () => {
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                const barrel = (yield* project.file(projectPath("src/barrel.ts")))!
-                const consumer = (yield* project.file(projectPath("src/reexport-consumer.ts")))!
+                const barrel = (yield* project.file(workspacePath("src/barrel.ts")))!
+                const consumer = (yield* project.file(workspacePath("src/reexport-consumer.ts")))!
                 return Draft.concat(
                   Draft.insertBefore(project, barrel.sourceFile.statements[0]!, "// edited\n"),
                   Draft.insertBefore(project, consumer.sourceFile.statements[0]!, "// edited\n"),
@@ -315,7 +313,7 @@ describe("Application.applyVerifiedPlan", () => {
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                const barrel = (yield* project.file(projectPath("src/barrel.ts")))!
+                const barrel = (yield* project.file(workspacePath("src/barrel.ts")))!
                 return Draft.insertBefore(project, barrel.sourceFile.statements[0]!, "// edited\n")
               }),
           })
@@ -351,7 +349,7 @@ describe("Application.applyVerifiedPlan", () => {
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                const barrel = (yield* project.file(projectPath("src/barrel.ts")))!
+                const barrel = (yield* project.file(workspacePath("src/barrel.ts")))!
                 return Draft.insertBefore(
                   project,
                   barrel.sourceFile.statements[0]!,

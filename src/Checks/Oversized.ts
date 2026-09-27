@@ -23,7 +23,6 @@ export const oversized = (options: {
           .filter((file) => linesOf(file.sourceFile.text) > options.fileLines)
           .map((file) =>
             Check.reportAt(
-              project,
               file.fileName,
               `${
                 linesOf(file.sourceFile.text)

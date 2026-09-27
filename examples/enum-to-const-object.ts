@@ -3,14 +3,14 @@ import { Data, Effect, Predicate } from "effect"
 import { SyntaxKind, type EnumDeclaration, type EnumMember } from "typescript/unstable/ast"
 import { isEnumDeclaration, isIdentifier, isStringLiteral } from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
-import type * as ProjectRelativePath from "safemods/ProjectRelativePath"
+import type * as WorkspacePath from "safemods/WorkspacePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 
 export interface EnumToConstObjectInput {
   readonly project: ConfiguredProject.Type
-  readonly declarationFile: ProjectRelativePath.Type
+  readonly declarationFile: WorkspacePath.Type
   readonly enumName: string
 }
 

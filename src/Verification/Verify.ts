@@ -1,17 +1,17 @@
 import { Effect, FileSystem, type PlatformError } from "effect"
-import * as FileRef from "../FileRef.ts"
-import { type Contents, type InvalidPlan, type Plan, targetOf, validate } from "../Plan.ts"
+import {
+  type Contents,
+  distinct,
+  type InvalidPlan,
+  type Plan,
+  targetOf,
+  validate,
+} from "../Plan.ts"
 import { checkInput, type Recipe, type RecipeInputError } from "../Recipe.ts"
 import * as Sha256 from "../Sha256.ts"
 import type { Overlay } from "../Workspace/Overlay.ts"
-import {
-  type OverlappingProjectOwnership,
-  type ProjectNotInSnapshot,
-  type ProjectNotInWorkspace,
-  type ProjectSnapshotError,
-  Workspace,
-  WorkspaceSnapshot,
-} from "../Workspace/index.ts"
+import { type ProjectSnapshotError, Workspace, WorkspaceSnapshot } from "../Workspace/index.ts"
+import type * as WorkspacePath from "../WorkspacePath.ts"
 import { collectDiagnostics, type DiagnosticDiff, diffDiagnostics } from "./Diagnostics.ts"
 import { VerificationFailure } from "./Errors.ts"
 import { type FilePreview, type PlanPreview, previewOf } from "./Preview.ts"
@@ -33,36 +33,33 @@ const readOptional = (path: string) =>
       ),
     ))
 
-const has = (contents: Contents, file: FileRef.FileRef): boolean =>
-  contents.get(file.projectId)?.has(file.fileName) === true
-
 const withTargets = (captured: Contents, plan: Plan) =>
   Effect.gen(function* () {
     const workspace = yield* Workspace
-    const contents: FileRef.Map<Uint8Array | undefined> = new Map()
-    for (const [file, bytes] of FileRef.entries(captured)) FileRef.set(contents, file, bytes)
+    const contents = new Map(captured)
     for (const operation of plan.fileOperations) {
       const target = targetOf(operation)
-      if (operation.kind !== "delete" && !has(contents, target)) {
-        FileRef.set(contents, target, yield* readOptional(yield* workspace.absolutePath(target)))
+      if (operation.kind !== "delete" && !contents.has(target)) {
+        contents.set(target, yield* readOptional(workspace.absolutePath(target)))
       }
     }
     return contents
   })
 
-const overlayOf = Effect.fn(function* (
+const overlayOf = (
   workspace: Workspace["Service"],
   files: ReadonlyArray<FilePreview>,
   side: "before" | "after",
-) {
+): Overlay => {
   const overlay = { files: new Map<string, string>(), deleted: new Set<string>() }
   for (const file of files) {
     const state = file[side]
-    if (state.exists) overlay.files.set(yield* workspace.absolutePath(file), state.text)
-    else overlay.deleted.add(yield* workspace.absolutePath(file))
+    const absolute = workspace.absolutePath(file.fileName)
+    if (state.exists) overlay.files.set(absolute, state.text)
+    else overlay.deleted.add(absolute)
   }
-  return overlay satisfies Overlay
-})
+  return overlay
+}
 
 const isChanged = ({ before, after }: FilePreview): boolean =>
   before.exists && after.exists ?
@@ -75,17 +72,17 @@ const replayedChanges = <Input, E, R>(
   preview: PlanPreview,
 ) =>
   Effect.gen(function* () {
-    const contents: FileRef.Map<Uint8Array | undefined> = new Map()
+    const contents = new Map<WorkspacePath.Type, Uint8Array | undefined>()
     for (const file of [...preview.sources, ...preview.files]) {
-      FileRef.set(contents, file, file.after.exists ? file.after.bytes : undefined)
+      contents.set(file.fileName, file.after.exists ? file.after.bytes : undefined)
     }
-    const plan = yield* recipe.run(input)
+    const plan = distinct(yield* recipe.run(input))
     const snapshot = yield* WorkspaceSnapshot
-    for (const file of [...plan.edits, ...plan.fileOperations]) {
-      if (has(contents, file)) continue
-      const found = yield* (yield* snapshot.project(file.projectId)).file(file.fileName)
+    for (const { fileName } of [...plan.edits, ...plan.fileOperations]) {
+      if (contents.has(fileName)) continue
+      const found = yield* snapshot.file(fileName)
       if (found !== undefined) {
-        FileRef.set(contents, file, new TextEncoder().encode(found.sourceFile.text))
+        contents.set(fileName, new TextEncoder().encode(found.sourceFile.text))
       }
     }
     const invalid = ({ detail }: InvalidPlan) =>
@@ -135,10 +132,7 @@ export const verify = <Input, E, R>(
   | RecipeInputError
   | PlatformError.PlatformError
   | VerificationFailure
-  | ProjectSnapshotError
-  | ProjectNotInSnapshot
-  | ProjectNotInWorkspace
-  | OverlappingProjectOwnership,
+  | ProjectSnapshotError,
   Workspace | FileSystem.FileSystem | Exclude<R, WorkspaceSnapshot>
 > =>
   Effect.gen(function* () {
@@ -147,7 +141,7 @@ export const verify = <Input, E, R>(
     const [plan, contents] = yield* workspace.withSnapshot(
       Effect.gen(function* () {
         const captured = yield* (yield* WorkspaceSnapshot).capture
-        const plan = yield* recipe.run(input)
+        const plan = distinct(yield* recipe.run(input))
         return [plan, yield* withTargets(captured, plan)] as const
       }),
     )
@@ -156,7 +150,7 @@ export const verify = <Input, E, R>(
 
     const baseline = yield* workspace.withSnapshot(
       collectDiagnostics,
-      yield* overlayOf(workspace, preview.sources, "before"),
+      overlayOf(workspace, preview.sources, "before"),
     )
     const [proposed, replayed] = yield* workspace.withSnapshot(
       Effect.all([
@@ -165,15 +159,15 @@ export const verify = <Input, E, R>(
           replayedChanges(recipe, input, preview) :
           Effect.succeed(0),
       ]),
-      yield* overlayOf(workspace, [...preview.sources, ...preview.files], "after"),
+      overlayOf(workspace, [...preview.sources, ...preview.files], "after"),
     )
 
     const moves = new Map<string, string>()
     for (const operation of plan.fileOperations) {
       if (operation.kind === "move") {
         moves.set(
-          yield* workspace.absolutePath(operation),
-          yield* workspace.absolutePath(targetOf(operation)),
+          workspace.absolutePath(operation.fileName),
+          workspace.absolutePath(operation.toFileName),
         )
       }
     }

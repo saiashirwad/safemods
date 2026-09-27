@@ -9,22 +9,19 @@ import {
   diffDiagnostics,
 } from "../src/Verification/Diagnostics.ts"
 import * as Verification from "../src/Verification/index.ts"
-import { type ConfiguredProject, Workspace } from "../src/Workspace/index.ts"
-import { projectPath } from "./utils/domain.ts"
+import { Workspace } from "../src/Workspace/index.ts"
+import { workspacePath } from "./utils/domain.ts"
 import { fixtureProject, withFixture, write } from "./utils/fixture.ts"
 
 const createFile = (
   name: string,
-  app: ConfiguredProject.Type,
   content: string,
   policies: Parameters<typeof Recipe.define>[1]["policies"] = {},
 ) =>
   Recipe.define(name, {
     version: "1.0.0",
     policies,
-    run: () =>
-      Effect.map(fixtureProject(app), (project) =>
-        Draft.createFile(project, projectPath("src/created.ts"), content)),
+    run: () => Effect.succeed(Draft.createFile(workspacePath("src/created.ts"), content)),
   })
 
 const diagnostic = (overrides: Partial<DiagnosticRecord>): DiagnosticRecord => ({
@@ -99,10 +96,10 @@ describe("Verification.verify", () => {
               run: () =>
                 Effect.gen(function* () {
                   const project = yield* fixtureProject(app)
-                  const swap = yield* project.file(projectPath("src/swap.ts"))
+                  const swap = yield* project.file(workspacePath("src/swap.ts"))
                   return Draft.concat(
                     Draft.deleteFile(swap!),
-                    Draft.createFile(project, projectPath("src/other.ts"), "missingName;\n"),
+                    Draft.createFile(workspacePath("src/other.ts"), "missingName;\n"),
                   )
                 }),
             })
@@ -126,7 +123,7 @@ describe("Verification.verify", () => {
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                const source = (yield* project.file(projectPath("src/message.ts")))!.sourceFile
+                const source = (yield* project.file(workspacePath("src/message.ts")))!.sourceFile
                 return Draft.replace(project, source.statements[0]!, "after")
               }),
           })
@@ -144,15 +141,15 @@ describe("Verification.verify", () => {
   effect(
     "no-new-errors fails on a syntax error and allow-new-errors accepts it",
     () =>
-      withFixture((_, app) =>
+      withFixture(() =>
         Effect.gen(function* () {
-          const strict = createFile("strict", app, "export const broken = {\n")
+          const strict = createFile("strict", "export const broken = {\n")
           const failure = yield* Effect.flip(
             Verification.verify(strict, undefined),
           )
           expect(failure).toMatchObject({ _tag: "VerificationFailure", policy: "diagnostics" })
 
-          const lenient = createFile("lenient", app, "export const broken = {\n", {
+          const lenient = createFile("lenient", "export const broken = {\n", {
             diagnostics: "allow-new-errors",
           })
           const verified = yield* Verification.verify(lenient, undefined)
@@ -195,9 +192,9 @@ describe("Verification.verify", () => {
   effect(
     "replays the recipe on the proposed workspace when idempotence is required",
     () =>
-      withFixture((_, app) =>
+      withFixture(() =>
         Effect.gen(function* () {
-          const recipe = createFile("always-creates", app, "export {}\n", {
+          const recipe = createFile("always-creates", "export {}\n", {
             idempotence: "required",
           })
           expect(yield* Effect.flip(Verification.verify(recipe, undefined))).toMatchObject({
@@ -213,7 +210,7 @@ describe("Verification.verify", () => {
     () =>
       withFixture((root, app) =>
         Effect.gen(function* () {
-          const external = projectPath("src/external.ts")
+          const external = workspacePath("src/external.ts")
           const recipe = Recipe.define("external-after-planning", {
             version: "1.0.0",
             policies: { idempotence: "required" },
@@ -243,8 +240,8 @@ describe("Verification.verify", () => {
     () =>
       withFixture((_, app) =>
         Effect.gen(function* () {
-          const from = projectPath("src/library.ts")
-          const to = projectPath("src/moved/library.ts")
+          const from = workspacePath("src/library.ts")
+          const to = workspacePath("src/moved/library.ts")
           const recipe = Recipe.define("move-and-edit", {
             version: "1.0.0",
             policies: { diagnostics: "allow-new-errors" },
@@ -273,8 +270,8 @@ describe("Verification.verify", () => {
     withFixture(
       (_, app) =>
         Effect.gen(function* () {
-          const from = projectPath("src/broken.ts")
-          const to = projectPath("src/moved/broken.ts")
+          const from = workspacePath("src/broken.ts")
+          const to = workspacePath("src/moved/broken.ts")
           const recipe = Recipe.define("move-broken-file", {
             version: "1.0.0",
             run: () =>

@@ -6,15 +6,15 @@ import { dirname, normalize } from "node:path/posix"
 import { Effect } from "effect"
 import * as Draft from "safemods/Draft"
 import * as ModuleSpecifier from "safemods/ModuleSpecifier"
-import type * as ProjectRelativePath from "safemods/ProjectRelativePath"
+import type * as WorkspacePath from "safemods/WorkspacePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 
 export interface MoveModuleInput {
   readonly project: ConfiguredProject.Type
-  readonly from: ProjectRelativePath.Type
-  readonly to: ProjectRelativePath.Type
+  readonly from: WorkspacePath.Type
+  readonly to: WorkspacePath.Type
 }
 
 const isRelative = ({ value }: Query.Selection<Query.ResolvedModuleReference>): boolean =>

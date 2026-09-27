@@ -1,15 +1,12 @@
 import { Effect, Schema, SchemaIssue, SchemaTransformation } from "effect"
 
-const normalize = (value: string, allowParent = false): string | undefined => {
+const normalize = (value: string): string | undefined => {
   if (value.includes("\0") || /^([\\/]|[A-Za-z]:[\\/])/.test(value)) return undefined
   const parts: Array<string> = []
   for (const part of value.replaceAll("\\", "/").split("/")) {
     if (part === "" || part === ".") continue
     if (part === "..") {
-      if (parts.length === 0 || parts.at(-1) === "..") {
-        if (!allowParent) return undefined
-        parts.push(part)
-      } else parts.pop()
+      if (parts.pop() === undefined) return undefined
       continue
     }
     if (part.includes(":")) return undefined
@@ -21,10 +18,10 @@ const normalize = (value: string, allowParent = false): string | undefined => {
 const normalized = Schema.String.pipe(
   Schema.check(
     Schema.makeFilter((value) => normalize(value) === value, {
-      expected: "a normalized project-relative path",
+      expected: "a normalized workspace-relative path",
     }),
   ),
-  Schema.brand("ProjectRelativePath"),
+  Schema.brand("WorkspacePath"),
 )
 
 export const schema = Schema.String.pipe(
@@ -36,7 +33,7 @@ export const schema = Schema.String.pipe(
         return path === undefined ?
           Effect.fail(
             new SchemaIssue.InvalidValue(
-              { message: "Expected a project-relative path" },
+              { message: "Expected a workspace-relative path" },
               value,
               options,
             ),
@@ -49,8 +46,3 @@ export const schema = Schema.String.pipe(
 )
 
 export type Type = typeof schema.Type
-
-export const decodeWorkspaceFile = (value: string): Type | undefined => {
-  const path = normalize(value, true)
-  return path === undefined ? undefined : (path as Type)
-}

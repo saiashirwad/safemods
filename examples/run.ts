@@ -15,7 +15,7 @@ import { Console, Data, Effect, FileSystem, Option, Path } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
 import { applyVerifiedPlan } from "../src/Application.ts"
 import type { Recipe } from "../src/Recipe.ts"
-import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
+import * as WorkspacePath from "../src/WorkspacePath.ts"
 import { actionOf, verify } from "../src/Verification/index.ts"
 import * as Workspace from "../src/Workspace/index.ts"
 import { asAssertionToSatisfies } from "./as-assertion-to-satisfies.ts"
@@ -130,8 +130,8 @@ const examples = [
     recipe: moveModule,
     input: (project) => ({
       project,
-      from: ProjectRelativePath.schema.make("src/users/account.ts"),
-      to: ProjectRelativePath.schema.make("src/identity/account.ts"),
+      from: WorkspacePath.schema.make("src/users/account.ts"),
+      to: WorkspacePath.schema.make("src/identity/account.ts"),
     }),
   }),
   defineExample({
@@ -146,7 +146,7 @@ const examples = [
     recipe: defaultToNamed,
     input: (project) => ({
       project,
-      declarationFile: ProjectRelativePath.schema.make("src/auth/authenticate.ts"),
+      declarationFile: WorkspacePath.schema.make("src/auth/authenticate.ts"),
       exportName: "authenticate",
     }),
   }),
@@ -156,7 +156,7 @@ const examples = [
     recipe: enumToConstObject,
     input: (project) => ({
       project,
-      declarationFile: ProjectRelativePath.schema.make("src/status.ts"),
+      declarationFile: WorkspacePath.schema.make("src/status.ts"),
       enumName: "Status",
     }),
   }),

@@ -5,7 +5,7 @@ import * as Query from "../src/Query.ts"
 import * as Type from "../src/Type.ts"
 import { collectDiagnostics } from "../src/Verification/Diagnostics.ts"
 import type { ProjectSnapshot, ProjectSnapshotError } from "../src/Workspace/index.ts"
-import { projectPath } from "./utils/domain.ts"
+import { workspacePath } from "./utils/domain.ts"
 import { withProject } from "./utils/fixture.ts"
 
 const SOURCE = [
@@ -197,7 +197,7 @@ const declaredType = (project: ProjectSnapshot, name: string) =>
 
 const realMarker = (project: ProjectSnapshot) =>
   Effect.gen(function* () {
-    const file = yield* project.file(projectPath("src/marker.ts"))
+    const file = yield* project.file(workspacePath("src/marker.ts"))
     const exported = yield* project.exportsOf(file!)
     return exported.find((entry) => entry.name === "Marker")!.symbol
   })

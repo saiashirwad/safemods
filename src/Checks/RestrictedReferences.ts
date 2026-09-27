@@ -1,13 +1,13 @@
 import { matchesGlob } from "node:path"
 import { Effect } from "effect"
 import * as Check from "../Check.ts"
-import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
+import type * as WorkspacePath from "../WorkspacePath.ts"
 import * as Query from "../Query.ts"
 import { nameOf } from "./Exported.ts"
 
 export const restrictedReferences = (options: {
   readonly name: string
-  readonly declaredIn: ProjectRelativePath.Type
+  readonly declaredIn: WorkspacePath.Type
   readonly allowedWithin: ReadonlyArray<string>
 }) =>
   Check.perProject(`restricted-references:${options.name}`, (project) =>

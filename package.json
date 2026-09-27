@@ -45,10 +45,10 @@
       "types": "./dist/src/ProjectId.d.ts",
       "default": "./dist/src/ProjectId.js"
     },
-    "./ProjectRelativePath": {
-      "source": "./src/ProjectRelativePath.ts",
-      "types": "./dist/src/ProjectRelativePath.d.ts",
-      "default": "./dist/src/ProjectRelativePath.js"
+    "./WorkspacePath": {
+      "source": "./src/WorkspacePath.ts",
+      "types": "./dist/src/WorkspacePath.d.ts",
+      "default": "./dist/src/WorkspacePath.js"
     },
     "./Query": {
       "source": "./src/Query.ts",

@@ -10,12 +10,12 @@ Pre-alpha. Two things run on the same compiler snapshot:
 ```ts
 import { Effect } from "effect"
 import * as Draft from "safemods/Draft"
-import * as ProjectRelativePath from "safemods/ProjectRelativePath"
+import * as WorkspacePath from "safemods/WorkspacePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { WorkspaceSnapshot } from "safemods/Workspace"
 
-const store = ProjectRelativePath.schema.make("src/accounts/store.ts")
+const store = WorkspacePath.schema.make("src/accounts/store.ts")
 
 export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
   version: "1.0.0",
@@ -91,7 +91,7 @@ export const noUnknownFailures = Check.define(
 )
 ```
 
-List projects and checks in `safemods.config.ts`. The rules that ship with the package come from `safemods/Checks`; a rule of your own is a file in your repository.
+List projects and checks in `safemods.config.ts`. Every path — a project config, a `within` glob, an edit, a finding — is relative to the directory holding that file. The rules that ship with the package come from `safemods/Checks`; a rule of your own is a file in your repository.
 
 ```ts
 import type * as Check from "safemods/Check"
@@ -160,23 +160,23 @@ Read in this order; each step uses only what came before.
 
 Each module depends only on the ones above it.
 
-| Module                                       | Responsibility                                                       |
-| -------------------------------------------- | -------------------------------------------------------------------- |
-| `Sha256`, `ProjectId`, `ProjectRelativePath` | branded value types                                                  |
-| `Git`                                        | the files a ref differs from and their text at it                    |
-| `Position`, `ModuleSpecifier`                | line and column of an offset; parse, relate and emit specifiers      |
-| `Edit`                                       | hash-guarded text edits and their application                        |
-| `Plan`                                       | edits and file operations, and the rules a valid plan obeys          |
-| `Workspace`                                  | compiler snapshots; every snapshot is a fresh view of disk + overlay |
-| `Pattern`                                    | syntax shapes with typed captures, combined into tagged matches      |
-| `Query`, `Type`                              | streams of selected syntax nodes; predicates and parsers over types  |
-| `Draft`, `Check`                             | proposed edits and file operations; findings                         |
-| `Checks`                                     | the rules that ship with the package                                 |
-| `Recipe`                                     | define a transformation: name, version, policies, input schema, run  |
-| `Verification`                               | run a recipe, preview exact bytes, diff diagnostics, replay          |
-| `Application`                                | write a verified plan, refusing stale files and symlink escapes      |
-| `Inspect`                                    | answers for `map`, `deps`, `exports`, `type`, `refs` and `calls`     |
-| `bin`                                        | the `safemods` command                                               |
+| Module                                 | Responsibility                                                       |
+| -------------------------------------- | -------------------------------------------------------------------- |
+| `Sha256`, `ProjectId`, `WorkspacePath` | branded value types                                                  |
+| `Git`                                  | the files a ref differs from and their text at it                    |
+| `Position`, `ModuleSpecifier`          | line and column of an offset; parse, relate and emit specifiers      |
+| `Edit`                                 | hash-guarded text edits and their application                        |
+| `Plan`                                 | edits and file operations, and the rules a valid plan obeys          |
+| `Workspace`                            | compiler snapshots; every snapshot is a fresh view of disk + overlay |
+| `Pattern`                              | syntax shapes with typed captures, combined into tagged matches      |
+| `Query`, `Type`                        | streams of selected syntax nodes; predicates and parsers over types  |
+| `Draft`, `Check`                       | proposed edits and file operations; findings                         |
+| `Checks`                               | the rules that ship with the package                                 |
+| `Recipe`                               | define a transformation: name, version, policies, input schema, run  |
+| `Verification`                         | run a recipe, preview exact bytes, diff diagnostics, replay          |
+| `Application`                          | write a verified plan, refusing stale files and symlink escapes      |
+| `Inspect`                              | answers for `map`, `deps`, `exports`, `type`, `refs` and `calls`     |
+| `bin`                                  | the `safemods` command                                               |
 
 Application checks real paths immediately before each mutation. The portable filesystem API does not offer directory handles or atomic no-follow operations, so this confines normal symlink layouts but cannot guarantee safety against a hostile process swapping symlinks between a check and mutation.
 

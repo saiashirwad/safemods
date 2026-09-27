@@ -54,7 +54,6 @@ export const suppressions = (options: { readonly within: string }) =>
       return [
         ...files.flatMap((file) =>
           directivesIn(file.sourceFile).map((match) => ({
-            projectId: project.project.id,
             fileName: file.fileName,
             start: match.start,
             message: `${match.text} silences the compiler: fix the type it complains about`,

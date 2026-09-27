@@ -8,13 +8,13 @@ import {
 } from "../../examples/enum-to-const-object.ts"
 import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { withFixture } from "../utils/fixture.ts"
-import { projectPath } from "../utils/domain.ts"
+import { workspacePath } from "../utils/domain.ts"
 
 const fixture = "migrations/enum-to-const-object"
 
 const inputFor = (project: EnumToConstObjectInput["project"]): EnumToConstObjectInput => ({
   project,
-  declarationFile: projectPath("src/status.ts"),
+  declarationFile: workspacePath("src/status.ts"),
   enumName: "Status",
 })
 
@@ -68,7 +68,7 @@ describe("enum-to-const-object", () => {
           for (const enumName of ["Numeric", "Computed", "Merged"]) {
             const failure = yield* draftOf(enumToConstObject, {
               project: app,
-              declarationFile: projectPath("src/unsupported.ts"),
+              declarationFile: workspacePath("src/unsupported.ts"),
               enumName,
             }).pipe(Effect.flip)
             expect(failure).toMatchObject({

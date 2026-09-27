@@ -5,7 +5,6 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Layer, Option, Schema } from "effect"
 import {
   type ModuleExport,
-  ProjectNotInWorkspace,
   SnapshotExpired,
   Workspace,
   WorkspaceDefinition,
@@ -14,10 +13,10 @@ import {
 } from "../src/Workspace/index.ts"
 import { isObjectLiteralExpression } from "typescript/unstable/ast/is"
 import * as Query from "../src/Query.ts"
-import { projectPath } from "./utils/domain.ts"
+import { workspacePath } from "./utils/domain.ts"
 import { fixturePath, fixtureProject, withFixture, withProject, write } from "./utils/fixture.ts"
 
-const libraryPath = projectPath("src/library.ts")
+const libraryPath = workspacePath("src/library.ts")
 
 describe("workspace snapshots", () => {
   effect("rejects unsafe, empty, and duplicate project definitions", () =>
@@ -43,33 +42,42 @@ describe("workspace snapshots", () => {
       expect(valid.projects).toEqual([app])
     }))
 
-  effect("rejects overlapping physical source ownership", () =>
-    Effect.gen(function* () {
-      const definition = yield* WorkspaceDefinition.make({
-        projects: [
-          { id: "root", config: "tsconfig.json" },
-          { id: "nested", config: "nested/tsconfig.json" },
-        ],
-      })
-      const result = yield* Workspace.use((workspace) =>
-        workspace.withSnapshot(WorkspaceSnapshot).pipe(Effect.result)
-      ).pipe(
-        Effect.provide(
-          Layer.provideMerge(
-            workspaceLayer(definition, fixturePath("multi-overlap")),
-            NodeServices.layer,
+  effect(
+    "names a file shared by two projects by one workspace path",
+    () =>
+      Effect.gen(function* () {
+        const definition = yield* WorkspaceDefinition.make({
+          projects: [
+            { id: "root", config: "tsconfig.json" },
+            { id: "nested", config: "nested/tsconfig.json" },
+          ],
+        })
+        const shared = workspacePath("nested/src/shared.ts")
+        const owners = yield* Workspace.use((workspace) =>
+          workspace.withSnapshot(
+            Effect.gen(function* () {
+              const snapshot = yield* WorkspaceSnapshot
+              expect((yield* snapshot.file(shared))?.fileName).toBe(shared)
+              const owners = yield* Effect.forEach(snapshot.projects, (project) =>
+                Effect.map(
+                  project.files,
+                  (files) =>
+                    files.some((file) => file.fileName === shared) ? [project.project.id] : [],
+                ))
+              return owners.flat()
+            }),
+          )
+        ).pipe(
+          Effect.provide(
+            Layer.provideMerge(
+              workspaceLayer(definition, fixturePath("multi-overlap")),
+              NodeServices.layer,
+            ),
           ),
-        ),
-      )
-      expect(result).toMatchObject({
-        _tag: "Failure",
-        failure: {
-          _tag: "OverlappingProjectOwnership",
-          fileName: Path.join(fixturePath("multi-overlap"), "nested/src/shared.ts"),
-          projectIds: ["root", "nested"],
-        },
-      })
-    }))
+        )
+        expect(owners).toEqual(["root", "nested"])
+      }),
+  )
 
   effect(
     "exposes owned files by portable path",
@@ -85,25 +93,6 @@ describe("workspace snapshots", () => {
         })),
   )
 
-  effect(
-    "unknown workspace projects fail through the typed channel",
-    () =>
-      withFixture(() =>
-        Effect.gen(function* () {
-          const workspace = yield* Workspace
-          const unknown = "unknown" as WorkspaceDefinition.Type["projects"][number]["id"]
-          expect(yield* Effect.flip(workspace.projectRoot(unknown))).toBeInstanceOf(
-            ProjectNotInWorkspace,
-          )
-          expect(
-            yield* Effect.flip(
-              workspace.absolutePath({ projectId: unknown, fileName: libraryPath }),
-            ),
-          ).toBeInstanceOf(ProjectNotInWorkspace)
-        })
-      ),
-  )
-
   effect("includes source files discovered outside the config directory", () =>
     withFixture(
       (_, app) =>
@@ -112,7 +101,7 @@ describe("workspace snapshots", () => {
           yield* workspace.withSnapshot(
             Effect.gen(function* () {
               const project = yield* fixtureProject(app)
-              const outside = projectPath("shared/outside.ts")
+              const outside = workspacePath("shared/outside.ts")
               const file = yield* project.file(outside)
               expect(file?.sourceFile.text).toContain("function outside")
               expect(Option.getOrUndefined(project.fileNameOf(file!.sourceFile))).toBe(outside)
@@ -176,7 +165,7 @@ describe("workspace snapshots", () => {
       withFixture((root, app) =>
         Effect.gen(function* () {
           const workspace = yield* Workspace
-          const created = projectPath("src/virtual-dir/created.ts")
+          const created = workspacePath("src/virtual-dir/created.ts")
           const overlay = {
             files: new Map([
               [Path.join(root, created), "export const created = 1\n"],
@@ -193,7 +182,7 @@ describe("workspace snapshots", () => {
               expect((yield* project.file(libraryPath))?.sourceFile.text).toBe(
                 "export const replaced = 1\n",
               )
-              expect(yield* project.file(projectPath("src/barrel.ts"))).toBeUndefined()
+              expect(yield* project.file(workspacePath("src/barrel.ts"))).toBeUndefined()
             }),
             overlay,
           )
@@ -233,7 +222,7 @@ describe("workspace snapshots", () => {
       withProject({}, (project) =>
         Effect.gen(function* () {
           const named = (name: string, within: string) =>
-            project.symbolNamed(name, { within: projectPath(within) })
+            project.symbolNamed(name, { within: workspacePath(within) })
           const original = yield* named("target", "src/library.ts")
           expect(yield* named("renamed", "src/consumer.ts")).toBe(original)
           expect(yield* named("publicTarget", "src/barrel.ts")).toBe(original)
@@ -270,7 +259,7 @@ describe("workspace snapshots", () => {
           Effect.gen(function* () {
             const exportsIn = (fileName: string) =>
               Effect.gen(function* () {
-                const file = yield* project.file(projectPath(fileName))
+                const file = yield* project.file(workspacePath(fileName))
                 return yield* project.exportsOf(file!)
               })
             const symbolOf = (exported: ReadonlyArray<ModuleExport>, name: string) =>
@@ -285,7 +274,7 @@ describe("workspace snapshots", () => {
             expect(symbolOf(facade, "Shape")).toBe(symbolOf(origin, "Shape"))
             expect(symbolOf(facade, "make")).not.toBe(symbolOf(impostor, "make"))
             expect(symbolOf(facade, "default")).toBe(
-              yield* project.symbolNamed("entry", { within: projectPath("src/facade.ts") }),
+              yield* project.symbolNamed("entry", { within: workspacePath("src/facade.ts") }),
             )
             expect(yield* project.declaredIn(symbolOf(facade, "extra")!)).toEqual([
               { path: expect.stringContaining("src/star.ts"), fileName: "src/star.ts" },

@@ -19,7 +19,7 @@ const run = (cwd: string, to: string, ...flags: ReadonlyArray<string>) =>
             "run",
             recipe,
             "--input",
-            JSON.stringify({ file: "src/lib.ts", name: "area", to }),
+            JSON.stringify({ file: "packages/app/src/lib.ts", name: "area", to }),
             ...flags,
           ],
           { cwd },
@@ -77,10 +77,10 @@ describe("safemods run", () => {
             expect(preview).toEqual({
               code: 0,
               lines: [
-                "  modify src/lib.ts",
-                "  modify src/user.ts",
+                "  modify packages/app/src/lib.ts",
+                "  modify packages/app/src/user.ts",
                 "left for you (1):",
-                "  src/lib.ts:1:32 mentions area in a comment or string the compiler cannot resolve",
+                "  packages/app/src/lib.ts:1:32 mentions area in a comment or string the compiler cannot resolve",
                 "verified: 0 new diagnostic(s), 0 resolved",
                 "not written: pass --apply",
               ],

@@ -1,5 +1,5 @@
 import type * as Check from "safemods/Check"
-import * as ProjectRelativePath from "safemods/ProjectRelativePath"
+import * as WorkspacePath from "safemods/WorkspacePath"
 import {
   duplicatedFunctions,
   ignoredReturns,
@@ -12,7 +12,7 @@ import {
 } from "safemods/Checks"
 
 const publicApi = [
-  "src/{Application,Check,Draft,Inspect,ModuleSpecifier,Pattern,Plan,ProjectId,ProjectRelativePath,Query,Recipe,Type,bin}.ts",
+  "src/{Application,Check,Draft,Inspect,ModuleSpecifier,Pattern,Plan,ProjectId,WorkspacePath,Query,Recipe,Type,bin}.ts",
   "src/{Checks,Verification,Workspace}/index.ts",
 ]
 
@@ -25,8 +25,7 @@ export default {
         [
           "src/Sha256.ts",
           "src/ProjectId.ts",
-          "src/ProjectRelativePath.ts",
-          "src/FileRef.ts",
+          "src/WorkspacePath.ts",
           "src/Position.ts",
           "src/ModuleSpecifier.ts",
         ],
@@ -45,7 +44,7 @@ export default {
     }),
     weakReturns({ within: "{src,examples}/**" }),
     typeBoundaries({
-      within: "src/{Sha256,ProjectId,ProjectRelativePath,FileRef,Edit,Plan}.ts",
+      within: "src/{Sha256,ProjectId,WorkspacePath,Edit,Plan}.ts",
       forbidden: { packages: ["typescript"] },
     }),
     unusedCode({ within: "src/**", tests: "test/**", publicApi }),
@@ -54,7 +53,7 @@ export default {
     duplicatedFunctions({ within: "{src,examples,test}/**", minimumLength: 60 }),
     restrictedReferences({
       name: "unsafeNative",
-      declaredIn: ProjectRelativePath.schema.make("src/Workspace/ProjectSnapshot.ts"),
+      declaredIn: WorkspacePath.schema.make("src/Workspace/ProjectSnapshot.ts"),
       allowedWithin: ["src/Workspace/**", "src/Verification/Diagnostics.ts", "test/**"],
     }),
   ],

@@ -39,9 +39,8 @@ import {
   isTypeNode,
 } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol, Type as NativeType } from "typescript/unstable/async"
-import * as FileRef from "./FileRef.ts"
 import * as Pattern from "./Pattern.ts"
-import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
+import type * as WorkspacePath from "./WorkspacePath.ts"
 import type {
   IntrinsicTypeName,
   ProjectFile,
@@ -52,7 +51,7 @@ import type {
 export interface Selection<A> {
   readonly value: A
   readonly project: ProjectSnapshot
-  readonly fileName: ProjectRelativePath.Type
+  readonly fileName: WorkspacePath.Type
   readonly start: number
   readonly end: number
 }
@@ -64,12 +63,7 @@ export type Scope = ProjectSnapshot | ReadonlyArray<ProjectFile>
 const isFiles = (scope: Scope): scope is ReadonlyArray<ProjectFile> => Array.isArray(scope)
 
 const distinct = (files: ReadonlyArray<ProjectFile>): Iterable<ProjectFile> =>
-  new Map(
-    files.map((file) => [
-      FileRef.key({ projectId: file.project.project.id, fileName: file.fileName }),
-      file,
-    ]),
-  ).values()
+  new Map(files.map((file) => [file.fileName, file])).values()
 
 const filesIn = (scope: Scope): Stream.Stream<ProjectFile, ProjectSnapshotError> =>
   isFiles(scope) ? Stream.fromIterable(distinct(scope)) : Stream.fromIterableEffect(scope.files)

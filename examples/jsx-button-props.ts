@@ -14,12 +14,12 @@ import {
 } from "typescript/unstable/ast/is"
 import { concat, empty, replace, unsupported, type Draft } from "safemods/Draft"
 import * as P from "safemods/Pattern"
-import * as ProjectRelativePath from "safemods/ProjectRelativePath"
+import * as WorkspacePath from "safemods/WorkspacePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { WorkspaceSnapshot } from "safemods/Workspace"
 
-const componentFile = ProjectRelativePath.schema.make("src/ui/button.tsx")
+const componentFile = WorkspacePath.schema.make("src/ui/button.tsx")
 
 const renames = [
   ["oldLabel", "label"],

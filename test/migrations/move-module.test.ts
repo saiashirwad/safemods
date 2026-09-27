@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { moveModule, type MoveModuleInput } from "../../examples/move-module.ts"
 import { withFixture } from "../utils/fixture.ts"
 import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
-import { projectPath } from "../utils/domain.ts"
+import { workspacePath } from "../utils/domain.ts"
 
 const fixture = "migrations/move-module"
 
@@ -18,8 +18,8 @@ describe("move-module", () => {
           Effect.gen(function* () {
             const input: MoveModuleInput = {
               project: app,
-              from: projectPath("src/tools/clock.mts"),
-              to: projectPath("src/shared/clock.mts"),
+              from: workspacePath("src/tools/clock.mts"),
+              to: workspacePath("src/shared/clock.mts"),
             }
             const { verified } = yield* executeRecipe(moveModule, input)
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
@@ -52,8 +52,8 @@ describe("move-module", () => {
         Effect.gen(function* () {
           const input: MoveModuleInput = {
             project: app,
-            from: projectPath("src/users/account.ts"),
-            to: projectPath("src/identity/account.ts"),
+            from: workspacePath("src/users/account.ts"),
+            to: workspacePath("src/identity/account.ts"),
           }
 
           const { plan, verified } = yield* executeRecipe(moveModule, input)

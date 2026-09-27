@@ -12,13 +12,13 @@ import {
   isVariableDeclaration,
 } from "typescript/unstable/ast/is"
 import * as Draft from "../src/Draft.ts"
-import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
+import * as WorkspacePath from "../src/WorkspacePath.ts"
 import * as Query from "../src/Query.ts"
 import * as Recipe from "../src/Recipe.ts"
 import { type ProjectSnapshot, WorkspaceSnapshot } from "../src/Workspace/index.ts"
 
 const Input = Schema.Struct({
-  file: ProjectRelativePath.schema,
+  file: WorkspacePath.schema,
   name: Schema.String,
   to: Schema.String,
 })

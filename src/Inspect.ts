@@ -1,7 +1,7 @@
-import { Data, Effect, Path } from "effect"
+import { Data, Effect, Option, Path, Schema } from "effect"
 import type { Node } from "typescript/unstable/ast"
 import * as Position from "./Position.ts"
-import * as ProjectRelativePath from "./ProjectRelativePath.ts"
+import * as WorkspacePath from "./WorkspacePath.ts"
 import * as Query from "./Query.ts"
 import * as Type from "./Type.ts"
 import {
@@ -10,6 +10,8 @@ import {
   Workspace,
   WorkspaceSnapshot,
 } from "./Workspace/index.ts"
+
+const decodePath = Schema.decodeOption(WorkspacePath.schema)
 
 export class NotFound extends Data.TaggedError("NotFound")<{ readonly what: string }> {}
 
@@ -50,15 +52,14 @@ const fileNamed = (named: string) =>
   Effect.gen(function* () {
     const path = yield* Path.Path
     const workspace = yield* Workspace
-    const snapshot = yield* WorkspaceSnapshot
-    const absolute = path.resolve(workspace.root, named)
-    for (const project of snapshot.projects) {
-      const root = yield* workspace.projectRoot(project.project.id)
-      const fileName = ProjectRelativePath.decodeWorkspaceFile(path.relative(root, absolute))
-      const file = fileName === undefined ? undefined : yield* project.file(fileName)
-      if (file !== undefined) return { project, file }
+    const fileName = decodePath(path.relative(workspace.root, path.resolve(workspace.root, named)))
+    const file = Option.isNone(fileName) ?
+      undefined :
+      yield* (yield* WorkspaceSnapshot).file(fileName.value)
+    if (file === undefined) {
+      return yield* new NotFound({ what: `${named} is not a file of any configured project` })
     }
-    return yield* new NotFound({ what: `${named} is not a file of any configured project` })
+    return { project: file.project, file }
   })
 
 const targetAt = (position: string) =>

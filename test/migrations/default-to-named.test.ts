@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { defaultToNamed, type DefaultToNamedInput } from "../../examples/default-to-named.ts"
 import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { fixturePath as fixtureDirectory, withFixture } from "../utils/fixture.ts"
-import { projectPath } from "../utils/domain.ts"
+import { workspacePath } from "../utils/domain.ts"
 
 const fixture = "migrations/default-to-named"
 const fixturePath = fixtureDirectory(fixture)
@@ -19,7 +19,7 @@ describe("default-to-named", () => {
           Effect.gen(function* () {
             const input: DefaultToNamedInput = {
               project: app,
-              declarationFile: projectPath("src/auth/authenticate.ts"),
+              declarationFile: workspacePath("src/auth/authenticate.ts"),
               exportName: "authenticate",
             }
             const { verified } = yield* executeRecipe(defaultToNamed, input)
@@ -52,7 +52,7 @@ describe("default-to-named", () => {
         Effect.gen(function* () {
           const input: DefaultToNamedInput = {
             project: app,
-            declarationFile: projectPath("src/auth/authenticate.ts"),
+            declarationFile: workspacePath("src/auth/authenticate.ts"),
             exportName: "authenticate",
           }
 

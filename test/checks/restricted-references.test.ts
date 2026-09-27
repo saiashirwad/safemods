@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { restrictedReferences } from "../../src/Checks/RestrictedReferences.ts"
-import { projectPath } from "../utils/domain.ts"
+import { workspacePath } from "../utils/domain.ts"
 import { findingsOf } from "../utils/check.ts"
 
 describe("restricted-references", () => {
@@ -12,7 +12,7 @@ describe("restricted-references", () => {
         const findings = yield* findingsOf(
           restrictedReferences({
             name: "unsafe",
-            declaredIn: projectPath("src/internal/service.ts"),
+            declaredIn: workspacePath("src/internal/service.ts"),
             allowedWithin: ["src/internal/**"],
           }),
           {
@@ -41,7 +41,7 @@ describe("restricted-references", () => {
         const findings = yield* findingsOf(
           restrictedReferences({
             name: "escapeHatch",
-            declaredIn: projectPath("src/internal/hatch.ts"),
+            declaredIn: workspacePath("src/internal/hatch.ts"),
             allowedWithin: ["src/internal/**"],
           }),
           {

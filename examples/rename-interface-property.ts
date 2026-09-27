@@ -14,12 +14,12 @@ import {
 } from "typescript/unstable/ast/is"
 import * as Draft from "../src/Draft.ts"
 import * as P from "../src/Pattern.ts"
-import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
+import * as WorkspacePath from "../src/WorkspacePath.ts"
 import * as Query from "../src/Query.ts"
 import * as Recipe from "../src/Recipe.ts"
 import { WorkspaceSnapshot } from "../src/Workspace/index.ts"
 
-const DECLARATION_FILE = ProjectRelativePath.schema.make("src/account.ts")
+const DECLARATION_FILE = WorkspacePath.schema.make("src/account.ts")
 const OLD_NAME = "displayName"
 const NEW_NAME = "label"
 

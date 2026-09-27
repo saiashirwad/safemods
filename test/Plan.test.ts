@@ -1,14 +1,13 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { textEdit } from "../src/Edit.ts"
-import * as FileRef from "../src/FileRef.ts"
 import { type FileOperation, type Plan, validate } from "../src/Plan.ts"
-import { projectId, projectPath } from "./utils/domain.ts"
+import type * as WorkspacePath from "../src/WorkspacePath.ts"
+import { workspacePath } from "./utils/domain.ts"
 
-const app = projectId("app")
-const ref = (fileName: string) => ({ projectId: app, fileName: projectPath(fileName) })
+const ref = (fileName: string) => ({ fileName: workspacePath(fileName) })
 
-const contents: FileRef.Map<Uint8Array | undefined> = new Map()
+const contents = new Map<WorkspacePath.Type, Uint8Array | undefined>()
 for (
   const [fileName, text] of [
     ["src/index.ts", "source"],
@@ -18,9 +17,8 @@ for (
     ["src/moved.ts", undefined],
   ] as const
 ) {
-  FileRef.set(
-    contents,
-    ref(fileName),
+  contents.set(
+    workspacePath(fileName),
     text === undefined ? undefined : new TextEncoder().encode(text),
   )
 }
@@ -33,7 +31,7 @@ const remove: FileOperation = { kind: "delete", ...ref("src/delete.ts") }
 const move: FileOperation = {
   kind: "move",
   ...ref("src/move.ts"),
-  toFileName: projectPath("src/moved.ts"),
+  toFileName: workspacePath("src/moved.ts"),
 }
 
 const outcome = (plan: Partial<Plan>) =>
@@ -78,7 +76,7 @@ describe("Plan.validate", () => {
             "Create needs an absent path: src/index.ts",
           ],
           [
-            { fileOperations: [{ ...move, toFileName: projectPath("src/index.ts") }] },
+            { fileOperations: [{ ...move, toFileName: workspacePath("src/index.ts") }] },
             "Move needs an absent target: src/index.ts",
           ],
           [

@@ -1,16 +1,20 @@
 import { Data, Effect } from "effect"
 import { firstConflict, type TextEdit } from "./Edit.ts"
-import * as FileRef from "./FileRef.ts"
-import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
+import type * as WorkspacePath from "./WorkspacePath.ts"
 
 export type { TextEdit } from "./Edit.ts"
 
 export type FileOperation =
-  | (FileRef.FileRef & { readonly kind: "create"; readonly content: string })
-  | (FileRef.FileRef & { readonly kind: "delete" })
-  | (FileRef.FileRef & { readonly kind: "move"; readonly toFileName: ProjectRelativePath.Type })
+  | { readonly kind: "create"; readonly fileName: WorkspacePath.Type; readonly content: string }
+  | { readonly kind: "delete"; readonly fileName: WorkspacePath.Type }
+  | {
+    readonly kind: "move"
+    readonly fileName: WorkspacePath.Type
+    readonly toFileName: WorkspacePath.Type
+  }
 
-export interface UnsupportedFinding extends FileRef.FileRef {
+export interface UnsupportedFinding {
+  readonly fileName: WorkspacePath.Type
   readonly start: number
   readonly end: number
   readonly reason: string
@@ -28,51 +32,55 @@ export interface Plan {
   readonly unsupported: ReadonlyArray<UnsupportedFinding>
 }
 
-export type Contents = FileRef.ReadonlyMap<Uint8Array | undefined>
+export type Contents = ReadonlyMap<WorkspacePath.Type, Uint8Array | undefined>
 
 export class InvalidPlan extends Data.TaggedError("InvalidPlan")<{ readonly detail: string }> {}
 
-export const targetOf = (operation: FileOperation): FileRef.FileRef =>
-  operation.kind === "move" ?
-    { projectId: operation.projectId, fileName: operation.toFileName } :
-    operation
+export const targetOf = (operation: FileOperation): WorkspacePath.Type =>
+  operation.kind === "move" ? operation.toFileName : operation.fileName
+
+const distinctBy = <A>(values: ReadonlyArray<A>): ReadonlyArray<A> => [
+  ...new Map(values.map((value) => [JSON.stringify(value), value])).values(),
+]
+
+export const distinct = (plan: Plan): Plan => ({
+  edits: distinctBy(plan.edits),
+  fileOperations: distinctBy(plan.fileOperations),
+  unsupported: distinctBy(plan.unsupported),
+})
 
 const problem = (plan: Plan, before: Contents): string | undefined => {
-  const stateOf = (file: FileRef.FileRef): "file" | "missing" | undefined => {
-    const bytes = before.get(file.projectId)
-    if (bytes === undefined || !bytes.has(file.fileName)) return undefined
-    return bytes.get(file.fileName) === undefined ? "missing" : "file"
-  }
+  const stateOf = (fileName: WorkspacePath.Type): "file" | "missing" | undefined =>
+    !before.has(fileName) ? undefined : before.get(fileName) === undefined ? "missing" : "file"
 
   if (firstConflict(plan.edits) !== undefined) return "Overlapping edits"
   const edited = new Set<string>()
   for (const edit of plan.edits) {
-    if (stateOf(edit) !== "file") return `Missing source ${edit.fileName}`
-    edited.add(FileRef.key(edit))
+    if (stateOf(edit.fileName) !== "file") return `Missing source ${edit.fileName}`
+    edited.add(edit.fileName)
   }
 
   const operated = new Set<string>()
   for (const operation of plan.fileOperations) {
-    const from = FileRef.key(operation)
-    const touched = [from]
+    const touched = [operation.fileName]
     if (operation.kind === "create") {
-      if (stateOf(operation) !== "missing") {
+      if (stateOf(operation.fileName) !== "missing") {
         return `Create needs an absent path: ${operation.fileName}`
       }
-    } else if (stateOf(operation) !== "file") {
+    } else if (stateOf(operation.fileName) !== "file") {
       return `Missing source ${operation.fileName}`
     }
     if (operation.kind === "move") {
-      if (stateOf(targetOf(operation)) !== "missing") {
+      if (stateOf(operation.toFileName) !== "missing") {
         return `Move needs an absent target: ${operation.toFileName}`
       }
-      touched.push(FileRef.key(targetOf(operation)))
-    } else if (edited.has(from)) {
+      touched.push(operation.toFileName)
+    } else if (edited.has(operation.fileName)) {
       return `Edit conflicts with ${operation.kind} of ${operation.fileName}`
     }
-    for (const key of touched) {
-      if (operated.has(key)) return `Conflicting file operations on ${operation.fileName}`
-      operated.add(key)
+    for (const fileName of touched) {
+      if (operated.has(fileName)) return `Conflicting file operations on ${operation.fileName}`
+      operated.add(fileName)
     }
   }
   return undefined

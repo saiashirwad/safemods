@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Option, Schema } from "effect"
-import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
+import * as WorkspacePath from "../src/WorkspacePath.ts"
 
-const decode = Schema.decodeUnknownOption(ProjectRelativePath.schema)
+const decode = Schema.decodeUnknownOption(WorkspacePath.schema)
 
 describe("portable project paths", () => {
   it.each([

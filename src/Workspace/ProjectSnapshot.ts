@@ -22,7 +22,7 @@ import {
   type Symbol as NativeSymbol,
   type Type as NativeType,
 } from "typescript/unstable/async"
-import * as ProjectRelativePath from "../ProjectRelativePath.ts"
+import * as WorkspacePath from "../WorkspacePath.ts"
 import type * as ConfiguredProject from "./ConfiguredProject.ts"
 import { nativeRequest, type WorkspaceCompilerError } from "./NativeRequest.ts"
 
@@ -30,7 +30,7 @@ export class SnapshotExpired extends Data.TaggedError("SnapshotExpired")<{}> {}
 
 export class SymbolNotFound extends Data.TaggedError("SymbolNotFound")<{
   readonly name: string
-  readonly fileName: ProjectRelativePath.Type
+  readonly fileName: WorkspacePath.Type
 }> {}
 
 export type ProjectSnapshotError = WorkspaceCompilerError | SnapshotExpired
@@ -49,13 +49,13 @@ export type IntrinsicTypeName = keyof typeof intrinsicTypeGetters
 
 export interface ProjectFile {
   readonly project: ProjectSnapshot
-  readonly fileName: ProjectRelativePath.Type
+  readonly fileName: WorkspacePath.Type
   readonly sourceFile: SourceFile
 }
 
 export interface TextFile {
   readonly project: ProjectSnapshot
-  readonly fileName: ProjectRelativePath.Type
+  readonly fileName: WorkspacePath.Type
   readonly text: string
 }
 
@@ -66,12 +66,12 @@ export interface ModuleExport {
 
 export interface DeclarationSite {
   readonly path: string
-  readonly fileName: ProjectRelativePath.Type | undefined
+  readonly fileName: WorkspacePath.Type | undefined
 }
 
 interface FileInfo {
   readonly sourceFile: SourceFile
-  readonly fileName: ProjectRelativePath.Type | undefined
+  readonly fileName: WorkspacePath.Type | undefined
 }
 
 interface NodeQuestion<A> extends Request.Request<A, ProjectSnapshotError> {
@@ -80,18 +80,18 @@ interface NodeQuestion<A> extends Request.Request<A, ProjectSnapshotError> {
 
 export interface ProjectSnapshot {
   readonly project: ConfiguredProject.Type
-  readonly fileNameOf: (sourceFile: SourceFile) => Option.Option<ProjectRelativePath.Type>
+  readonly fileNameOf: (sourceFile: SourceFile) => Option.Option<WorkspacePath.Type>
   readonly file: (
-    fileName: ProjectRelativePath.Type,
+    fileName: WorkspacePath.Type,
   ) => Effect.Effect<ProjectFile | undefined, ProjectSnapshotError>
   readonly textFile: (
-    fileName: ProjectRelativePath.Type,
+    fileName: WorkspacePath.Type,
   ) => Effect.Effect<TextFile | undefined, ProjectSnapshotError>
   readonly files: Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError>
   readonly textFiles: Effect.Effect<ReadonlyArray<TextFile>, ProjectSnapshotError>
   readonly symbolNamed: (
     name: string,
-    options: { readonly within: ProjectRelativePath.Type },
+    options: { readonly within: WorkspacePath.Type },
   ) => Effect.Effect<NativeSymbol, SymbolNotFound | ProjectSnapshotError>
   readonly exportsOf: (
     module: ProjectFile | NativeSymbol,
@@ -194,7 +194,7 @@ const anyMeaning = SymbolFlags.Value |
   SymbolFlags.Alias |
   SymbolFlags.ExportValue
 
-const decodePath = Schema.decodeOption(ProjectRelativePath.schema)
+const decodePath = Schema.decodeOption(WorkspacePath.schema)
 
 const memoize = <Key, A extends object>(load: (key: Key) => A): (key: Key) => A => {
   const known = new Map<Key, A>()
@@ -212,28 +212,18 @@ export const make = (options: {
   readonly native: NativeProject
   readonly path: Path.Path
   readonly workspaceRoot: string
-  readonly projectRoot: string
   readonly ensureActive: Effect.Effect<void, SnapshotExpired>
 }): ProjectSnapshot => {
-  const { configured, native, path, workspaceRoot, projectRoot, ensureActive } = options
+  const { configured, native, path, workspaceRoot, ensureActive } = options
   const { program, checker } = native
 
   const request = <A>(operation: string, evaluate: () => PromiseLike<A>) =>
     Effect.andThen(ensureActive, nativeRequest(operation, evaluate))
 
-  const absolute = (fileName: ProjectRelativePath.Type): string =>
-    fileName.startsWith("../") ?
-      path.join(workspaceRoot, fileName.slice(3)) :
-      path.join(projectRoot, fileName)
+  const absolute = (fileName: WorkspacePath.Type): string => path.join(workspaceRoot, fileName)
 
-  const relative = (absoluteName: string): Option.Option<ProjectRelativePath.Type> => {
-    const projectRelative = path.relative(projectRoot, absoluteName)
-    if (!projectRelative.startsWith(`..${path.sep}`)) return decodePath(projectRelative)
-    const workspaceRelative = path.relative(workspaceRoot, absoluteName)
-    if (workspaceRelative.startsWith(`..${path.sep}`)) return Option.none()
-    const fileName = ProjectRelativePath.decodeWorkspaceFile(path.join("..", workspaceRelative))
-    return fileName === undefined ? Option.none() : Option.some(fileName)
-  }
+  const relative = (absoluteName: string): Option.Option<WorkspacePath.Type> =>
+    decodePath(path.relative(workspaceRoot, absoluteName))
 
   const fileInfoOf = memoize(async (absoluteName: string): Promise<FileInfo | undefined> => {
     const sourceFile = await program.getSourceFile(absoluteName)

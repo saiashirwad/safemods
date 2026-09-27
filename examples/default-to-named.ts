@@ -22,7 +22,7 @@ import {
 } from "typescript/unstable/ast/is"
 import * as Draft from "safemods/Draft"
 import * as P from "safemods/Pattern"
-import type * as ProjectRelativePath from "safemods/ProjectRelativePath"
+import type * as WorkspacePath from "safemods/WorkspacePath"
 import * as Query from "safemods/Query"
 import * as Recipe from "safemods/Recipe"
 import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
@@ -30,7 +30,7 @@ import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 export interface DefaultToNamedInput {
   readonly project: ConfiguredProject.Type
   /** Project-relative file that currently default-exports the function. */
-  readonly declarationFile: ProjectRelativePath.Type
+  readonly declarationFile: WorkspacePath.Type
   readonly exportName: string
 }
 

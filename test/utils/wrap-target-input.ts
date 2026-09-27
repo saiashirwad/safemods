@@ -1,14 +1,14 @@
 import { Effect } from "effect"
 import { isObjectLiteralExpression } from "typescript/unstable/ast/is"
 import * as Draft from "../../src/Draft.ts"
-import type * as ProjectRelativePath from "../../src/ProjectRelativePath.ts"
+import type * as WorkspacePath from "../../src/WorkspacePath.ts"
 import * as Query from "../../src/Query.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import { type ConfiguredProject, WorkspaceSnapshot } from "../../src/Workspace/index.ts"
 
 export interface WrapTargetInput {
   readonly project: ConfiguredProject.Type
-  readonly declarationFile: ProjectRelativePath.Type
+  readonly declarationFile: WorkspacePath.Type
   readonly property: string
 }
 

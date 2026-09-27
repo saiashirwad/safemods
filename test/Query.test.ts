@@ -8,7 +8,7 @@ import {
   isPropertySignatureDeclaration,
 } from "typescript/unstable/ast/is"
 import * as Query from "../src/Query.ts"
-import { projectPath } from "./utils/domain.ts"
+import { workspacePath } from "./utils/domain.ts"
 import { withProject } from "./utils/fixture.ts"
 
 const ARITY_SOURCE = [
@@ -69,10 +69,10 @@ describe("queries", () => {
     () =>
       withProject({}, (project) =>
         Effect.gen(function* () {
-          const library = yield* project.file(projectPath("src/library.ts"))
-          const consumer = yield* project.file(projectPath("src/consumer.ts"))
-          const consumerAgain = yield* project.file(projectPath("src/consumer.ts"))
-          expect(yield* project.file(projectPath("src/absent.ts"))).toBeUndefined()
+          const library = yield* project.file(workspacePath("src/library.ts"))
+          const consumer = yield* project.file(workspacePath("src/consumer.ts"))
+          const consumerAgain = yield* project.file(workspacePath("src/consumer.ts"))
+          expect(yield* project.file(workspacePath("src/absent.ts"))).toBeUndefined()
 
           const exported = yield* Query.nodes([library!, consumer!], isFunctionDeclaration).pipe(
             Query.filter(
@@ -165,7 +165,7 @@ describe("queries", () => {
       (project) =>
         Effect.gen(function* () {
           const symbol = yield* project.symbolNamed("oldThing", {
-            within: projectPath("src/sem.ts"),
+            within: workspacePath("src/sem.ts"),
           })
           const references = yield* Query.identifiers(project).pipe(
             Query.where(Query.resolvesTo(symbol)),
@@ -197,7 +197,7 @@ describe("queries", () => {
         },
         (project) =>
           Effect.gen(function* () {
-            const consumer = yield* project.file(projectPath("src/alias-consumer.ts"))
+            const consumer = yield* project.file(workspacePath("src/alias-consumer.ts"))
             const localThing = (yield* Query.identifiers([consumer!]).pipe(
               Query.filter(({ value }) => value.text === "localThing"),
               Query.collect,

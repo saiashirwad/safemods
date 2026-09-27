@@ -1,29 +1,26 @@
-import { Data, Effect, Order, Path, Schema } from "effect"
+import { Data, Effect, Order, Schema } from "effect"
 import * as Position from "./Position.ts"
-import type * as ProjectId from "./ProjectId.ts"
-import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
+import type * as WorkspacePath from "./WorkspacePath.ts"
 import type { Selection } from "./Query.ts"
 import { type ProjectSnapshot, Workspace, WorkspaceSnapshot } from "./Workspace/index.ts"
 
 export interface Report {
-  readonly projectId: ProjectId.Type
-  readonly fileName: ProjectRelativePath.Type
+  readonly fileName: WorkspacePath.Type
   readonly start: number
   readonly message: string
 }
 
 export const report = <A>(selection: Selection<A>, message: string): Report => ({
-  projectId: selection.project.project.id,
   fileName: selection.fileName,
   start: selection.start,
   message,
 })
 
-export const reportAt = (
-  project: ProjectSnapshot,
-  fileName: ProjectRelativePath.Type,
-  message: string,
-): Report => ({ projectId: project.project.id, fileName, start: 0, message })
+export const reportAt = (fileName: WorkspacePath.Type, message: string): Report => ({
+  fileName,
+  start: 0,
+  message,
+})
 
 export interface Check<E = never, R = WorkspaceSnapshot> {
   readonly name: string
@@ -83,8 +80,6 @@ export const sorted = (findings: ReadonlyArray<Finding>): ReadonlyArray<Finding>
 
 const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
   Effect.gen(function* () {
-    const path = yield* Path.Path
-    const workspace = yield* Workspace
     const snapshot = yield* WorkspaceSnapshot
     const reported = yield* Effect.forEach(
       checks,
@@ -97,17 +92,15 @@ const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
     )
     const findings = yield* Effect.forEach(reported.flat(), (found) =>
       Effect.gen(function* () {
-        const project = yield* snapshot.project(found.projectId)
-        const file = yield* project.file(found.fileName)
-        const absolute = yield* workspace.absolutePath(found)
+        const file = yield* snapshot.file(found.fileName)
         return {
           check: found.check,
-          path: path.relative(workspace.root, absolute).replaceAll(path.sep, "/"),
+          path: found.fileName,
           ...Position.at(file?.sourceFile.text ?? "", found.start),
           message: found.message,
         } satisfies Finding
       }))
-    return sorted(findings)
+    return sorted([...new Map(findings.map((found) => [format(found), found])).values()])
   })
 
 export const run = <E>(checks: ReadonlyArray<Check<E>>) =>

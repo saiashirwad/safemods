@@ -12,11 +12,4 @@ export type {
   ProjectSnapshotError,
   TextFile,
 } from "./ProjectSnapshot.ts"
-export {
-  layer,
-  OverlappingProjectOwnership,
-  ProjectNotInSnapshot,
-  ProjectNotInWorkspace,
-  Workspace,
-  WorkspaceSnapshot,
-} from "./Workspace.ts"
+export { layer, ProjectNotInSnapshot, Workspace, WorkspaceSnapshot } from "./Workspace.ts"

@@ -115,7 +115,7 @@ const unresolvedLine = (
   finding: UnsupportedFinding,
 ): string => {
   const source = sources.find(
-    (file) => file.projectId === finding.projectId && file.fileName === finding.fileName,
+    (file) => file.fileName === finding.fileName,
   )
   const at = source?.before.exists === true ?
     Position.at(source.before.text, finding.start) :

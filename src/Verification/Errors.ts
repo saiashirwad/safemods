@@ -1,11 +1,9 @@
 import { Data } from "effect"
-import type * as ProjectId from "../ProjectId.ts"
-import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
+import type * as WorkspacePath from "../WorkspacePath.ts"
 import type { DiagnosticRecord } from "./Diagnostics.ts"
 
 export class StalePlanError extends Data.TaggedError("StalePlanError")<{
-  readonly projectId: ProjectId.Type
-  readonly fileName: ProjectRelativePath.Type
+  readonly fileName: WorkspacePath.Type
 }> {}
 
 export class VerificationFailure extends Data.TaggedError("VerificationFailure")<{

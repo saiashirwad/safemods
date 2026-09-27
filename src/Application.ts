@@ -56,34 +56,17 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       ),
     )
   const confinedTarget = Effect.fn(function* (file: FilePreview) {
-    const target = yield* workspace
-      .absolutePath(file)
-      .pipe(
-        Effect.mapError(
-          (cause) => new ApplicationFailure({ reason: "path-escape", cause }),
-        ),
-      )
+    const target = workspace.absolutePath(file.fileName)
     const realWorkspace = yield* fs.realPath(workspace.root).pipe(Effect.mapError(failed))
-    const projectRoot = yield* workspace
-      .projectRoot(file.projectId)
-      .pipe(
-        Effect.mapError(
-          (cause) => new ApplicationFailure({ reason: "path-escape", cause }),
-        ),
-      )
-    const realProject = yield* fs.realPath(projectRoot).pipe(Effect.mapError(failed))
     const anchor = yield* nearestExisting(target)
     const realAnchor = yield* fs.realPath(anchor).pipe(Effect.mapError(failed))
-    if (!isWithin(realWorkspace, realProject) || !isWithin(realProject, realAnchor)) {
+    if (!isWithin(realWorkspace, realAnchor)) {
       return yield* new ApplicationFailure({ reason: "path-escape" })
     }
     return target
   })
   const requireUnchanged = Effect.fn(function* (file: FilePreview, target: string) {
-    const stale = new StalePlanError({
-      projectId: file.projectId,
-      fileName: file.fileName,
-    })
+    const stale = new StalePlanError({ fileName: file.fileName })
     const exists = yield* fs.exists(target).pipe(Effect.mapError(failed))
     if (exists !== file.before.exists) return yield* stale
     if (!file.before.exists) return
@@ -106,8 +89,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     const target = yield* confinedTarget(file)
     const modeSource = file.movedFrom ?
       checkedSources.find(
-        ({ file: source }) =>
-          source.projectId === file.projectId && source.fileName === file.movedFrom,
+        ({ file: source }) => source.fileName === file.movedFrom,
       )?.target :
       file.before.exists ?
       target :

@@ -1,13 +1,11 @@
 import { Data, Effect, Order, Schema } from "effect"
-import * as ProjectId from "./ProjectId.ts"
-import * as ProjectRelativePath from "./ProjectRelativePath.ts"
+import * as WorkspacePath from "./WorkspacePath.ts"
 import * as Sha256 from "./Sha256.ts"
 
 export const NonNegativeInt = Schema.Finite.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
 
 export const TextEdit = Schema.Struct({
-  projectId: ProjectId.schema,
-  fileName: ProjectRelativePath.schema,
+  fileName: WorkspacePath.schema,
   start: NonNegativeInt,
   end: NonNegativeInt,
   expectedTextHash: Sha256.schema,
@@ -18,14 +16,12 @@ export const TextEdit = Schema.Struct({
 export type TextEdit = typeof TextEdit.Type
 
 export const textEdit = (options: {
-  readonly projectId: ProjectId.Type
-  readonly fileName: ProjectRelativePath.Type
+  readonly fileName: WorkspacePath.Type
   readonly sourceText: string
   readonly start: number
   readonly end: number
   readonly newText: string
 }): TextEdit => ({
-  projectId: options.projectId,
   fileName: options.fileName,
   start: options.start,
   end: options.end,
@@ -44,7 +40,6 @@ export class EditConflict extends Data.TaggedError("EditConflict")<{
 }> {}
 
 export const compareEdits = (left: TextEdit, right: TextEdit): number =>
-  Order.String(left.projectId, right.projectId) ||
   Order.String(left.fileName, right.fileName) ||
   left.start - right.start ||
   left.end - right.end ||
@@ -56,7 +51,7 @@ const touches = (insert: TextEdit, other: TextEdit): boolean =>
     insert.start >= other.start && insert.start < other.end
 
 const editsConflict = (left: TextEdit, right: TextEdit): boolean => {
-  if (left.projectId !== right.projectId || left.fileName !== right.fileName) return false
+  if (left.fileName !== right.fileName) return false
   if (left.start === left.end) return touches(left, right)
   if (right.start === right.end) return touches(right, left)
   return left.start < right.end && right.start < left.end
@@ -70,7 +65,7 @@ export const firstConflict = (
     const left = sorted[index]!
     for (let otherIndex = index + 1; otherIndex < sorted.length; otherIndex++) {
       const right = sorted[otherIndex]!
-      if (right.projectId !== left.projectId || right.fileName !== left.fileName) break
+      if (right.fileName !== left.fileName) break
       if (right.start > left.end) break
       if (editsConflict(left, right)) return [left, right]
     }

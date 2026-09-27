@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import * as Draft from "../src/Draft.ts"
 import { applyFileEdits } from "../src/Edit.ts"
 import * as Query from "../src/Query.ts"
-import { projectPath } from "./utils/domain.ts"
+import { workspacePath } from "./utils/domain.ts"
 import { withProject } from "./utils/fixture.ts"
 
 const ARGUMENTS_SOURCE = [
@@ -74,9 +74,9 @@ describe("drafts", () => {
     () =>
       withProject({}, (project) =>
         Effect.gen(function* () {
-          const library = (yield* project.file(projectPath("src/library.ts")))!
-          const textLibrary = (yield* project.textFile(projectPath("src/library.ts")))!
-          const target = projectPath("src/nested/library.ts")
+          const library = (yield* project.file(workspacePath("src/library.ts")))!
+          const textLibrary = (yield* project.textFile(workspacePath("src/library.ts")))!
+          const target = workspacePath("src/nested/library.ts")
 
           expect(textLibrary).toMatchObject({
             fileName: "src/library.ts",
@@ -89,22 +89,19 @@ describe("drafts", () => {
           expect(Draft.deleteFile(library).fileOperations).toEqual([
             {
               kind: "delete",
-              projectId: "app",
               fileName: "src/library.ts",
             },
           ])
           expect(Draft.moveFile(library, target).fileOperations).toEqual([
             {
               kind: "move",
-              projectId: "app",
               fileName: "src/library.ts",
               toFileName: target,
             },
           ])
-          expect(Draft.createFile(project, target, "export {}\n").fileOperations).toEqual([
+          expect(Draft.createFile(target, "export {}\n").fileOperations).toEqual([
             {
               kind: "create",
-              projectId: "app",
               fileName: target,
               content: "export {}\n",
             },

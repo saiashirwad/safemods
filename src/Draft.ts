@@ -1,7 +1,7 @@
 import type { Node, StringLiteral } from "typescript/unstable/ast"
 import { textEdit, type TextEdit } from "./Edit.ts"
 import type { FileOperation, Plan } from "./Plan.ts"
-import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
+import type * as WorkspacePath from "./WorkspacePath.ts"
 import type { Selection } from "./Query.ts"
 import type { ProjectFile, ProjectSnapshot, TextFile } from "./Workspace/index.ts"
 
@@ -27,7 +27,6 @@ const editBetween = (
   const fileName = project.fileNameOf(sourceFile)
   if (fileName._tag === "None") throw new Error("Node is not in project")
   return textEdit({
-    projectId: project.project.id,
     fileName: fileName.value,
     sourceText: sourceFile.text,
     start,
@@ -47,7 +46,6 @@ export const unsupported = <A>(selection: Selection<A>, reason: string): Draft =
   ...empty,
   unsupported: [
     {
-      projectId: selection.project.project.id,
       fileName: selection.fileName,
       start: selection.start,
       end: selection.end,
@@ -71,7 +69,6 @@ export const replaceStringLiteral = (
 export const replaceSelection = <A extends Node>(selection: Selection<A>, newText: string): Draft =>
   oneEdit(
     textEdit({
-      projectId: selection.project.project.id,
       fileName: selection.fileName,
       sourceText: selection.value.getSourceFile().text,
       start: selection.start,
@@ -90,7 +87,6 @@ export const replaceRange = <A extends Node>(
   }
   return oneEdit(
     textEdit({
-      projectId: selection.project.project.id,
       fileName: selection.fileName,
       sourceText: selection.value.getSourceFile().text,
       start: selection.start + range.start,
@@ -111,7 +107,6 @@ export const insertAfter = (project: ProjectSnapshot, node: Node, text: string):
 export const replaceText = (file: TextFile, newText: string): Draft =>
   oneEdit(
     textEdit({
-      projectId: file.project.project.id,
       fileName: file.fileName,
       sourceText: file.text,
       start: 0,
@@ -120,14 +115,9 @@ export const replaceText = (file: TextFile, newText: string): Draft =>
     }),
   )
 
-export const createFile = (
-  project: ProjectSnapshot,
-  fileName: ProjectRelativePath.Type,
-  content: string,
-): Draft =>
+export const createFile = (fileName: WorkspacePath.Type, content: string): Draft =>
   oneOperation({
     kind: "create",
-    projectId: project.project.id,
     fileName,
     content,
   })
@@ -135,17 +125,15 @@ export const createFile = (
 export const deleteFile = (file: ProjectFile | TextFile): Draft =>
   oneOperation({
     kind: "delete",
-    projectId: file.project.project.id,
     fileName: file.fileName,
   })
 
 export const moveFile = (
   file: ProjectFile | TextFile,
-  toFileName: ProjectRelativePath.Type,
+  toFileName: WorkspacePath.Type,
 ): Draft =>
   oneOperation({
     kind: "move",
-    projectId: file.project.project.id,
     fileName: file.fileName,
     toFileName,
   })

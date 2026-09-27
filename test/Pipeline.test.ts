@@ -5,7 +5,7 @@ import * as Application from "../src/Application.ts"
 import type * as Plan from "../src/Plan.ts"
 import type * as Query from "../src/Query.ts"
 import type * as Verification from "../src/Verification/index.ts"
-import { projectPath } from "./utils/domain.ts"
+import { workspacePath } from "./utils/domain.ts"
 import { draftOf, executeRecipe } from "./utils/execute-recipe.ts"
 import { read, withFixture } from "./utils/fixture.ts"
 import { migrateImportSource } from "./utils/migrate-import-source.ts"
@@ -46,7 +46,7 @@ describe("run → verify → apply", () => {
         Effect.gen(function* () {
           const input: WrapTargetInput = {
             project: app,
-            declarationFile: projectPath("src/library.ts"),
+            declarationFile: workspacePath("src/library.ts"),
             property: "value",
           }
 
