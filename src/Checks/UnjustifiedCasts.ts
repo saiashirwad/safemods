@@ -15,7 +15,6 @@ export const unjustifiedCasts = (options: { readonly within: string }) =>
     Query.nodes(project, isAsExpression).pipe(
       Query.within(options.within),
       Query.filter(({ value }) => value.type.getText() !== "const"),
-      Query.collect,
       Effect.flatMap((casts) =>
         Check.each(casts, (cast) =>
           Effect.gen(function* () {

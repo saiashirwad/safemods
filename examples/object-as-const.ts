@@ -50,7 +50,6 @@ export const objectAsConst = Recipe.define("object-as-const", {
               isPropertyAssignment(property) && isLiteral(property.initializer)
             )
           ),
-          Query.collect,
           Effect.map((declarations) =>
             Draft.concat(
               ...declarations.map(({ value }) =>

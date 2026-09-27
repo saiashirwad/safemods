@@ -89,7 +89,6 @@ export const defaultToNamed = Recipe.define("default-to-named", {
       const defaultFunctions = yield* Query.nodes(project, isFunctionDeclaration).pipe(
         Query.within(input.declarationFile),
         Query.filter(({ value }) => value.name?.text === input.exportName && exportsDefault(value)),
-        Query.collect,
       )
 
       const defaultImports = yield* Query.imports(project).pipe(
@@ -99,7 +98,6 @@ export const defaultToNamed = Recipe.define("default-to-named", {
             location: (declaration) => declaration.importClause.name,
           }),
         ),
-        Query.collect,
       )
 
       const reexports = yield* Query.resolvedModuleReferences(project).pipe(
@@ -107,7 +105,6 @@ export const defaultToNamed = Recipe.define("default-to-named", {
           ({ value }) =>
             value.kind === "export" && value.resolved?.fileName === input.declarationFile,
         ),
-        Query.collect,
       )
 
       const importEdits = defaultImports.map(({ project, value }) => {

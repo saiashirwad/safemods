@@ -154,7 +154,7 @@ describe("Application.applyVerifiedPlan", () => {
             run: () =>
               Effect.gen(function* () {
                 const project = yield* fixtureProject(app)
-                const imports = yield* Query.collect(Query.imports(project))
+                const imports = yield* Query.imports(project)
                 return Draft.concat(
                   ...imports.map(({ value }) => Draft.insertBefore(project, value, "// seen\n")),
                 )

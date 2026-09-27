@@ -59,11 +59,9 @@ export const overloadedMethod = Recipe.define("overloaded-method", {
         Query.within("src/legacy-client.ts"),
         Query.filter(({ value }) => value.name?.text === "lookup" && value.body === undefined),
         Query.where(takesCallbackLast),
-        Query.collect,
       )
       const calls = yield* Query.calls(project).pipe(
         Query.where(Query.resolvesToSignature(callbackOverloads.map(({ value }) => value))),
-        Query.collect,
       )
 
       return Draft.concat(

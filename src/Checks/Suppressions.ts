@@ -48,7 +48,6 @@ export const suppressions = (options: { readonly within: string }) =>
       const files = yield* Query.files(project, [options.within])
       const asserted = yield* Query.nodes(project, isNonNullExpression).pipe(
         Query.within(options.within),
-        Query.collect,
       )
       return [
         ...files.flatMap((file) =>

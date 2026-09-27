@@ -298,7 +298,6 @@ describe("workspace snapshots", () => {
           Effect.gen(function* () {
             const [literal] = yield* Query.nodes(project, isObjectLiteralExpression).pipe(
               Query.within("src/expected.ts"),
-              Query.collect,
             )
             const expected = yield* project.contextualTypeOf(literal!.value)
             expect(yield* project.typeToString(expected!)).toBe("Row")
@@ -312,7 +311,6 @@ describe("workspace snapshots", () => {
                 const uses = yield* Query.identifiers(project).pipe(
                   Query.within("src/expected.ts"),
                   Query.filter(({ value }) => value.text === name),
-                  Query.collect,
                 )
                 const symbol = yield* project.symbolOf(uses.at(-1)!.value)
                 const declarations = yield* project.declarationsOf(symbol!)

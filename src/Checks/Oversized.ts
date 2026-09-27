@@ -15,7 +15,6 @@ export const oversized = (options: {
       const files = yield* Query.files(project, [options.within])
       const functions = yield* Query.namedFunctions(project).pipe(
         Query.within(options.within),
-        Query.collect,
       )
       return [
         ...files

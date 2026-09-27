@@ -72,7 +72,6 @@ const writtenSymbols = (project: ProjectSnapshot) =>
   Effect.gen(function* () {
     const writes = yield* Query.semanticReferences(project).pipe(
       Query.filter(({ value }) => value.role === "write" || isDestructuringTarget(value.node)),
-      Query.collect,
     )
     const symbols = yield* Effect.forEach(writes, ({ value }) => canonical(project, value.node), {
       concurrency: "unbounded",
@@ -109,7 +108,6 @@ export const letToConst = Recipe.define("let-to-const", {
           const lists = yield* Query.nodes(project, isVariableDeclarationList).pipe(
             Query.filter(({ value }) => (value.flags & NodeFlags.BlockScoped) === NodeFlags.Let),
             Query.where(({ value }) => neverWritten(project, written, value)),
-            Query.collect,
           )
           return Draft.concat(
             ...lists.map((list) => Draft.replaceRange(list, { start: 0, end: 3 }, "const")),

@@ -16,7 +16,6 @@ export const layers = (options: {
   return Check.perProject("layers", (project) =>
     Query.resolvedModuleReferences(project).pipe(
       Query.within(options.within),
-      Query.collect,
       Effect.map((references) =>
         references.flatMap((reference) => {
           const target = reference.value.resolved?.fileName

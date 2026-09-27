@@ -47,8 +47,8 @@ describe("queries", () => {
         Effect.gen(function* () {
           const files = yield* project.files
           const owned = new Set(files.map((file) => file.fileName))
-          const fromProject = yield* Query.collect(Query.identifiers(project))
-          const fromFiles = yield* Query.collect(Query.identifiers(files))
+          const fromProject = yield* Query.identifiers(project)
+          const fromFiles = yield* Query.identifiers(files)
 
           expect(owned).toEqual(
             new Set([
@@ -80,17 +80,16 @@ describe("queries", () => {
                 value.modifiers?.some((modifier) => modifier.kind === SyntaxKind.ExportKeyword) ??
                   false,
             ),
-            Query.collect,
           )
           expect(exported.map((selection) => selection.fileName)).toEqual([
             "src/library.ts",
             "src/library.ts",
           ])
 
-          const once = yield* Query.collect(Query.calls([consumer!]))
-          const twice = yield* Query.collect(Query.calls([consumer!, consumerAgain!]))
+          const once = yield* Query.calls([consumer!])
+          const twice = yield* Query.calls([consumer!, consumerAgain!])
           expect(twice.length).toBe(once.length)
-          expect(yield* Query.collect(Query.calls([]))).toEqual([])
+          expect(yield* Query.calls([])).toEqual([])
         })),
   )
 
@@ -104,7 +103,6 @@ describe("queries", () => {
             const surviving = yield* Query.identifiers(project).pipe(
               Query.within("src/tiny.ts"),
               Query.where((selection) => Effect.succeed(selection.value.text === "alpha")),
-              Query.collect,
             )
             expect(surviving.map((selection) => selection.value.text)).toEqual(["alpha"])
           }),
@@ -119,7 +117,6 @@ describe("queries", () => {
           const binary = yield* Query.calls(project).pipe(
             Query.within("src/arity.ts"),
             Query.filter(hasTwoArguments),
-            Query.collect,
           )
           expect(binary).toHaveLength(1)
           const [left, right] = binary[0]!.value.arguments
@@ -140,7 +137,6 @@ describe("queries", () => {
             const filesIn = (pattern: string) =>
               Query.identifiers(project).pipe(
                 Query.within(pattern),
-                Query.collect,
                 Effect.map((selections) => new Set<string>(selections.map((s) => s.fileName))),
               )
 
@@ -169,7 +165,6 @@ describe("queries", () => {
           })
           const references = yield* Query.identifiers(project).pipe(
             Query.where(Query.resolvesTo(symbol)),
-            Query.collect,
           )
           expect(
             references.map((selection) => `${selection.fileName}:${selection.value.text}`),
@@ -200,12 +195,10 @@ describe("queries", () => {
             const consumer = yield* project.file(workspacePath("src/alias-consumer.ts"))
             const localThing = (yield* Query.identifiers([consumer!]).pipe(
               Query.filter(({ value }) => value.text === "localThing"),
-              Query.collect,
             ))[0]!
             const alias = yield* project.symbolOf(localThing.value)
             const references = yield* Query.identifiers(project).pipe(
               Query.where(Query.resolvesTo(alias!)),
-              Query.collect,
             )
             expect(
               references.map((selection) => `${selection.fileName}:${selection.value.text}`),
@@ -244,7 +237,6 @@ describe("queries", () => {
         Effect.gen(function* () {
           const references = yield* Query.moduleReferences(project).pipe(
             Query.within("src/modules.ts"),
-            Query.collect,
           )
           expect(references.map(({ value }) => [value.kind, value.specifier.text])).toEqual([
             ["import", "./thing.js"],
@@ -277,7 +269,6 @@ describe("queries", () => {
         Effect.gen(function* () {
           const references = yield* Query.semanticReferences(project).pipe(
             Query.within("src/roles.ts"),
-            Query.collect,
           )
           expect(references.map(({ value }) => `${value.node.text}:${value.role}`)).toEqual([
             "oldThing:import",
@@ -316,7 +307,6 @@ describe("queries", () => {
         Effect.gen(function* () {
           const references = yield* Query.resolvedModuleReferences(project).pipe(
             Query.within("src/module-user.ts"),
-            Query.collect,
           )
           expect(
             references.map(({ value }) => [value.specifier.text, value.resolved?.fileName]),
@@ -345,7 +335,6 @@ describe("queries", () => {
           const [call] = yield* Query.calls(project).pipe(
             Query.within("src/overload.ts"),
             Query.filter(({ value }) => value.expression.getText() === "parse"),
-            Query.collect,
           )
           const signature = yield* project.resolvedSignature(call!.value)
           const parameters = yield* project.parameterTypesOf(signature!)
@@ -383,12 +372,10 @@ describe("queries", () => {
               Query.filter(
                 ({ value }) => value.body === undefined && value.parameters.length === 2,
               ),
-              Query.collect,
             )
             expect(overloads).toHaveLength(1)
             const calls = yield* Query.calls(project).pipe(
               Query.where(Query.resolvesToSignature(overloads.map(({ value }) => value))),
-              Query.collect,
             )
             expect(calls.map(({ value }) => value.getText())).toEqual([
               "parse(10, 16)",
@@ -416,7 +403,6 @@ describe("queries", () => {
             Query.calls(project).pipe(
               Query.within("src/typed.ts"),
               Query.where(Query.typeAssignableTo(target)),
-              Query.collect,
               Effect.map((calls) => calls.map(({ value }) => value.getText())),
             )
           expect(yield* callsAssignableTo("number")).toEqual([
@@ -435,7 +421,6 @@ describe("queries", () => {
           const calls = yield* Query.calls(project).pipe(
             Query.within("src/typed.ts"),
             Query.typed,
-            Query.collect,
           )
           expect(
             yield* Effect.forEach(
@@ -473,7 +458,6 @@ describe("queries", () => {
             for (const name of ["direct", "escaped"]) {
               const [selection] = yield* Query.namedFunctions(project).pipe(
                 Query.within(`src/${name}.ts`),
-                Query.collect,
               )
               const uses = yield* Query.usesOf({ ...selection!, value: selection!.value.name })
               expect(uses.calls.map(({ value }) => value.getText())).toEqual(
@@ -513,9 +497,8 @@ describe("queries", () => {
               ({ value }) =>
                 value.text === "displayName" && isPropertySignatureDeclaration(value.parent),
             ),
-            Query.collect,
           )
-          const references = yield* Query.referencesTo(declaration!).pipe(Query.collect)
+          const references = yield* Query.referencesTo(declaration!)
           const lineOf = (selection: Query.Selection<Node>) =>
             selection.value.getSourceFile().text.slice(0, selection.start).split("\n").length
           expect(

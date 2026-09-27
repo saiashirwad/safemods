@@ -83,7 +83,6 @@ describe("patterns", () => {
           const found = yield* Query.calls(project).pipe(
             Query.within("src/shapes.ts"),
             Query.shape({ expression: P.capture("callee"), arguments: [P.capture("only")] }),
-            Query.collect,
           )
           expectTypeOf(found[0]!.value.captures).toEqualTypeOf<{
             readonly callee: Expression
@@ -105,7 +104,6 @@ describe("patterns", () => {
         Effect.gen(function* () {
           const found = yield* Query.match(project, { ifReturns, awaited }).pipe(
             Query.within("src/shapes.ts"),
-            Query.collect,
           )
           expect(
             found.map(({ value }) =>
@@ -125,7 +123,6 @@ describe("patterns", () => {
           const found = yield* Query.match(project, { ifReturns }).pipe(
             Query.within("src/shapes.ts"),
             Query.typedCaptures,
-            Query.collect,
           )
           const string = yield* project.intrinsicType("string")
           const stringly = yield* Effect.filter(found, ({ value }) =>

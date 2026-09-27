@@ -20,7 +20,6 @@ describe("drafts", () => {
         Effect.gen(function* () {
           const [call] = yield* Query.calls(project).pipe(
             Query.within("src/arguments.ts"),
-            Query.collect,
           )
           const [first, second, third] = call!.value.arguments
           const draft = Draft.concat(
@@ -42,7 +41,6 @@ describe("drafts", () => {
         Effect.gen(function* () {
           const [call] = yield* Query.calls(project).pipe(
             Query.within("src/arguments.ts"),
-            Query.collect,
           )
           const text = call!.value.getText()
           const draft = Draft.replaceRange(
@@ -61,7 +59,6 @@ describe("drafts", () => {
         Effect.gen(function* () {
           const calls = yield* Query.calls(project).pipe(
             Query.within("src/arguments.ts"),
-            Query.collect,
           )
           const draft = Draft.replaceEach(calls, () => "run()")
           expect(draft.edits).toHaveLength(1)

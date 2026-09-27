@@ -70,7 +70,6 @@ export const renameSymbol = Recipe.define("rename-symbol", {
         Effect.gen(function* () {
           const spelled = yield* Query.identifiers(project).pipe(
             Query.filter(({ value }) => value.text === name),
-            Query.collect,
           )
           const declarations = spelled.filter(
             (selection) => selection.fileName === file && declaresAtTopLevel(selection.value),
@@ -78,7 +77,6 @@ export const renameSymbol = Recipe.define("rename-symbol", {
           const found = yield* Effect.forEach(declarations, (declaration) =>
             Query.referencesTo(declaration).pipe(
               Query.filter(({ value }) => isIdentifier(value) && value.text === name),
-              Query.collect,
             ))
           const references = Arr.dedupeWith(
             found.flat(),

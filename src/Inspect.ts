@@ -121,7 +121,7 @@ export const exports = (path: string) =>
 
 const edges = (project: ProjectSnapshot) =>
   Effect.map(
-    Query.collect(Query.resolvedModuleReferences(project)),
+    Query.resolvedModuleReferences(project),
     (references) =>
       references.flatMap(({ fileName, value }) =>
         value.resolved === undefined ? [] : [{ from: fileName, to: value.resolved.fileName }]

@@ -28,7 +28,6 @@ export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
       const matches = yield* Query.identifiers(project).pipe(
         Query.filter((selection) => selection.value.text === "loadAccount"),
         Query.where(Query.resolvesTo(symbol)),
-        Query.collect,
       )
       return Draft.replaceEach(matches, () => "findAccount")
     }),
@@ -90,7 +89,6 @@ export const noUnknownFailures = (options: { readonly within: string }) =>
     Query.calls(project).pipe(
       Query.within(options.within),
       Query.typed,
-      Query.collect,
       Effect.flatMap((calls) =>
         Check.each(calls, (call) =>
           Effect.map(failureOf(project, call.value.type), (failure) =>
@@ -167,7 +165,7 @@ safemods calls src/Query.ts:279:14   # every direct call, and whether other uses
 Read in this order; each step uses only what came before.
 
 1. `src/Workspace/ProjectSnapshot.ts` — the interface at the top is every question you can ask the compiler. `perNode` is why asking about thousands of nodes costs one call per file.
-2. `src/Query.ts` — a query is a stream of `Selection`s (a node plus where it is). `where` filters with a compiler question.
+2. `src/Query.ts` — a query is an Effect returning `Selection`s (a node plus where it is) in file and position order. `where` filters with a compiler question.
 3. `src/Check.ts` — a check is a name and an Effect returning findings; `run` locates each at `path:line:column`.
 4. `src/Checks/Layers.ts` — the smallest real rule, thirty lines. Then `WeakReturns.ts` for one that uses types.
 5. `src/bin.ts` — the command: load the config, run the checks, set the exit code.
@@ -186,7 +184,7 @@ Each module depends only on the ones above it.
 | `Plan`                                   | edits and file operations, and the rules a valid plan obeys           |
 | `Workspace`                              | compiler snapshots; every snapshot is a fresh view of disk + overlay  |
 | `Pattern`                                | syntax shapes with typed captures, combined into tagged matches       |
-| `Query`, `Type`                          | streams of selected syntax nodes; predicates and parsers over types   |
+| `Query`, `Type`                          | selected syntax nodes in order; predicates and parsers over types     |
 | `Draft`, `Check`                         | proposed edits and file operations; checks and their results          |
 | `Checks`                                 | the rules that ship with the package                                  |
 | `Recipe`                                 | define a transformation: name, version, policies, input schema, run   |

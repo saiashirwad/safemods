@@ -15,10 +15,9 @@ export const restrictedReferences = (options: {
         Query.filter(({ value }) =>
           value.text === options.name && Query.nameOf(value.parent) === value
         ),
-        Query.collect,
       )
       const references = yield* Effect.forEach(declarations, (declaration) =>
-        Query.collect(Query.referencesTo(declaration)))
+        Query.referencesTo(declaration))
       const outside = new Map(
         references
           .flat()

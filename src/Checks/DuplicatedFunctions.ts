@@ -15,7 +15,6 @@ export const duplicatedFunctions = (options: {
     Query.namedFunctions(project).pipe(
       Query.within(options.within),
       Query.filter((selection) => bodyOf(selection).length >= options.minimumLength),
-      Query.collect,
       Effect.map((functions) =>
         [...Map.groupBy(functions, bodyOf).values()].flatMap((copies) => {
           const files = [...new Set(copies.map((copy) => copy.fileName))]

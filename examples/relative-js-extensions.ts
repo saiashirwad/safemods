@@ -49,7 +49,6 @@ export const relativeJsExtensions = Recipe.define("relative-js-extensions", {
           const files = new Set<string>((yield* project.files).map((file) => file.fileName))
           const references = yield* Query.resolvedModuleReferences(project).pipe(
             Query.filter(needsRewrite),
-            Query.collect,
           )
           return Draft.concat(...references.map(rewrite(files)))
         }))

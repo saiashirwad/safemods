@@ -10,7 +10,6 @@ export const ignoredReturns = (options: { readonly within: string }) =>
   Check.perProject("ignored-returns", (project) =>
     Query.namedFunctions(project).pipe(
       Query.within(options.within),
-      Query.collect,
       Effect.flatMap((functions) =>
         Check.each(functions, (selection) =>
           Effect.gen(function* () {

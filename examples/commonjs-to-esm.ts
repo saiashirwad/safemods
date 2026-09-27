@@ -211,7 +211,6 @@ export const commonJsToEsm = Recipe.define("commonjs-to-esm", {
       const globalRequires = new Set<Node>(
         (yield* Query.match(project, { require: requireCall }).pipe(
           Query.where(isGlobalRequire),
-          Query.collect,
         )).map(({ value }) => value.node),
       )
       const files = yield* project.files

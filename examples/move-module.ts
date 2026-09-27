@@ -61,7 +61,6 @@ export const moveModule = Recipe.define("move-module", {
 
       const references = yield* Query.resolvedModuleReferences(project).pipe(
         Query.filter(isRelative),
-        Query.collect,
       )
 
       return Draft.concat(Draft.moveFile(moved, input.to), ...references.flatMap(rewrite(input)))

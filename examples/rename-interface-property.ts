@@ -49,7 +49,6 @@ export const renameInterfaceProperty = Recipe.define("rename-interface-property"
         Query.filter(
           ({ value }) => value.text === OLD_NAME && isPropertySignatureDeclaration(value.parent),
         ),
-        Query.collect,
       )
       if (declaration === undefined) return Draft.empty
 
@@ -57,9 +56,8 @@ export const renameInterfaceProperty = Recipe.define("rename-interface-property"
         Query.filter((selection): selection is Query.Selection<Identifier> =>
           isIdentifier(selection.value)
         ),
-        Query.collect,
       )
-      const computed = yield* Query.match(project, { computedAccess }).pipe(Query.collect)
+      const computed = yield* Query.match(project, { computedAccess })
 
       return Draft.concat(
         Draft.replaceEach(references, ({ value }) =>

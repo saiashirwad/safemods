@@ -25,7 +25,6 @@ export const noUnknownFailures = (options: { readonly within: string }) =>
     Query.calls(project).pipe(
       Query.within(options.within),
       Query.typed,
-      Query.collect,
       Effect.flatMap((calls) =>
         Check.each(calls, (call) =>
           Effect.map(failureOf(project, call.value.type), (failure) =>

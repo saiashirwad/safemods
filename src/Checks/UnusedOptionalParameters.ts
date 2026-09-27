@@ -12,7 +12,6 @@ export const unusedOptionalParameters = (options: {
       const isPublic = yield* Query.publicSymbols(project, options.publicApi)
       const functions = yield* Query.namedFunctions(project).pipe(
         Query.within(options.within),
-        Query.collect,
       )
       return yield* Check.each(functions, (selection) =>
         Effect.gen(function* () {

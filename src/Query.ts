@@ -1,5 +1,5 @@
 import { matchesGlob } from "node:path"
-import { Effect, Option, Order, Predicate, Stream } from "effect"
+import { Effect, Option, Order, Predicate } from "effect"
 import {
   type ArrowFunction,
   type CallExpression,
@@ -60,7 +60,37 @@ export interface Selection<A> {
   readonly end: number
 }
 
-export type Query<A, E = never, R = never> = Stream.Stream<Selection<A>, E, R>
+export type Query<A, E = never, R = never> = Effect.Effect<ReadonlyArray<Selection<A>>, E, R>
+
+const byPosition = (left: Selection<unknown>, right: Selection<unknown>): number =>
+  Order.String(left.project.project.id, right.project.project.id) ||
+  Order.String(left.fileName, right.fileName) ||
+  left.start - right.start ||
+  left.end - right.end
+
+const sorted = <A>(selections: ReadonlyArray<Selection<A>>): ReadonlyArray<Selection<A>> =>
+  [...selections].sort(byPosition)
+
+const mapValues = <A, B, E, R>(
+  self: Query<A, E, R>,
+  f: (selection: Selection<A>) => B,
+): Query<B, E, R> =>
+  Effect.map(self, (all) => all.map((selection) => ({ ...selection, value: f(selection) })))
+
+const keepDefined = <A, B, E, R, E2, R2>(
+  self: Query<A, E, R>,
+  f: (selection: Selection<A>) => Effect.Effect<B | undefined, E2, R2>,
+): Query<B, E | E2, R | R2> =>
+  Effect.flatMap(self, (all) =>
+    Effect.map(
+      Effect.forEach(
+        all,
+        (selection) =>
+          Effect.map(f(selection), (value) => value === undefined ? [] : [{ ...selection, value }]),
+        { concurrency: "unbounded" },
+      ),
+      (kept) => kept.flat(),
+    ))
 
 export type Scope = ProjectSnapshot | ReadonlyArray<ProjectFile>
 
@@ -69,8 +99,8 @@ const isFiles = (scope: Scope): scope is ReadonlyArray<ProjectFile> => Array.isA
 const distinct = (files: ReadonlyArray<ProjectFile>): Iterable<ProjectFile> =>
   new Map(files.map((file) => [file.fileName, file])).values()
 
-const filesIn = (scope: Scope): Stream.Stream<ProjectFile, ProjectSnapshotError> =>
-  isFiles(scope) ? Stream.fromIterable(distinct(scope)) : Stream.fromIterableEffect(scope.files)
+const filesIn = (scope: Scope): Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError> =>
+  isFiles(scope) ? Effect.succeed([...distinct(scope)]) : scope.files
 
 const selectionsIn = <A extends Node>(
   file: ProjectFile,
@@ -97,7 +127,7 @@ export const nodes = <A extends Node>(
   scope: Scope,
   guard: (node: Node) => node is A,
 ): Query<A, ProjectSnapshotError> =>
-  filesIn(scope).pipe(Stream.flatMap((file) => Stream.fromIterable(selectionsIn(file, guard))))
+  Effect.map(filesIn(scope), (files) => sorted(files.flatMap((file) => selectionsIn(file, guard))))
 
 export const match = <const Patterns extends Pattern.Tagged>(
   scope: Scope,
@@ -105,12 +135,9 @@ export const match = <const Patterns extends Pattern.Tagged>(
 ): Query<Pattern.MatchedOf<Patterns>, ProjectSnapshotError> => {
   const matchedOf = Pattern.tagged(patterns)
   const guards = Object.values(patterns).map(({ guard }) => guard)
-  return nodes(scope, (node): node is Node => guards.some((guard) => guard(node))).pipe(
-    Stream.map((selection) => ({ ...selection, value: matchedOf(selection.value) })),
-    Stream.filter(
-      (selection): selection is Selection<Pattern.MatchedOf<Patterns>> =>
-        selection.value !== undefined,
-    ),
+  return keepDefined(
+    nodes(scope, (node): node is Node => guards.some((guard) => guard(node))),
+    (selection) => Effect.succeed(matchedOf(selection.value)),
   )
 }
 
@@ -124,16 +151,10 @@ export const shape = <const F extends object>(fields: F) =>
   self: Query<A, E, R> & Pattern.FieldsError<A, F>,
 ): Query<Shaped<A, Pattern.CapturesOf<A, F>>, E, R> => {
   const pattern = Pattern.unguarded<A, F>(fields)
-  return self.pipe(
-    Stream.map((selection) => ({
-      ...selection,
-      value: { node: selection.value, captures: pattern.match(selection.value) },
-    })),
-    Stream.filter(
-      (selection): selection is Selection<Shaped<A, Pattern.CapturesOf<A, F>>> =>
-        selection.value.captures !== undefined,
-    ),
-  )
+  return keepDefined(self, ({ value }) => {
+    const captures = pattern.match(value)
+    return Effect.succeed(captures === undefined ? undefined : { node: value, captures })
+  })
 }
 
 export const calls = (scope: Scope): Query<CallExpression, ProjectSnapshotError> =>
@@ -209,13 +230,9 @@ const moduleReferenceOf = (node: Node): ModuleReference | undefined => {
 }
 
 export const moduleReferences = (scope: Scope): Query<ModuleReference, ProjectSnapshotError> =>
-  filesIn(scope).pipe(
-    Stream.flatMap((file) =>
-      Stream.fromIterable(
-        selectionsIn(file, (node): node is Node => moduleReferenceOf(node) !== undefined),
-      )
-    ),
-    Stream.map((selection) => ({ ...selection, value: moduleReferenceOf(selection.value)! })),
+  mapValues(
+    nodes(scope, (node): node is Node => moduleReferenceOf(node) !== undefined),
+    ({ value }) => moduleReferenceOf(value)!,
   )
 
 export interface ResolvedModuleReference extends ModuleReference {
@@ -225,13 +242,10 @@ export interface ResolvedModuleReference extends ModuleReference {
 export const resolvedModuleReferences = (
   scope: Scope,
 ): Query<ResolvedModuleReference, ProjectSnapshotError> =>
-  moduleReferences(scope).pipe(
-    Stream.mapEffect((selection) =>
-      Effect.map(selection.project.resolvedModule(selection.value.specifier), (resolved) => ({
-        ...selection,
-        value: { ...selection.value, resolved },
-      }))
-    ),
+  keepDefined(
+    moduleReferences(scope),
+    ({ project, value }) =>
+      Effect.map(project.resolvedModule(value.specifier), (resolved) => ({ ...value, resolved })),
   )
 
 export type ReferenceRole =
@@ -295,27 +309,24 @@ const roleOf = (node: Identifier): ReferenceRole => {
 }
 
 export const semanticReferences = (scope: Scope): Query<SemanticReference, ProjectSnapshotError> =>
-  identifiers(scope).pipe(
-    Stream.map((selection) => ({
-      ...selection,
-      value: { node: selection.value, role: roleOf(selection.value) },
-    })),
-  )
+  mapValues(identifiers(scope), ({ value }) => ({ node: value, role: roleOf(value) }))
 
-export const filter: {
-  <A, B extends A>(
-    refinement: (selection: Selection<A>) => selection is Selection<B>,
-  ): <E, R>(self: Query<A, E, R>) => Query<B, E, R>
-  <A>(
-    predicate: (selection: Selection<A>) => boolean,
-  ): <E, R>(self: Query<A, E, R>) => Query<A, E, R>
-} = Stream.filter
+export function filter<A, B extends A>(
+  refinement: (selection: Selection<A>) => selection is Selection<B>,
+): <E, R>(self: Query<A, E, R>) => Query<B, E, R>
+export function filter<A>(
+  predicate: (selection: Selection<A>) => boolean,
+): <E, R>(self: Query<A, E, R>) => Query<A, E, R>
+export function filter<A>(predicate: (selection: Selection<A>) => boolean) {
+  return <E, R>(self: Query<A, E, R>): Query<A, E, R> =>
+    Effect.map(self, (all) => all.filter(predicate))
+}
 
 export const isWithin = (fileName: string, pattern: string): boolean =>
   matchesGlob(fileName, pattern.replaceAll("\\", "/"))
 
 export const within = (pattern: string) => <A, E, R>(self: Query<A, E, R>): Query<A, E, R> =>
-  Stream.filter(self, ({ fileName }) => isWithin(fileName, pattern))
+  filter<A>(({ fileName }) => isWithin(fileName, pattern))(self)
 
 export const files = (
   project: ProjectSnapshot,
@@ -368,27 +379,10 @@ export const publicSymbols = (
 export const where =
   <A, E2, R2>(test: (selection: Selection<A>) => Effect.Effect<boolean, E2, R2>) =>
   <E, R>(self: Query<A, E, R>): Query<A, E | E2, R | R2> =>
-    self.pipe(
-      Stream.mapEffect(
-        (selection) =>
-          Effect.map(test(selection), (keep) => (keep ? Option.some(selection) : Option.none())),
-        { concurrency: "unbounded" },
-      ),
-      Stream.filter(Option.isSome),
-      Stream.map((kept) => kept.value),
+    keepDefined(
+      self,
+      (selection) => Effect.map(test(selection), (keep) => (keep ? selection.value : undefined)),
     )
-
-export const collect = <A, E, R>(
-  self: Query<A, E, R>,
-): Effect.Effect<ReadonlyArray<Selection<A>>, E, R> =>
-  Effect.map(Stream.runCollect(self), (selections) =>
-    [...selections].sort(
-      (left, right) =>
-        Order.String(left.project.project.id, right.project.project.id) ||
-        Order.String(left.fileName, right.fileName) ||
-        left.start - right.start ||
-        left.end - right.end,
-    ))
 
 export const selectionOf = <A extends Node>(
   project: ProjectSnapshot,
@@ -403,11 +397,10 @@ export const selectionOf = <A extends Node>(
   }))
 
 export const referencesTo = (selection: Selection<Node>): Query<Node, ProjectSnapshotError> =>
-  Stream.fromIterableEffect(
-    Effect.map(
-      selection.project.referencesTo(selection.value),
-      (nodes) => nodes.flatMap((node) => Option.toArray(selectionOf(selection.project, node))),
-    ),
+  Effect.map(
+    selection.project.referencesTo(selection.value),
+    (nodes) =>
+      sorted(nodes.flatMap((node) => Option.toArray(selectionOf(selection.project, node)))),
   )
 
 export interface Uses {
@@ -416,7 +409,7 @@ export interface Uses {
 }
 
 export const usesOf = (selection: Selection<Node>): Effect.Effect<Uses, ProjectSnapshotError> =>
-  Effect.map(collect(referencesTo(selection)), (references) => {
+  Effect.map(referencesTo(selection), (references) => {
     const calls: Array<Selection<CallExpression>> = []
     let escapes = false
     for (const { project, value } of references) {
@@ -459,16 +452,18 @@ const namedFunctionOf = (node: Node): NamedFunction | undefined => {
 }
 
 export const namedFunctions = (scope: Scope): Query<NamedFunction, ProjectSnapshotError> =>
-  nodes(scope, (node): node is Node => namedFunctionOf(node) !== undefined).pipe(
-    Stream.map((selection) => {
-      const value = namedFunctionOf(selection.value)!
-      return {
-        ...selection,
-        value,
-        start: value.name.getStart(value.name.getSourceFile()),
-        end: value.name.getEnd(),
-      }
-    }),
+  Effect.map(
+    nodes(scope, (node): node is Node => namedFunctionOf(node) !== undefined),
+    (all) =>
+      sorted(all.map((selection) => {
+        const value = namedFunctionOf(selection.value)!
+        return {
+          ...selection,
+          value,
+          start: value.name.getStart(value.name.getSourceFile()),
+          end: value.name.getEnd(),
+        }
+      })),
   )
 
 export interface TypedNode<A extends Node> {
@@ -479,17 +474,11 @@ export interface TypedNode<A extends Node> {
 export const typed = <A extends Node, E, R>(
   self: Query<A, E, R>,
 ): Query<TypedNode<A>, E | ProjectSnapshotError, R> =>
-  self.pipe(
-    Stream.mapEffect(
-      (selection) =>
-        Effect.map(selection.project.typeOf(selection.value), (type) =>
-          type === undefined ?
-            Option.none() :
-            Option.some({ ...selection, value: { node: selection.value, type } })),
-      { concurrency: "unbounded" },
-    ),
-    Stream.filter(Option.isSome),
-    Stream.map((kept) => kept.value),
+  keepDefined(
+    self,
+    ({ project, value }) =>
+      Effect.map(project.typeOf(value), (type) =>
+        type === undefined ? undefined : { node: value, type }),
   )
 
 type CaptureTypes<C> = {
@@ -503,26 +492,15 @@ export type WithTypes<M> = M extends { readonly captures: infer C } ?
 export const typedCaptures = <M extends { readonly captures: object }, E, R>(
   self: Query<M, E, R>,
 ): Query<WithTypes<M>, E | ProjectSnapshotError, R> =>
-  Stream.mapEffect(
-    self,
-    (selection) =>
-      Effect.map(
-        Effect.forEach(
-          Object.entries(selection.value.captures).filter(([, captured]) =>
-            Pattern.isNode(captured)
-          ),
-          ([name, captured]) =>
-            Effect.map(selection.project.typeOf(captured), (type) => [name, type] as const),
-          { concurrency: "unbounded" },
-        ),
-        (types) =>
-          ({
-            ...selection,
-            value: { ...selection.value, types: Object.fromEntries(types) },
-          }) as Selection<WithTypes<M>>,
+  keepDefined(self, ({ project, value }) =>
+    Effect.map(
+      Effect.forEach(
+        Object.entries(value.captures).filter(([, captured]) => Pattern.isNode(captured)),
+        ([name, captured]) => Effect.map(project.typeOf(captured), (type) => [name, type] as const),
+        { concurrency: "unbounded" },
       ),
-    { concurrency: "unbounded" },
-  )
+      (types) => ({ ...value, types: Object.fromEntries(types) }) as WithTypes<M>,
+    ))
 
 export const resolvesTo = <A extends Node>(
   symbol: NativeSymbol,

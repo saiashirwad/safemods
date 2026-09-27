@@ -214,7 +214,6 @@ export const splitModule = Recipe.define("split-module", {
 
       const consumers = yield* Query.resolvedModuleReferences(project).pipe(
         Query.filter(({ value }) => value.resolved?.fileName === paths.source),
-        Query.collect,
       )
 
       return Draft.concat(

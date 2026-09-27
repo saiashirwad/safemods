@@ -24,7 +24,6 @@ export const migrateImportSource = Recipe.define("migrate-import-source", {
           ({ value }) =>
             isStringLiteral(value.moduleSpecifier) && value.moduleSpecifier.text === input.from,
         ),
-        Query.collect,
       )
 
       return Draft.concat(

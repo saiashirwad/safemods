@@ -71,7 +71,6 @@ export const packageEntryPointSplit = Recipe.define("package-entry-point-split",
           Query.filter(({ value }) =>
             value.specifier.text === ROOT
           ),
-          Query.collect,
         ))
       return Draft.concat(...references.flat().map(split))
     }),

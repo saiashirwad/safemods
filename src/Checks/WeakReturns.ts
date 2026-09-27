@@ -44,7 +44,6 @@ export const weakReturns = (options: { readonly within: string }) =>
   Check.perProject("weak-returns", (project) =>
     Query.nodes(project, isFunctionLike).pipe(
       Query.within(options.within),
-      Query.collect,
       Effect.flatMap((functions) =>
         Check.each(functions, (selection) =>
           Effect.gen(function* () {

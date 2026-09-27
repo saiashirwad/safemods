@@ -28,7 +28,6 @@ export const wrapTargetInput = Recipe.define("wrap-target-input", {
           ({ value: call }) =>
             call.arguments.length === 1 && !isObjectLiteralExpression(call.arguments[0]!),
         ),
-        Query.collect,
       )
 
       return Draft.concat(

@@ -65,7 +65,6 @@ export const concatToTemplate = Recipe.define("concat-to-template", {
               ([left, right]) => left && right,
             )
           ),
-          Query.collect,
           Effect.map((concatenations) =>
             Draft.concat(
               ...concatenations.map((selection) => {

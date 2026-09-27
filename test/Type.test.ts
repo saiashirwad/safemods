@@ -33,7 +33,6 @@ const typeNamed = (project: ProjectSnapshot, name: string) =>
     const [declaration] = yield* Query.identifiers(project).pipe(
       Query.within("src/effects.ts"),
       Query.filter(({ value }) => value.text === name),
-      Query.collect,
     )
     return (yield* project.typeOf(declaration!.value))!
   })
@@ -190,7 +189,6 @@ const declaredType = (project: ProjectSnapshot, name: string) =>
     const [declaration] = yield* Query.identifiers(project).pipe(
       Query.within("src/mentions.ts"),
       Query.filter(({ value }) => value.text === name),
-      Query.collect,
     )
     return (yield* project.typeOf(declaration!.value))!
   })

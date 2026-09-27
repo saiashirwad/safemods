@@ -20,7 +20,6 @@ export const renamePackageImport = Recipe.define("rename-package-import", {
 
       const references = yield* Query.moduleReferences(project).pipe(
         Query.filter(({ value }) => value.specifier.text === FROM_PACKAGE),
-        Query.collect,
       )
 
       return Draft.concat(

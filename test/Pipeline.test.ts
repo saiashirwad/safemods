@@ -1,5 +1,5 @@
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, type Stream } from "effect"
+import { Effect } from "effect"
 import type { CallExpression } from "typescript/unstable/ast"
 import * as Application from "../src/Application.ts"
 import type * as Plan from "../src/Plan.ts"
@@ -22,8 +22,10 @@ export type _RecipeInputInference = Assert<
 
 export type _CallInference = Assert<
   Equal<
-    ReturnType<typeof Query.calls> extends Stream.Stream<Query.Selection<infer Node>, infer _E> ?
-      Node :
+    ReturnType<typeof Query.calls> extends Effect.Effect<
+      ReadonlyArray<Query.Selection<infer Node>>,
+      infer _E
+    > ? Node :
       never,
     CallExpression
   >

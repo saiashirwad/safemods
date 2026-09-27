@@ -9,7 +9,6 @@ export const importCycles = (options: { readonly within: string; readonly typeIm
       Query.filter(
         ({ value }) => (options.typeImports || !value.typeOnly) && value.resolved !== undefined,
       ),
-      Query.collect,
       Effect.map((references) => {
         const edges = Map.groupBy(references, (reference): string => reference.fileName)
         const reaches = (from: string, to: string, seen = new Set<string>()): boolean =>

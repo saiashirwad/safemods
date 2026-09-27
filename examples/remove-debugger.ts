@@ -15,7 +15,7 @@ export const removeDebugger = Recipe.define("remove-debugger", {
     Effect.gen(function* () {
       const snapshot = yield* WorkspaceSnapshot
       const statements = yield* Effect.forEach(snapshot.projects, (project) =>
-        Query.collect(Query.nodes(project, isDebuggerStatement)))
+        Query.nodes(project, isDebuggerStatement))
       return Draft.concat(
         ...statements.flat().map(({ project, value }) =>
           Draft.remove(project, value)

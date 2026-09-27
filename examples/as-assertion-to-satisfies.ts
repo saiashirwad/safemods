@@ -63,7 +63,6 @@ export const asAssertionToSatisfies = Recipe.define("as-assertion-to-satisfies",
           Query.filter((selection) =>
             isVariableInitializer(selection.value)
           ),
-          Query.collect,
           Effect.map((selections) => Draft.concat(...selections.map(draftFor))),
         ))
       return Draft.concat(...drafts)

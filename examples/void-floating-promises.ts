@@ -24,7 +24,6 @@ export const voidFloatingPromises = Recipe.define("void-floating-promises", {
           Query.where(({ value }) =>
             Effect.map(project.propertyOf(value.type, "then"), (then) => then !== undefined)
           ),
-          Query.collect,
         ))
       return Draft.concat(
         ...floating.flat().map(({ project, value }) =>

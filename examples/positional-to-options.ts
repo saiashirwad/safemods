@@ -64,7 +64,7 @@ export const positionalToOptions = Recipe.define("positional-to-options", {
           name: P.capture("name"),
           parameters: P.capture("parameters"),
         }),
-      }).pipe(Query.collect)
+      })
 
       const drafts = yield* Effect.forEach(overloads, (positional) =>
         Effect.gen(function* () {
@@ -83,7 +83,6 @@ export const positionalToOptions = Recipe.define("positional-to-options", {
 
           const calls = yield* Query.calls(project).pipe(
             Query.where(Query.resolvesToSignature([positional.value.node])),
-            Query.collect,
           )
           return Draft.concat(
             ...calls.map((selection) => {

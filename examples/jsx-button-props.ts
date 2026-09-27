@@ -66,7 +66,6 @@ export const jsxButtonProps = Recipe.define("jsx-button-props", {
       const button = yield* project.symbolNamed("Button", { within: componentFile })
       const elements = yield* Query.nodes(project, isJsxOpeningLikeElement).pipe(
         Query.where(Query.resolvesTo(button, { location: tagIdentifier })),
-        Query.collect,
       )
 
       return concat(

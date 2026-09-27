@@ -15,7 +15,6 @@ const flagged = (name: string) =>
       const snapshot = yield* WorkspaceSnapshot
       const found = yield* Query.identifiers(snapshot.projects[0]!).pipe(
         Query.filter(({ value }) => value.text === name),
-        Query.collect,
       )
       return found.map((selection) => Check.report(selection, `${name} is flagged`))
     }),
