@@ -24,10 +24,7 @@ const createFile = (app: ConfiguredProject.Type, fileName: string, content: stri
   })
 
 const verified = <E, R>(recipe: Recipe.Recipe<undefined, E, R>) =>
-  Effect.flatMap(
-    Recipe.run(recipe, undefined),
-    (plan) => Verification.verify(plan, recipe, undefined),
-  )
+  Verification.verify(recipe, undefined)
 
 const withFaultyFileSystem = (use: (fs: FileSystem.FileSystem) => FileSystem.FileSystem) =>
   Effect.provideServiceEffect(FileSystem.FileSystem, Effect.map(FileSystem.FileSystem, use))
@@ -153,44 +150,6 @@ describe("Application.applyVerifiedPlan", () => {
   )
 
   effect(
-    "accepts only the verified plan object that verification issued",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          const issued = yield* verified(createFile(app, "src/created.ts", "export {}\n"))
-          const forgeries: ReadonlyArray<Verification.VerifiedPlan> = [
-            { ...issued },
-            { ...issued, preview: structuredClone(issued.preview) },
-          ]
-          for (const forgery of forgeries) {
-            const failure = yield* Effect.flip(Application.applyVerifiedPlan(forgery))
-            expect(failure._tag).toBe("ApplicationFailure")
-          }
-          expect(yield* exists(root, "src/created.ts")).toBe(false)
-        })
-      ),
-  )
-
-  effect(
-    "keeps authoritative bytes out of the public preview",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          const plan = yield* verified(
-            createFile(app, "src/created.ts", "export const safe = true\n"),
-          )
-          const exposed = plan.preview.files[0]!.after
-          if (!exposed.exists) throw new Error("Expected created file preview")
-          expect("bytes" in exposed).toBe(false)
-
-          yield* Application.applyVerifiedPlan(plan)
-
-          expect(yield* read(root, "src/created.ts")).toBe("export const safe = true\n")
-        })
-      ),
-  )
-
-  effect(
     "rechecks every touched file and writes nothing when one changed after verification",
     () =>
       withFixture((root, app) =>
@@ -246,6 +205,30 @@ describe("Application.applyVerifiedPlan", () => {
           const failure = yield* Effect.flip(Application.applyVerifiedPlan(plan))
           expect(failure._tag).toBe("StalePlanError")
           expect(yield* read(root, "src/raced.ts")).toBe("created by another process\n")
+        })
+      ),
+  )
+
+  effect(
+    "does not overwrite a file that appeared at a move target",
+    () =>
+      withFixture((root, app) =>
+        Effect.gen(function* () {
+          const target = projectPath("src/raced.ts")
+          const recipe = Recipe.define("move", {
+            version: "1.0.0",
+            policies: { diagnostics: "allow-new-errors" },
+            run: () =>
+              Effect.gen(function* () {
+                const project = yield* fixtureProject(app)
+                return Draft.moveFile((yield* project.file(projectPath("src/library.ts")))!, target)
+              }),
+          })
+          const plan = yield* verified(recipe)
+          yield* write(root, target, "created by another process\n")
+          const failure = yield* Effect.flip(Application.applyVerifiedPlan(plan))
+          expect(failure).toMatchObject({ _tag: "StalePlanError", fileName: target })
+          expect(yield* read(root, target)).toBe("created by another process\n")
         })
       ),
   )

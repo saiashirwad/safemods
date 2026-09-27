@@ -1,17 +1,8 @@
-import { Effect, FileSystem, Order, type PlatformError, Schema } from "effect"
+import { Effect, Order } from "effect"
 import { applyFileEdits } from "../Edit.ts"
 import * as FileRef from "../FileRef.ts"
-import {
-  InvalidPlan,
-  type SourceFingerprint,
-  type TransformationPlan,
-  type ValidatedPlan,
-  validatePlan,
-} from "../Plan.ts"
+import { type Contents, InvalidPlan, type Plan, targetOf } from "../Plan.ts"
 import type * as ProjectRelativePath from "../ProjectRelativePath.ts"
-import * as Sha256 from "../Sha256.ts"
-import { type ProjectNotInWorkspace, Workspace } from "../Workspace/index.ts"
-import { PlanContextMismatch, StalePlanError } from "./Errors.ts"
 
 export type FileState =
   | { readonly exists: false }
@@ -24,98 +15,39 @@ export interface FilePreview extends FileRef.FileRef {
 }
 
 export interface PlanPreview {
-  readonly planId: Sha256.Type
   readonly sources: ReadonlyArray<FilePreview>
   readonly files: ReadonlyArray<FilePreview>
 }
 
+export const actionOf = ({ before, after }: FilePreview): "create" | "modify" | "delete" =>
+  before.exists ? (after.exists ? "modify" : "delete") : "create"
+
 const decoder = new TextDecoder("utf-8", { fatal: true })
 const encoder = new TextEncoder()
-const stateOf = (bytes: Uint8Array | undefined): FileState => {
-  if (bytes === undefined) return { exists: false }
-  const snapshot = Uint8Array.from(bytes)
-  return {
-    exists: true,
-    text: decoder.decode(snapshot),
-    get bytes() {
-      return Uint8Array.from(snapshot)
-    },
-  }
-}
 
-const workspaceProjects = Schema.Array(
-  Schema.Struct({ projectId: Schema.String, configFileName: Schema.String }),
-)
-const workspaceProjectsEquivalent = Schema.toEquivalence(workspaceProjects)
+const stateOf = (bytes: Uint8Array | undefined): FileState =>
+  bytes === undefined ? { exists: false } : { exists: true, text: decoder.decode(bytes), bytes }
 
-export const requireWorkspaceProjects = (
-  plan: TransformationPlan,
-): Effect.Effect<void, PlanContextMismatch, Workspace> =>
-  Effect.gen(function* () {
-    const workspace = yield* Workspace
-    const byProject = Order.Struct({ projectId: Order.String, configFileName: Order.String })
-    const live = workspace.definition.projects
-      .map(({ id, config }) => ({ projectId: id, configFileName: config }))
-      .sort(byProject)
-    const planned = plan.projects
-      .map(({ id, configFileName }) => ({ projectId: id, configFileName }))
-      .sort(byProject)
-    if (!workspaceProjectsEquivalent(live, planned)) {
-      return yield* new PlanContextMismatch({ planId: plan.planId, field: "workspace" })
-    }
-  })
-
-const readSource = (plan: ValidatedPlan, source: SourceFingerprint) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
-    const workspace = yield* Workspace
-    const absolute = yield* workspace.absolutePath(source)
-    const { projectId, fileName } = source
-    const stale = new StalePlanError({ planId: plan.planId, projectId, fileName })
-    if (source.kind === "missing") {
-      const exists = yield* fs
-        .exists(absolute)
-        .pipe(
-          Effect.mapError((cause): PlatformError.PlatformError | StalePlanError =>
-            cause.reason._tag === "NotFound" ? stale : cause
-          ),
-        )
-      return exists ? yield* stale : undefined
-    }
-    const bytes = yield* fs
-      .readFile(absolute)
-      .pipe(
-        Effect.mapError((cause): PlatformError.PlatformError | StalePlanError =>
-          cause.reason._tag === "NotFound" ? stale : cause
-        ),
-      )
-    return Sha256.digest(bytes) === source.hash ? bytes : yield* stale
-  })
-
-const invalidReplayPlan = (detail: string) => new InvalidPlan({ phase: "build", detail })
-
-export const previewCaptured = (
-  plan: ValidatedPlan,
-  captured: FileRef.ReadonlyMap<Uint8Array | undefined>,
+export const previewOf = (
+  plan: Plan,
+  contents: Contents,
 ): Effect.Effect<PlanPreview, InvalidPlan> =>
   Effect.gen(function* () {
     const before = new Map(
-      [...FileRef.entries(captured)].map(([file, bytes]) => [
-        FileRef.key(file),
-        bytes === undefined ? undefined : Uint8Array.from(bytes),
-      ]),
+      [...FileRef.entries(contents)].map(([file, bytes]) => [FileRef.key(file), bytes]),
     )
     const after = new Map(before)
     for (const [key, edits] of Map.groupBy(plan.edits, FileRef.key)) {
+      const { fileName } = edits[0]!
       const original = before.get(key)
       if (original === undefined) {
-        return yield* invalidReplayPlan(`Missing source in ${edits[0]!.fileName}`)
+        return yield* new InvalidPlan({ detail: `Missing source ${fileName}` })
       }
       const text = yield* Effect.try(() => decoder.decode(original)).pipe(
-        Effect.mapError(() => invalidReplayPlan(`Invalid UTF-8 in ${edits[0]!.fileName}`)),
+        Effect.mapError(() => new InvalidPlan({ detail: `Invalid UTF-8 in ${fileName}` })),
       )
       const edited = yield* applyFileEdits(text, edits).pipe(
-        Effect.mapError(({ _tag }) => invalidReplayPlan(`${_tag} in ${edits[0]!.fileName}`)),
+        Effect.mapError(({ _tag }) => new InvalidPlan({ detail: `${_tag} in ${fileName}` })),
       )
       const hasByteOrderMark = original[0] === 0xef && original[1] === 0xbb && original[2] === 0xbf
       after.set(key, encoder.encode((hasByteOrderMark ? "\uFEFF" : "") + edited))
@@ -128,12 +60,11 @@ export const previewCaptured = (
       if (operation.kind === "create") after.set(from, encoder.encode(operation.content))
       if (operation.kind === "delete") after.set(from, undefined)
       if (operation.kind === "move") {
-        const to = { projectId: operation.projectId, fileName: operation.toFileName }
-        const toKey = FileRef.key(to)
-        after.set(toKey, after.get(from))
+        const to = FileRef.key(targetOf(operation))
+        after.set(to, after.get(from))
         after.set(from, undefined)
-        movedFrom.set(toKey, operation.fileName)
-        changed.push(to)
+        movedFrom.set(to, operation.fileName)
+        changed.push(targetOf(operation))
       }
     }
 
@@ -149,42 +80,9 @@ export const previewCaptured = (
     }
     const files = new Map(changed.map((file) => [FileRef.key(file), toPreview(file)]))
     return {
-      planId: plan.planId,
-      sources: plan.sources.map(toPreview),
+      sources: [...FileRef.entries(contents)].map(([file]) => toPreview(file)),
       files: [...files.values()].sort(
         Order.Struct({ projectId: Order.String, fileName: Order.String }),
       ),
     }
-  })
-
-export const previewValidated = (
-  plan: ValidatedPlan,
-): Effect.Effect<
-  PlanPreview,
-  InvalidPlan | ProjectNotInWorkspace | StalePlanError | PlatformError.PlatformError,
-  Workspace | FileSystem.FileSystem
-> =>
-  Effect.gen(function* () {
-    const captured: FileRef.Map<Uint8Array | undefined> = new Map()
-    for (const source of plan.sources) {
-      FileRef.set(captured, source, yield* readSource(plan, source))
-    }
-    return yield* previewCaptured(plan, captured)
-  })
-
-export const preview = (
-  plan: TransformationPlan,
-): Effect.Effect<
-  PlanPreview,
-  | InvalidPlan
-  | PlanContextMismatch
-  | ProjectNotInWorkspace
-  | StalePlanError
-  | PlatformError.PlatformError,
-  Workspace | FileSystem.FileSystem
-> =>
-  Effect.gen(function* () {
-    const validated = yield* validatePlan(plan)
-    yield* requireWorkspaceProjects(validated)
-    return yield* previewValidated(validated)
   })

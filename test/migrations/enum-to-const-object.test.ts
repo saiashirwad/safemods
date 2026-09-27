@@ -6,8 +6,7 @@ import {
   enumToConstObject,
   type EnumToConstObjectInput,
 } from "../../examples/enum-to-const-object.ts"
-import * as Recipe from "../../src/Recipe.ts"
-import { executeRecipe } from "../utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { withFixture } from "../utils/fixture.ts"
 import { projectPath } from "../utils/domain.ts"
 
@@ -36,7 +35,7 @@ describe("enum-to-const-object", () => {
           expect(text).toContain("export type Status = (typeof Status)[keyof typeof Status]")
           expect(text).toContain("The request has not started")
           expect(text).toContain("Kept stable for persisted records")
-          expect((yield* Recipe.run(enumToConstObject, input)).edits).toHaveLength(0)
+          expect((yield* draftOf(enumToConstObject, input)).edits).toHaveLength(0)
         }),
       { fixture },
     ))
@@ -67,7 +66,7 @@ describe("enum-to-const-object", () => {
             )
           )
           for (const enumName of ["Numeric", "Computed", "Merged"]) {
-            const failure = yield* Recipe.run(enumToConstObject, {
+            const failure = yield* draftOf(enumToConstObject, {
               project: app,
               declarationFile: projectPath("src/unsupported.ts"),
               enumName,

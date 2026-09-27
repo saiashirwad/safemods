@@ -1,9 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { relativeJsExtensions } from "../../examples/relative-js-extensions.ts"
-import * as Recipe from "../../src/Recipe.ts"
 import { fixturePath as fixtureDirectory, withFixture, read } from "../utils/fixture.ts"
-import { executeRecipe } from "../utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/relative-js-extensions"
 const fixturePath = fixtureDirectory(fixture)
@@ -151,7 +150,7 @@ describe("relative-js-extensions", () => {
 
             const logger = yield* read(root, "src/telemetry/logger.ts")
             expect(logger).toContain('from "node:util"')
-            const second = yield* Recipe.run(relativeJsExtensions, undefined)
+            const second = yield* draftOf(relativeJsExtensions, undefined)
             expect(second.edits).toHaveLength(0)
           }),
         { fixture },

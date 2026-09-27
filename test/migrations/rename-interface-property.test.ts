@@ -1,8 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { renameInterfaceProperty } from "../../examples/rename-interface-property.ts"
-import * as Recipe from "../../src/Recipe.ts"
-import { executeRecipe } from "../utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { withFixture, read } from "../utils/fixture.ts"
 
 describe("rename-interface-property", () => {
@@ -36,7 +35,7 @@ describe("rename-interface-property", () => {
             expect(consumer).toContain("headers.displayName")
             expect(consumer).toContain('["displayName"]')
 
-            const second = yield* Recipe.run(renameInterfaceProperty, undefined)
+            const second = yield* draftOf(renameInterfaceProperty, undefined)
             expect(second.edits).toHaveLength(0)
             expect(second.unsupported).toHaveLength(0)
           }),

@@ -1,15 +1,11 @@
 import type { Node, StringLiteral } from "typescript/unstable/ast"
 import { textEdit, type TextEdit } from "./Edit.ts"
-import type { FileOperation, UnsupportedFinding } from "./Plan.ts"
+import type { FileOperation, Plan } from "./Plan.ts"
 import type * as ProjectRelativePath from "./ProjectRelativePath.ts"
 import type { Selection } from "./Query.ts"
 import type { ProjectFile, ProjectSnapshot, TextFile } from "./Workspace/index.ts"
 
-export interface Draft {
-  readonly edits: ReadonlyArray<TextEdit>
-  readonly fileOperations: ReadonlyArray<FileOperation>
-  readonly unsupported: ReadonlyArray<UnsupportedFinding>
-}
+export type Draft = Plan
 
 export const empty: Draft = { edits: [], fileOperations: [], unsupported: [] }
 

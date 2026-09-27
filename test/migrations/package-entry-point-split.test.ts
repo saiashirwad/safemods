@@ -1,9 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { packageEntryPointSplit } from "../../examples/package-entry-point-split.ts"
-import * as Recipe from "../../src/Recipe.ts"
 import { fixturePath as fixtureDirectory, withFixture, read } from "../utils/fixture.ts"
-import { executeRecipe } from "../utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/package-entry-point-split"
 const fixturePath = fixtureDirectory(fixture)
@@ -49,7 +48,7 @@ describe("package-entry-point-split", () => {
               "The root entry point is ambiguous here; choose @acme/sdk/auth or @acme/sdk/billing manually",
             )
 
-            const second = yield* Recipe.run(packageEntryPointSplit, undefined)
+            const second = yield* draftOf(packageEntryPointSplit, undefined)
             expect(second.edits).toHaveLength(0)
             expect(second.unsupported).toHaveLength(5)
           }),

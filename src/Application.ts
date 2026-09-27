@@ -10,7 +10,7 @@ import {
 } from "effect"
 import * as Sha256 from "./Sha256.ts"
 import { type FilePreview, StalePlanError, type VerifiedPlan } from "./Verification/index.ts"
-import { applicationState } from "./Verification/VerifiedPlan.ts"
+import { Workspace } from "./Workspace/index.ts"
 
 export interface ApplicationOperationFailure {
   readonly phase: "commit" | "rollback" | "cleanup"
@@ -20,14 +20,12 @@ export interface ApplicationOperationFailure {
 }
 
 export class ApplicationFailure extends Data.TaggedError("ApplicationFailure")<{
-  readonly planId: string
-  readonly reason: "unissued" | "path-escape" | "filesystem" | "recovery" | "committed"
+  readonly reason: "path-escape" | "filesystem" | "recovery" | "committed"
   readonly cause?: unknown
   readonly failures?: ReadonlyArray<ApplicationOperationFailure>
 }> {}
 
 export interface ApplicationReceipt {
-  readonly planId: Sha256.Type
   readonly written: ReadonlyArray<FilePreview>
   readonly removed: ReadonlyArray<FilePreview>
 }
@@ -35,17 +33,13 @@ export interface ApplicationReceipt {
 export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(function* (
   verified: VerifiedPlan,
 ) {
-  const state = applicationState(verified)
-  if (state === undefined) {
-    return yield* new ApplicationFailure({ planId: "unissued", reason: "unissued" })
-  }
-  const { workspace, plan, preview } = state
+  const { preview } = verified
+  const workspace = yield* Workspace
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const crypto = yield* Crypto.Crypto
 
-  const failed = (cause: unknown) =>
-    new ApplicationFailure({ planId: plan.planId, reason: "filesystem", cause })
+  const failed = (cause: unknown) => new ApplicationFailure({ reason: "filesystem", cause })
 
   const isWithin = (directory: string, candidate: string): boolean => {
     const relative = path.relative(directory, candidate)
@@ -66,7 +60,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       .absolutePath(file)
       .pipe(
         Effect.mapError(
-          (cause) => new ApplicationFailure({ planId: plan.planId, reason: "path-escape", cause }),
+          (cause) => new ApplicationFailure({ reason: "path-escape", cause }),
         ),
       )
     const realWorkspace = yield* fs.realPath(workspace.root).pipe(Effect.mapError(failed))
@@ -74,20 +68,19 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
       .projectRoot(file.projectId)
       .pipe(
         Effect.mapError(
-          (cause) => new ApplicationFailure({ planId: plan.planId, reason: "path-escape", cause }),
+          (cause) => new ApplicationFailure({ reason: "path-escape", cause }),
         ),
       )
     const realProject = yield* fs.realPath(projectRoot).pipe(Effect.mapError(failed))
     const anchor = yield* nearestExisting(target)
     const realAnchor = yield* fs.realPath(anchor).pipe(Effect.mapError(failed))
     if (!isWithin(realWorkspace, realProject) || !isWithin(realProject, realAnchor)) {
-      return yield* new ApplicationFailure({ planId: plan.planId, reason: "path-escape" })
+      return yield* new ApplicationFailure({ reason: "path-escape" })
     }
     return target
   })
   const requireUnchanged = Effect.fn(function* (file: FilePreview, target: string) {
     const stale = new StalePlanError({
-      planId: plan.planId,
       projectId: file.projectId,
       fileName: file.fileName,
     })
@@ -171,7 +164,6 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     }
     if (failures.length > 0) {
       return yield* new ApplicationFailure({
-        planId: plan.planId,
         reason: "recovery",
         cause,
         failures,
@@ -235,7 +227,6 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
           }
           if (cleanupFailures.length > 0) {
             return yield* new ApplicationFailure({
-              planId: plan.planId,
               reason: "committed",
               failures: cleanupFailures,
             })
@@ -246,7 +237,6 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
   )
 
   return {
-    planId: plan.planId,
     written: preview.files.filter((file) => file.after.exists),
     removed: preview.files.filter((file) => !file.after.exists),
   } satisfies ApplicationReceipt

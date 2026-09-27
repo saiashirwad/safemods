@@ -1,23 +1,7 @@
-import { Data, Effect, FileSystem, type PlatformError, Schema } from "effect"
+import { Data, Effect, Schema } from "effect"
 import type { Draft } from "./Draft.ts"
-import * as FileRef from "./FileRef.ts"
-import {
-  type FileOperation,
-  finalizePlan,
-  type InvalidPlan,
-  type PlanPolicies,
-  type SourceFingerprint,
-  type TransformationPlan,
-} from "./Plan.ts"
-import * as Sha256 from "./Sha256.ts"
-import {
-  type OverlappingProjectOwnership,
-  type ProjectNotInSnapshot,
-  type ProjectNotInWorkspace,
-  type ProjectSnapshotError,
-  Workspace,
-  WorkspaceSnapshot,
-} from "./Workspace/index.ts"
+import type { PlanPolicies } from "./Plan.ts"
+import type { WorkspaceSnapshot } from "./Workspace/index.ts"
 
 export interface Recipe<Input = undefined, E = never, R = never> {
   readonly name: string
@@ -52,93 +36,13 @@ export const define = <Input = undefined, E = never, R = never>(
   run: definition.run,
 })
 
-export const encodeInput = <Input, E, R>(
+export const checkInput = <Input, E, R>(
   recipe: Recipe<Input, E, R>,
   input: Input,
-): Effect.Effect<Schema.Json, RecipeInputError> =>
-  Effect.gen(function* () {
-    const encoded = recipe.schema === undefined ?
-      input :
-      yield* Schema.encodeUnknownEffect(recipe.schema)(input)
-    return yield* Schema.decodeUnknownEffect(Schema.Json)(encoded ?? null)
-  }).pipe(Effect.mapError((cause) => new RecipeInputError({ recipe: recipe.name, cause })))
-
-const fingerprint = (file: FileRef.FileRef, content: Uint8Array | undefined): SourceFingerprint =>
-  content === undefined ?
-    { ...file, kind: "missing" } :
-    { ...file, kind: "file", hash: Sha256.digest(content) }
-
-const readOptional = Effect.fn("Recipe.readOptional")(function* (path: string) {
-  const fs = yield* FileSystem.FileSystem
-  return yield* fs
-    .readFile(path)
-    .pipe(
-      Effect.catch((cause) =>
-        cause.reason._tag === "NotFound" ?
-          Effect.map(Effect.void, () => undefined) :
-          Effect.fail(cause)
-      ),
+): Effect.Effect<void, RecipeInputError> =>
+  recipe.schema === undefined ?
+    Effect.void :
+    Schema.encodeUnknownEffect(recipe.schema)(input).pipe(
+      Effect.asVoid,
+      Effect.mapError((cause) => new RecipeInputError({ recipe: recipe.name, cause })),
     )
-})
-
-const fingerprintSources = (
-  captured: FileRef.ReadonlyMap<Uint8Array | undefined>,
-  fileOperations: ReadonlyArray<FileOperation>,
-) =>
-  Effect.gen(function* () {
-    const workspace = yield* Workspace
-    const sources = new Map<string, SourceFingerprint>()
-    for (const [file, content] of FileRef.entries(captured)) {
-      sources.set(FileRef.key(file), fingerprint(file, content))
-    }
-    for (const operation of fileOperations) {
-      const target = {
-        projectId: operation.projectId,
-        fileName: operation.kind === "move" ? operation.toFileName : operation.fileName,
-      }
-      if (operation.kind !== "delete" && !sources.has(FileRef.key(target))) {
-        const onDisk = yield* readOptional(yield* workspace.absolutePath(target))
-        sources.set(FileRef.key(target), fingerprint(target, onDisk))
-      }
-    }
-    return [...sources.values()]
-  })
-
-export const run = <Input, E, R>(
-  recipe: Recipe<Input, E, R>,
-  input: Input,
-): Effect.Effect<
-  TransformationPlan,
-  | E
-  | RecipeInputError
-  | InvalidPlan
-  | ProjectSnapshotError
-  | ProjectNotInSnapshot
-  | ProjectNotInWorkspace
-  | OverlappingProjectOwnership
-  | PlatformError.PlatformError,
-  Workspace | FileSystem.FileSystem | Exclude<R, WorkspaceSnapshot>
-> =>
-  Effect.gen(function* () {
-    const options = yield* encodeInput(recipe, input)
-    const workspace = yield* Workspace
-    return yield* workspace.withSnapshot(
-      Effect.gen(function* () {
-        const snapshot = yield* WorkspaceSnapshot
-        const captured = yield* snapshot.capture
-        const draft = yield* recipe.run(input)
-        return yield* finalizePlan({
-          recipe: { name: recipe.name, version: recipe.version, options },
-          projects: snapshot.projects.map(({ project: { id, config } }) => ({
-            id,
-            configFileName: config,
-          })),
-          sources: yield* fingerprintSources(captured, draft.fileOperations),
-          edits: draft.edits,
-          fileOperations: draft.fileOperations,
-          unsupported: draft.unsupported,
-          policies: recipe.policies,
-        })
-      }),
-    )
-  })

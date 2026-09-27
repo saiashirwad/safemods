@@ -7,8 +7,8 @@ import * as Check from "./Check.ts"
 import * as Inspect from "./Inspect.ts"
 import type { UnsupportedFinding } from "./Plan.ts"
 import * as Position from "./Position.ts"
-import * as Recipe from "./Recipe.ts"
-import { actionOf, type PublicFilePreview, verify } from "./Verification/index.ts"
+import type * as Recipe from "./Recipe.ts"
+import { actionOf, type FilePreview, verify } from "./Verification/index.ts"
 import * as Workspace from "./Workspace/index.ts"
 
 class FindingsReported extends Data.TaggedError("FindingsReported")<{ readonly count: number }> {
@@ -25,7 +25,7 @@ class InvalidConfig extends Data.TaggedError("InvalidConfig")<{
   readonly cause: unknown
 }> {}
 
-class PlanRejected extends Data.TaggedError("PlanRejected")<{ readonly planId: string }> {
+class PlanRejected extends Data.TaggedError("PlanRejected")<{}> {
   readonly [Runtime.errorExitCode] = 1
   readonly [Runtime.errorReported] = false
 }
@@ -111,7 +111,7 @@ const capped = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
     [...lines.slice(0, listed), `  ... and ${lines.length - listed} more`]
 
 const unresolvedLine = (
-  sources: ReadonlyArray<PublicFilePreview>,
+  sources: ReadonlyArray<FilePreview>,
   finding: UnsupportedFinding,
 ): string => {
   const source = sources.find(
@@ -158,17 +158,8 @@ const run = Command.make(
         yield* Schema.decodeUnknownEffect(recipe.schema)(json)
 
       yield* Effect.gen(function* () {
-        const plan = yield* Recipe.run(recipe, input)
-        const files = new Set([
-          ...plan.edits.map((edit) => edit.fileName),
-          ...plan.fileOperations.map((operation) => operation.fileName),
-        ])
-        yield* Console.log(
-          `plan ${
-            plan.planId.slice(0, 12)
-          }  ${recipe.name} ${recipe.version}  ${plan.edits.length} edit(s), ${plan.fileOperations.length} file operation(s), ${files.size} file(s)`,
-        )
-        const verified = yield* verify(plan, recipe, input).pipe(
+        yield* Console.log(`${recipe.name} ${recipe.version}`)
+        const verified = yield* verify(recipe, input).pipe(
           Effect.catchTag("VerificationFailure", (failure) =>
             Effect.gen(function* () {
               yield* Console.log(`rejected (${failure.policy}): ${failure.detail}`)
@@ -183,7 +174,7 @@ const run = Command.make(
                 ).join("\n"),
               )
               yield* Console.log("nothing was written")
-              return yield* new PlanRejected({ planId: plan.planId })
+              return yield* new PlanRejected()
             })),
         )
         yield* Console.log(
@@ -191,11 +182,13 @@ const run = Command.make(
             verified.preview.files.map((file) => `  ${actionOf(file).padEnd(6)} ${file.fileName}`),
           ).join("\n"),
         )
-        if (plan.unsupported.length > 0) {
-          yield* Console.log(`left for you (${plan.unsupported.length}):`)
+        if (verified.plan.unsupported.length > 0) {
+          yield* Console.log(`left for you (${verified.plan.unsupported.length}):`)
           yield* Console.log(
             capped(
-              plan.unsupported.map((finding) => unresolvedLine(verified.preview.sources, finding)),
+              verified.plan.unsupported.map((finding) =>
+                unresolvedLine(verified.preview.sources, finding)
+              ),
             ).join("\n"),
           )
         }

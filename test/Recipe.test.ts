@@ -1,14 +1,14 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Schema } from "effect"
+import * as Application from "../src/Application.ts"
 import * as Draft from "../src/Draft.ts"
-import { InvalidPlan } from "../src/Plan.ts"
 import * as Recipe from "../src/Recipe.ts"
-import { preview } from "../src/Verification/Preview.ts"
+import { verify } from "../src/Verification/index.ts"
 import { read, withFixture, write } from "./utils/fixture.ts"
 
 describe("recipe planning", () => {
   effect(
-    "validates input through the recipe schema and records its encoded form",
+    "validates input through the recipe schema",
     () =>
       withFixture(() =>
         Effect.gen(function* () {
@@ -23,18 +23,17 @@ describe("recipe planning", () => {
               }),
           })
 
-          const plan = yield* Recipe.run(recipe, { name: "valid", count: 42 })
+          yield* verify(recipe, { name: "valid", count: 42 })
           expect(received).toEqual([{ name: "valid", count: 42 }])
-          expect(plan.recipe.options).toEqual({ name: "valid", count: "42" })
 
-          const failure = yield* Effect.flip(Recipe.run(recipe, { name: "", count: 42 }))
+          const failure = yield* Effect.flip(verify(recipe, { name: "", count: 42 }))
           expect(failure).toBeInstanceOf(Recipe.RecipeInputError)
         })
       ),
   )
 
   effect(
-    "fingerprints the same byte capture used by the compiler snapshot",
+    "plans against the bytes captured before the recipe ran",
     () =>
       withFixture((root) =>
         Effect.gen(function* () {
@@ -47,29 +46,14 @@ describe("recipe planning", () => {
               }),
           })
 
-          const plan = yield* Recipe.run(recipe, undefined)
-          const source = plan.sources.find((item) => item.fileName === "src/library.ts")!
-          expect(source.kind).toBe("file")
+          const verified = yield* verify(recipe, undefined)
+          const source = verified.preview.sources.find((item) =>
+            item.fileName === "src/library.ts"
+          )!
+          expect(source.before.exists && source.before.text).not.toBe("mutated during recipe\n")
           expect(yield* read(root, "src/library.ts")).toBe("mutated during recipe\n")
-          const stale = yield* Effect.flip(preview(plan))
+          const stale = yield* Effect.flip(Application.applyVerifiedPlan(verified))
           expect(stale).toMatchObject({ _tag: "StalePlanError", fileName: "src/library.ts" })
-        })
-      ),
-  )
-
-  effect(
-    "rejects unsatisfiable or non-finite policy bounds when the plan is built",
-    () =>
-      withFixture(() =>
-        Effect.gen(function* () {
-          for (const policies of [{ maxAffectedFiles: Infinity }]) {
-            const recipe = Recipe.define("bad-bounds", {
-              version: "1.0.0",
-              policies,
-              run: () => Effect.succeed(Draft.empty),
-            })
-            expect(yield* Effect.flip(Recipe.run(recipe, undefined))).toBeInstanceOf(InvalidPlan)
-          }
         })
       ),
   )

@@ -2,12 +2,11 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect, type Stream } from "effect"
 import type { CallExpression } from "typescript/unstable/ast"
 import * as Application from "../src/Application.ts"
-import * as Plan from "../src/Plan.ts"
+import type * as Plan from "../src/Plan.ts"
 import type * as Query from "../src/Query.ts"
-import * as Recipe from "../src/Recipe.ts"
 import type * as Verification from "../src/Verification/index.ts"
 import { projectPath } from "./utils/domain.ts"
-import { executeRecipe } from "./utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "./utils/execute-recipe.ts"
 import { read, withFixture } from "./utils/fixture.ts"
 import { migrateImportSource } from "./utils/migrate-import-source.ts"
 import { wrapTargetInput, type WrapTargetInput } from "./utils/wrap-target-input.ts"
@@ -30,7 +29,7 @@ export type _CallInference = Assert<
   >
 >
 
-const _rawPlanIsNotApplicationAuthority = (plan: Plan.TransformationPlan) =>
+const _rawPlanIsNotApplicationAuthority = (plan: Plan.Plan) =>
   // @ts-expect-error Application accepts only a VerifiedPlan
   Application.applyVerifiedPlan(plan)
 void _rawPlanIsNotApplicationAuthority
@@ -51,7 +50,7 @@ describe("run → verify → apply", () => {
             property: "value",
           }
 
-          const { plan, receipt, verified } = yield* executeRecipe(wrapTargetInput, input)
+          const { receipt, verified } = yield* executeRecipe(wrapTargetInput, input)
           expect(verified.diagnosticDiff.introduced).toEqual([])
           expect(receipt.written.map((file) => file.fileName)).toEqual([
             "src/consumer.ts",
@@ -67,30 +66,8 @@ describe("run → verify → apply", () => {
             "publicTarget({ value: 4 })",
           )
 
-          const roundTripped = yield* Plan.parsePlan(Plan.serializePlan(plan))
-          expect(roundTripped).toEqual(plan)
-
-          const second = yield* Recipe.run(wrapTargetInput, input)
+          const second = yield* draftOf(wrapTargetInput, input)
           expect(second.edits).toEqual([])
-        })
-      ),
-  )
-
-  effect(
-    "produces identical plan IDs for identical inputs",
-    () =>
-      withFixture((_, app) =>
-        Effect.gen(function* () {
-          const input: WrapTargetInput = {
-            project: app,
-            declarationFile: projectPath("src/library.ts"),
-            property: "value",
-          }
-          const [first, second] = yield* Effect.all([
-            Recipe.run(wrapTargetInput, input),
-            Recipe.run(wrapTargetInput, input),
-          ])
-          expect(first.planId).toBe(second.planId)
         })
       ),
   )

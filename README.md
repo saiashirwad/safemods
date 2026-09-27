@@ -4,7 +4,7 @@ Type-directed codemods for TypeScript 7, built on Effect.
 
 Pre-alpha. Two things run on the same compiler snapshot:
 
-- **Recipes** query the checker, emit a draft, then plan → verify → apply. Verification refuses new diagnostics and can require idempotence. Apply writes only a verified plan.
+- **Recipes** query the checker and emit a draft; `verify` previews it, refuses new diagnostics and can require idempotence; apply writes only a verified plan.
 - **Checks** query the checker and report findings. `safemods check` prints them as `path:line:column check message` and exits non-zero, so a coding agent gets a precise rejection without anyone spending tokens on it.
 
 ```ts
@@ -41,13 +41,11 @@ Run it against a workspace:
 import { NodeServices } from "@effect/platform-node"
 import { Effect, Layer } from "effect"
 import { applyVerifiedPlan } from "safemods/Application"
-import * as Recipe from "safemods/Recipe"
 import { verify } from "safemods/Verification"
 import * as Workspace from "safemods/Workspace"
 
 const migrate = Effect.gen(function* () {
-  const plan = yield* Recipe.run(renameThroughBarrel, undefined)
-  const verified = yield* verify(plan, renameThroughBarrel, undefined)
+  const verified = yield* verify(renameThroughBarrel, undefined)
   return yield* applyVerifiedPlan(verified)
 })
 
@@ -168,14 +166,14 @@ Each module depends only on the ones above it.
 | `Git`                                        | the files a ref differs from and their text at it                    |
 | `Position`, `ModuleSpecifier`                | line and column of an offset; parse, relate and emit specifiers      |
 | `Edit`                                       | hash-guarded text edits and their application                        |
-| `Plan`                                       | the canonical, content-addressed plan: finalize, validate, parse     |
+| `Plan`                                       | edits and file operations, and the rules a valid plan obeys          |
 | `Workspace`                                  | compiler snapshots; every snapshot is a fresh view of disk + overlay |
 | `Pattern`                                    | syntax shapes with typed captures, combined into tagged matches      |
 | `Query`, `Type`                              | streams of selected syntax nodes; predicates and parsers over types  |
 | `Draft`, `Check`                             | proposed edits and file operations; findings                         |
 | `Checks`                                     | the rules that ship with the package                                 |
-| `Recipe`                                     | define a transformation; `run` turns its draft into a plan           |
-| `Verification`                               | preview exact bytes, diff diagnostics, replay, issue a verified plan |
+| `Recipe`                                     | define a transformation: name, version, policies, input schema, run  |
+| `Verification`                               | run a recipe, preview exact bytes, diff diagnostics, replay          |
 | `Application`                                | write a verified plan, refusing stale files and symlink escapes      |
 | `Inspect`                                    | answers for `map`, `deps`, `exports`, `type`, `refs` and `calls`     |
 | `bin`                                        | the `safemods` command                                               |

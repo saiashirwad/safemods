@@ -1,9 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { asAssertionToSatisfies } from "../../examples/as-assertion-to-satisfies.ts"
-import * as Recipe from "../../src/Recipe.ts"
 import { withFixture, read } from "../utils/fixture.ts"
-import { executeRecipe } from "../utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/as-assertion-to-satisfies"
 
@@ -43,7 +42,7 @@ describe("as-assertion-to-satisfies", () => {
             expect(source).toContain('acceptRoute({ path: "/call", method: "GET" } as Route)')
             expect(source).toContain('export default { path: "/default", method: "GET" } as Route')
 
-            const second = yield* Recipe.run(asAssertionToSatisfies, undefined)
+            const second = yield* draftOf(asAssertionToSatisfies, undefined)
             expect(second.edits).toHaveLength(0)
             expect(second.unsupported).toHaveLength(3)
           }),

@@ -1,8 +1,6 @@
 import { describe, effect, expect, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect } from "effect"
 import * as Draft from "../src/Draft.ts"
-import { finalizePlan, type TransformationPlan } from "../src/Plan.ts"
-import type * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
 import * as Query from "../src/Query.ts"
 import * as Recipe from "../src/Recipe.ts"
 import {
@@ -11,7 +9,6 @@ import {
   diffDiagnostics,
 } from "../src/Verification/Diagnostics.ts"
 import * as Verification from "../src/Verification/index.ts"
-import { preview } from "../src/Verification/Preview.ts"
 import { type ConfiguredProject, Workspace } from "../src/Workspace/index.ts"
 import { projectPath } from "./utils/domain.ts"
 import { fixtureProject, withFixture, write } from "./utils/fixture.ts"
@@ -109,8 +106,7 @@ describe("Verification.verify", () => {
                   )
                 }),
             })
-            const plan = yield* Recipe.run(recipe, undefined)
-            const failure = yield* Effect.flip(Verification.verify(plan, recipe, undefined))
+            const failure = yield* Effect.flip(Verification.verify(recipe, undefined))
             expect(failure).toMatchObject({ _tag: "VerificationFailure", policy: "diagnostics" })
             expect(failure).toHaveProperty(
               "detail",
@@ -135,11 +131,7 @@ describe("Verification.verify", () => {
               }),
           })
 
-          const verified = yield* Verification.verify(
-            yield* Recipe.run(recipe, undefined),
-            recipe,
-            undefined,
-          )
+          const verified = yield* Verification.verify(recipe, undefined)
           expect(verified.diagnosticDiff.introduced).toEqual([])
           expect(verified.diagnosticDiff.resolved).toEqual([])
           expect(verified.diagnosticDiff.unchanged).toEqual([
@@ -156,18 +148,14 @@ describe("Verification.verify", () => {
         Effect.gen(function* () {
           const strict = createFile("strict", app, "export const broken = {\n")
           const failure = yield* Effect.flip(
-            Verification.verify(yield* Recipe.run(strict, undefined), strict, undefined),
+            Verification.verify(strict, undefined),
           )
           expect(failure).toMatchObject({ _tag: "VerificationFailure", policy: "diagnostics" })
 
           const lenient = createFile("lenient", app, "export const broken = {\n", {
             diagnostics: "allow-new-errors",
           })
-          const verified = yield* Verification.verify(
-            yield* Recipe.run(lenient, undefined),
-            lenient,
-            undefined,
-          )
+          const verified = yield* Verification.verify(lenient, undefined)
           expect(verified.diagnosticDiff.introduced.length).toBeGreaterThan(0)
         })
       ),
@@ -193,12 +181,12 @@ describe("Verification.verify", () => {
           })
 
         const passing = commentImports("passing", {})
-        yield* Verification.verify(yield* Recipe.run(passing, undefined), passing, undefined)
+        yield* Verification.verify(passing, undefined)
 
         const tooWide = commentImports("too-wide", { maxFiles: 1 })
         expect(
           yield* Effect.flip(
-            Verification.verify(yield* Recipe.run(tooWide, undefined), tooWide, undefined),
+            Verification.verify(tooWide, undefined),
           ),
         ).toMatchObject({ _tag: "VerificationFailure", policy: "affected-files" })
       })
@@ -212,8 +200,7 @@ describe("Verification.verify", () => {
           const recipe = createFile("always-creates", app, "export {}\n", {
             idempotence: "required",
           })
-          const plan = yield* Recipe.run(recipe, undefined)
-          expect(yield* Effect.flip(Verification.verify(plan, recipe, undefined))).toMatchObject({
+          expect(yield* Effect.flip(Verification.verify(recipe, undefined))).toMatchObject({
             _tag: "VerificationFailure",
             policy: "idempotence",
           })
@@ -222,7 +209,7 @@ describe("Verification.verify", () => {
   )
 
   effect(
-    "rejects replay changes to files that were absent from the first plan",
+    "rejects replay changes to files that appeared after the first run",
     () =>
       withFixture((root, app) =>
         Effect.gen(function* () {
@@ -235,140 +222,17 @@ describe("Verification.verify", () => {
                 const project = yield* fixtureProject(app)
                 const file = yield* project.file(external)
                 return file === undefined ?
-                  Draft.empty :
+                  yield* Effect.as(
+                    write(root, external, "export const external = true\n"),
+                    Draft.empty,
+                  ) :
                   Draft.insertBefore(project, file.sourceFile.statements[0]!, "// second run\n")
               }),
           })
-          const plan = yield* Recipe.run(recipe, undefined)
-          yield* write(root, external, "export const external = true\n")
-          expect(yield* Effect.flip(Verification.verify(plan, recipe, undefined))).toMatchObject({
+          expect(yield* Effect.flip(Verification.verify(recipe, undefined))).toMatchObject({
             _tag: "VerificationFailure",
             policy: "idempotence",
             detail: "Second run proposed 1 change(s)",
-          })
-        })
-      ),
-  )
-
-  effect(
-    "rejects a recipe, input, or policy set other than the plan's author",
-    () =>
-      withFixture(() =>
-        Effect.gen(function* () {
-          const define = (name: string, version: string, policies = {}) =>
-            Recipe.define(name, {
-              version,
-              policies,
-              run: (_: { readonly value: number }) => Effect.succeed(Draft.empty),
-            })
-          const author = define("author", "1.0.0")
-          const plan = yield* Recipe.run(author, { value: 1 })
-          const mismatch = <E, R>(
-            recipe: Recipe.Recipe<{ readonly value: number }, E, R>,
-            value: number,
-          ) => Effect.flip(Verification.verify(plan, recipe, { value }))
-
-          expect(yield* mismatch(define("other", "1.0.0"), 1)).toMatchObject({ field: "name" })
-          expect(yield* mismatch(define("author", "2.0.0"), 1)).toMatchObject({ field: "version" })
-          expect(yield* mismatch(author, 2)).toMatchObject({ field: "input" })
-
-          const reorderedInput = Recipe.define("author", {
-            version: "1.0.0",
-            schema: Schema.Struct({ a: Schema.Number, b: Schema.Number }),
-            run: () => Effect.succeed(Draft.empty),
-          })
-          const reorderedPlan = yield* Recipe.run(reorderedInput, { a: 1, b: 2 })
-          const { schemaVersion: ___, planId: ____, ...reorderedContent } = reorderedPlan
-          const reorderedOptions = yield* finalizePlan({
-            ...reorderedContent,
-            recipe: { ...reorderedPlan.recipe, options: { b: 2, a: 1 } },
-          })
-          yield* Verification.verify(reorderedOptions, reorderedInput, { a: 1, b: 2 })
-
-          expect(
-            yield* mismatch(define("author", "1.0.0", { idempotence: "required" }), 1),
-          ).toMatchObject({ _tag: "PlanContextMismatch", field: "policies" })
-        })
-      ),
-  )
-
-  effect(
-    "rejects plans that are not canonical or not for this workspace's projects",
-    () =>
-      withFixture((_, app) =>
-        Effect.gen(function* () {
-          const recipe = createFile("create", app, "export {}\n")
-          const plan = yield* Recipe.run(recipe, undefined)
-
-          const dotted: TransformationPlan = {
-            ...plan,
-            sources: plan.sources.map((source) => ({
-              ...source,
-              fileName: `./${source.fileName}` as ProjectRelativePath.Type,
-            })),
-          }
-          const { schemaVersion: _, planId: __, ...content } = plan
-          const otherProject = yield* finalizePlan({
-            ...content,
-            projects: [{ id: app.id, configFileName: "other.json" }],
-          })
-
-          for (
-            const [candidate, tag] of [
-              [dotted, "InvalidPlan"],
-              [otherProject, "PlanContextMismatch"],
-            ] as const
-          ) {
-            expect(
-              yield* Effect.flip(Verification.verify(candidate, recipe, undefined)),
-            ).toMatchObject({ _tag: tag })
-            expect(yield* Effect.flip(preview(candidate))).toMatchObject({ _tag: tag })
-          }
-        })
-      ),
-  )
-
-  effect(
-    "goes stale when any fingerprinted input changes, including tsconfig.json",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          const recipe = createFile("create", app, "export {}\n")
-          const plan = yield* Recipe.run(recipe, undefined)
-          yield* write(root, "tsconfig.json", '{ "compilerOptions": { "strict": false } }\n')
-
-          expect(yield* Effect.flip(Verification.verify(plan, recipe, undefined))).toMatchObject({
-            _tag: "StalePlanError",
-            fileName: "tsconfig.json",
-          })
-          expect(yield* Effect.flip(preview(plan))).toMatchObject({
-            _tag: "StalePlanError",
-          })
-        })
-      ),
-  )
-
-  effect(
-    "goes stale when a create or move target appears after planning",
-    () =>
-      withFixture((root, app) =>
-        Effect.gen(function* () {
-          const target = projectPath("src/raced.ts")
-          const recipe = Recipe.define("move", {
-            version: "1.0.0",
-            run: () =>
-              Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                const library = yield* project.file(projectPath("src/library.ts"))
-                return Draft.moveFile(library!, target)
-              }),
-          })
-          const plan = yield* Recipe.run(recipe, undefined)
-          yield* preview(plan)
-          yield* write(root, target, "created by another process\n")
-          expect(yield* Effect.flip(preview(plan))).toMatchObject({
-            _tag: "StalePlanError",
-            fileName: target,
           })
         })
       ),
@@ -394,8 +258,7 @@ describe("Verification.verify", () => {
                 )
               }),
           })
-          const plan = yield* Recipe.run(recipe, undefined)
-          const result = yield* preview(plan)
+          const result = (yield* Verification.verify(recipe, undefined)).preview
           expect(result.files.map((file) => [file.fileName, file.after.exists])).toEqual([
             [from, false],
             [to, true],
@@ -421,11 +284,7 @@ describe("Verification.verify", () => {
               }),
           })
 
-          const verified = yield* Verification.verify(
-            yield* Recipe.run(recipe, undefined),
-            recipe,
-            undefined,
-          )
+          const verified = yield* Verification.verify(recipe, undefined)
           expect(verified.diagnosticDiff.introduced).toEqual([])
           expect(verified.diagnosticDiff.resolved).toEqual([])
           expect(
@@ -458,21 +317,4 @@ describe("Verification.verify", () => {
         },
       },
     ))
-
-  effect(
-    "issues a deeply frozen verified plan",
-    () =>
-      withFixture((_, app) =>
-        Effect.gen(function* () {
-          const recipe = createFile("create", app, "export {}\n")
-          const verified = yield* Verification.verify(
-            yield* Recipe.run(recipe, undefined),
-            recipe,
-            undefined,
-          )
-          expect(Object.isFrozen(verified)).toBe(true)
-          expect(Object.isFrozen(verified.preview.files[0]?.after)).toBe(true)
-        })
-      ),
-  )
 })

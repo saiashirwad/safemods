@@ -3,8 +3,7 @@ import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { commonJsToEsm } from "../../examples/commonjs-to-esm.ts"
-import * as Recipe from "../../src/Recipe.ts"
-import { executeRecipe } from "../utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { fixturePath, withFixture, read } from "../utils/fixture.ts"
 
 describe("commonjs-to-esm", () => {
@@ -97,7 +96,7 @@ describe("commonjs-to-esm", () => {
           expect(shadowed).toContain('const loaded = require("node:path")')
           expect(shadowed).toContain("export default { loaded }")
 
-          const second = yield* Recipe.run(commonJsToEsm, input)
+          const second = yield* draftOf(commonJsToEsm, input)
           expect(second.edits).toHaveLength(0)
           expect(second.unsupported).toHaveLength(2)
         }),

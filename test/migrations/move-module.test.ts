@@ -3,9 +3,8 @@ import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { moveModule, type MoveModuleInput } from "../../examples/move-module.ts"
-import * as Recipe from "../../src/Recipe.ts"
 import { withFixture } from "../utils/fixture.ts"
-import { executeRecipe } from "../utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { projectPath } from "../utils/domain.ts"
 
 const fixture = "migrations/move-module"
@@ -136,7 +135,7 @@ describe("move-module", () => {
             Fs.readFile(Path.join(root, "src/diagnostics/baseline.ts"), "utf8")
           )
           expect(baseline).toContain("severity: 1")
-          const second = yield* Recipe.run(moveModule, input)
+          const second = yield* draftOf(moveModule, input)
           expect(second.edits).toHaveLength(0)
           expect(second.fileOperations).toHaveLength(0)
         }),

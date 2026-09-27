@@ -1,13 +1,7 @@
-import { Effect, type FileSystem, type PlatformError, Schema } from "effect"
+import { Effect, FileSystem, type PlatformError } from "effect"
 import * as FileRef from "../FileRef.ts"
-import {
-  finalizePlan,
-  PlanPolicies,
-  type InvalidPlan,
-  type TransformationPlan,
-  validatePlan,
-} from "../Plan.ts"
-import { encodeInput, type Recipe, type RecipeInputError } from "../Recipe.ts"
+import { type Contents, type InvalidPlan, type Plan, targetOf, validate } from "../Plan.ts"
+import { checkInput, type Recipe, type RecipeInputError } from "../Recipe.ts"
 import * as Sha256 from "../Sha256.ts"
 import type { Overlay } from "../Workspace/Overlay.ts"
 import {
@@ -19,93 +13,126 @@ import {
   WorkspaceSnapshot,
 } from "../Workspace/index.ts"
 import { collectDiagnostics, type DiagnosticDiff, diffDiagnostics } from "./Diagnostics.ts"
-import { PlanContextMismatch, type StalePlanError, VerificationFailure } from "./Errors.ts"
-import {
-  type PlanPreview,
-  previewCaptured,
-  previewValidated,
-  requireWorkspaceProjects,
-} from "./Preview.ts"
-import { issue, type VerifiedPlan } from "./VerifiedPlan.ts"
+import { VerificationFailure } from "./Errors.ts"
+import { type FilePreview, type PlanPreview, previewOf } from "./Preview.ts"
 
-const jsonEquivalent = Schema.toEquivalence(Schema.Json)
-const policiesEquivalent = Schema.toEquivalence(PlanPolicies)
+declare const VerifiedPlanTypeId: unique symbol
 
-const requireAuthoringRecipe = <Input, E, R>(
-  plan: TransformationPlan,
-  recipe: Recipe<Input, E, R>,
-  input: Input,
-): Effect.Effect<void, PlanContextMismatch | RecipeInputError> =>
+export interface VerifiedPlan {
+  readonly [VerifiedPlanTypeId]: true
+  readonly plan: Plan
+  readonly preview: PlanPreview
+  readonly diagnosticDiff: DiagnosticDiff
+}
+
+const readOptional = (path: string) =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) =>
+    fs.readFile(path).pipe(
+      Effect.catch((cause) =>
+        cause.reason._tag === "NotFound" ? Effect.succeed(undefined) : Effect.fail(cause)
+      ),
+    ))
+
+const has = (contents: Contents, file: FileRef.FileRef): boolean =>
+  contents.get(file.projectId)?.has(file.fileName) === true
+
+const withTargets = (captured: Contents, plan: Plan) =>
   Effect.gen(function* () {
-    const options = yield* encodeInput(recipe, input)
-    const inputMatches = jsonEquivalent(options, plan.recipe.options)
-    const mismatches = {
-      name: recipe.name !== plan.recipe.name,
-      version: recipe.version !== plan.recipe.version,
-      input: !inputMatches,
-      policies: !policiesEquivalent(recipe.policies, plan.policies),
+    const workspace = yield* Workspace
+    const contents: FileRef.Map<Uint8Array | undefined> = new Map()
+    for (const [file, bytes] of FileRef.entries(captured)) FileRef.set(contents, file, bytes)
+    for (const operation of plan.fileOperations) {
+      const target = targetOf(operation)
+      if (operation.kind !== "delete" && !has(contents, target)) {
+        FileRef.set(contents, target, yield* readOptional(yield* workspace.absolutePath(target)))
+      }
     }
-    for (const field of ["name", "version", "input", "policies"] as const) {
-      if (mismatches[field]) return yield* new PlanContextMismatch({ planId: plan.planId, field })
-    }
+    return contents
   })
 
 const overlayOf = Effect.fn(function* (
   workspace: Workspace["Service"],
-  preview: PlanPreview,
-  after: boolean,
+  files: ReadonlyArray<FilePreview>,
+  side: "before" | "after",
 ) {
-  const files = new Map<string, string>()
-  const deleted = new Set<string>()
-  for (const file of preview.sources) {
-    const state = after ? file.after : file.before
-    if (state.exists) files.set(yield* workspace.absolutePath(file), state.text)
-    else deleted.add(yield* workspace.absolutePath(file))
+  const overlay = { files: new Map<string, string>(), deleted: new Set<string>() }
+  for (const file of files) {
+    const state = file[side]
+    if (state.exists) overlay.files.set(yield* workspace.absolutePath(file), state.text)
+    else overlay.deleted.add(yield* workspace.absolutePath(file))
   }
-  if (after) {
-    for (const file of preview.files) {
-      if (file.after.exists) files.set(yield* workspace.absolutePath(file), file.after.text)
-      else deleted.add(yield* workspace.absolutePath(file))
-    }
-  }
-  return { files, deleted } satisfies Overlay
+  return overlay satisfies Overlay
 })
 
-const policyFailure = (
-  plan: TransformationPlan,
+const isChanged = ({ before, after }: FilePreview): boolean =>
+  before.exists && after.exists ?
+    Sha256.digest(before.bytes) !== Sha256.digest(after.bytes) :
+    before.exists !== after.exists
+
+const replayedChanges = <Input, E, R>(
+  recipe: Recipe<Input, E, R>,
+  input: Input,
+  preview: PlanPreview,
+) =>
+  Effect.gen(function* () {
+    const contents: FileRef.Map<Uint8Array | undefined> = new Map()
+    for (const file of [...preview.sources, ...preview.files]) {
+      FileRef.set(contents, file, file.after.exists ? file.after.bytes : undefined)
+    }
+    const plan = yield* recipe.run(input)
+    const snapshot = yield* WorkspaceSnapshot
+    for (const file of [...plan.edits, ...plan.fileOperations]) {
+      if (has(contents, file)) continue
+      const found = yield* (yield* snapshot.project(file.projectId)).file(file.fileName)
+      if (found !== undefined) {
+        FileRef.set(contents, file, new TextEncoder().encode(found.sourceFile.text))
+      }
+    }
+    const invalid = ({ detail }: InvalidPlan) =>
+      new VerificationFailure({ policy: "idempotence", detail: `Invalid replay plan: ${detail}` })
+    yield* validate(plan, contents).pipe(Effect.mapError(invalid))
+    const replayed = yield* previewOf(plan, contents).pipe(Effect.mapError(invalid))
+    return replayed.files.filter(isChanged).length
+  })
+
+const policyFailure = <Input, E, R>(
+  recipe: Recipe<Input, E, R>,
   preview: PlanPreview,
   diff: DiagnosticDiff,
-  replayedChanges: number,
-): Pick<VerificationFailure, "policy" | "detail" | "diagnostics"> | undefined => {
-  const { maxAffectedFiles, diagnostics, idempotence } = plan.policies
+  replayed: number,
+): VerificationFailure | undefined => {
+  const { maxAffectedFiles, diagnostics, idempotence } = recipe.policies
   if (preview.files.length > (maxAffectedFiles ?? Infinity)) {
-    return { policy: "affected-files", detail: `Observed ${preview.files.length}` }
+    return new VerificationFailure({
+      policy: "affected-files",
+      detail: `Observed ${preview.files.length}`,
+    })
   }
   const errors = diff.introduced.filter((diagnostic) => diagnostic.category === "error")
   if (diagnostics === "no-new-errors" && errors.length > 0) {
-    return {
+    return new VerificationFailure({
       policy: "diagnostics",
       detail: `Introduced ${errors.length} new error diagnostic(s)`,
       diagnostics: errors,
-    }
+    })
   }
-  if (idempotence === "required" && replayedChanges > 0) {
-    return { policy: "idempotence", detail: `Second run proposed ${replayedChanges} change(s)` }
+  if (idempotence === "required" && replayed > 0) {
+    return new VerificationFailure({
+      policy: "idempotence",
+      detail: `Second run proposed ${replayed} change(s)`,
+    })
   }
   return undefined
 }
 
 export const verify = <Input, E, R>(
-  plan: TransformationPlan,
   recipe: Recipe<Input, E, R>,
   input: Input,
 ): Effect.Effect<
   VerifiedPlan,
   | E
   | InvalidPlan
-  | PlanContextMismatch
   | RecipeInputError
-  | StalePlanError
   | PlatformError.PlatformError
   | VerificationFailure
   | ProjectSnapshotError
@@ -115,105 +142,43 @@ export const verify = <Input, E, R>(
   Workspace | FileSystem.FileSystem | Exclude<R, WorkspaceSnapshot>
 > =>
   Effect.gen(function* () {
+    yield* checkInput(recipe, input)
     const workspace = yield* Workspace
-    const validated = yield* validatePlan(plan)
-    yield* requireWorkspaceProjects(validated)
-    yield* requireAuthoringRecipe(validated, recipe, input)
-    const preview = yield* previewValidated(validated)
-    const baselineOverlay = yield* overlayOf(workspace, preview, false)
-    const proposedOverlay = yield* overlayOf(workspace, preview, true)
-
-    const baseline = yield* workspace.withSnapshot(collectDiagnostics, baselineOverlay)
-    const [proposed, replayedChanges] = yield* workspace.withSnapshot(
+    const [plan, contents] = yield* workspace.withSnapshot(
       Effect.gen(function* () {
-        const diagnostics = yield* collectDiagnostics
-        if (validated.policies.idempotence !== "required") return [diagnostics, 0] as const
-        const captured: FileRef.Map<Uint8Array | undefined> = new Map()
-        for (const file of preview.sources) {
-          FileRef.set(captured, file, file.after.exists ? file.after.bytes : undefined)
-        }
-        for (const file of preview.files) {
-          FileRef.set(captured, file, file.after.exists ? file.after.bytes : undefined)
-        }
-        const draft = yield* recipe.run(input)
-        const snapshot = yield* WorkspaceSnapshot
-        for (const operation of [...draft.edits, ...draft.fileOperations]) {
-          if (
-            [...FileRef.entries(captured)].some(
-              ([file]) => FileRef.key(file) === FileRef.key(operation),
-            )
-          ) {
-            continue
-          }
-          const file = yield* (yield* snapshot.project(operation.projectId)).file(
-            operation.fileName,
-          )
-          if (file !== undefined) {
-            FileRef.set(captured, operation, new TextEncoder().encode(file.sourceFile.text))
-          }
-        }
-        const replayPlan = yield* finalizePlan({
-          recipe: validated.recipe,
-          projects: validated.projects,
-          sources: [...FileRef.entries(captured)].map(([file, bytes]) =>
-            bytes === undefined ?
-              { ...file, kind: "missing" as const } :
-              { ...file, kind: "file" as const, hash: Sha256.digest(bytes) }
-          ),
-          edits: draft.edits,
-          fileOperations: draft.fileOperations,
-          unsupported: draft.unsupported,
-          policies: validated.policies,
-        }).pipe(
-          Effect.mapError(
-            ({ detail }) =>
-              new VerificationFailure({
-                planId: validated.planId,
-                policy: "idempotence",
-                detail: `Invalid replay plan: ${detail}`,
-              }),
-          ),
-        )
-        const replayPreview = yield* previewCaptured(
-          yield* validatePlan(replayPlan),
-          captured,
-        ).pipe(
-          Effect.mapError(
-            ({ detail }) =>
-              new VerificationFailure({
-                planId: validated.planId,
-                policy: "idempotence",
-                detail: `Invalid replay plan: ${detail}`,
-              }),
-          ),
-        )
-        const changed = replayPreview.files.filter((file) => {
-          if (file.before.exists !== file.after.exists) return true
-          return file.before.exists && file.after.exists ?
-            Sha256.digest(file.before.bytes) !== Sha256.digest(file.after.bytes) :
-            false
-        }).length
-        return [diagnostics, changed] as const
+        const captured = yield* (yield* WorkspaceSnapshot).capture
+        const plan = yield* recipe.run(input)
+        return [plan, yield* withTargets(captured, plan)] as const
       }),
-      proposedOverlay,
+    )
+    yield* validate(plan, contents)
+    const preview = yield* previewOf(plan, contents)
+
+    const baseline = yield* workspace.withSnapshot(
+      collectDiagnostics,
+      yield* overlayOf(workspace, preview.sources, "before"),
+    )
+    const [proposed, replayed] = yield* workspace.withSnapshot(
+      Effect.all([
+        collectDiagnostics,
+        recipe.policies.idempotence === "required" ?
+          replayedChanges(recipe, input, preview) :
+          Effect.succeed(0),
+      ]),
+      yield* overlayOf(workspace, [...preview.sources, ...preview.files], "after"),
     )
 
     const moves = new Map<string, string>()
-    for (const operation of validated.fileOperations) {
+    for (const operation of plan.fileOperations) {
       if (operation.kind === "move") {
         moves.set(
           yield* workspace.absolutePath(operation),
-          yield* workspace.absolutePath({
-            projectId: operation.projectId,
-            fileName: operation.toFileName,
-          }),
+          yield* workspace.absolutePath(targetOf(operation)),
         )
       }
     }
-    const diff = diffDiagnostics(baseline, proposed, moves)
-    const failure = policyFailure(validated, preview, diff, replayedChanges)
-    if (failure !== undefined) {
-      return yield* new VerificationFailure({ planId: validated.planId, ...failure })
-    }
-    return issue(workspace, validated, preview, diff)
+    const diagnosticDiff = diffDiagnostics(baseline, proposed, moves)
+    const failure = policyFailure(recipe, preview, diagnosticDiff, replayed)
+    if (failure !== undefined) return yield* failure
+    return { plan, preview, diagnosticDiff } as VerifiedPlan
   })

@@ -1,9 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { renameThroughBarrel } from "../../examples/rename-through-barrel.ts"
-import * as Recipe from "../../src/Recipe.ts"
 import { withFixture, read as readSource } from "../utils/fixture.ts"
-import { executeRecipe } from "../utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/rename-through-barrel"
 
@@ -199,9 +198,8 @@ describe("rename-through-barrel", () => {
       withFixture(
         (root) =>
           Effect.gen(function* () {
-            const { plan, verified } = yield* executeRecipe(renameThroughBarrel, undefined)
+            const { verified } = yield* executeRecipe(renameThroughBarrel, undefined)
 
-            expect(plan.recipe.name).toBe("rename-through-barrel")
             expect(verified.preview.files).toHaveLength(4)
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
 
@@ -214,7 +212,7 @@ describe("rename-through-barrel", () => {
             expect(yield* readSource(root, "src/auth/session.ts")).toBe(unchangedSession)
             expect(yield* readSource(root, "src/users/directory.ts")).toBe(unchangedDirectory)
             expect(yield* readSource(root, "src/audit/metrics.ts")).toBe(unchangedMetrics)
-            const second = yield* Recipe.run(renameThroughBarrel, undefined)
+            const second = yield* draftOf(renameThroughBarrel, undefined)
             expect(second.edits).toHaveLength(0)
           }),
         { fixture },

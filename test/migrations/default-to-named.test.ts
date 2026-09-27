@@ -3,8 +3,7 @@ import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { defaultToNamed, type DefaultToNamedInput } from "../../examples/default-to-named.ts"
-import * as Recipe from "../../src/Recipe.ts"
-import { executeRecipe } from "../utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { fixturePath as fixtureDirectory, withFixture } from "../utils/fixture.ts"
 import { projectPath } from "../utils/domain.ts"
 
@@ -103,7 +102,7 @@ describe("default-to-named", () => {
           expect(yield* read("src/diagnostics.ts")).toContain(
             "export const servicePort: string = 8080",
           )
-          const second = yield* Recipe.run(defaultToNamed, input)
+          const second = yield* draftOf(defaultToNamed, input)
           expect(second.edits).toHaveLength(0)
         }),
       { fixture },

@@ -1,9 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { positionalToOptions } from "../../examples/positional-to-options.ts"
-import * as Recipe from "../../src/Recipe.ts"
 import { fixturePath as fixtureDirectory, withFixture, read as readUtf8 } from "../utils/fixture.ts"
-import { executeRecipe } from "../utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/positional-to-options"
 const fixturePath = fixtureDirectory(fixture)
@@ -30,7 +29,6 @@ describe("positional-to-options", () => {
             const input = { project: app }
             const { plan, verified, receipt } = yield* executeRecipe(positionalToOptions, input)
 
-            expect(plan.recipe.name).toBe("positional-to-options")
             expect(verified.diagnosticDiff.introduced).toEqual([])
             expect(
               verified.diagnosticDiff.unchanged.some((diagnostic) => diagnostic.code === 2322),
@@ -104,7 +102,7 @@ describe("positional-to-options", () => {
               ])
               expect(actual).toBe(original)
             }
-            const second = yield* Recipe.run(positionalToOptions, input)
+            const second = yield* draftOf(positionalToOptions, input)
             expect(second.edits).toHaveLength(0)
           }),
         { fixture },

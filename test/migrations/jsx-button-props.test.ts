@@ -1,9 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { jsxButtonProps } from "../../examples/jsx-button-props.ts"
-import * as Recipe from "../../src/Recipe.ts"
 import { fixturePath as fixtureDirectory, withFixture, read as readUtf8 } from "../utils/fixture.ts"
-import { executeRecipe } from "../utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/jsx-button-props"
 const fixturePath = fixtureDirectory(fixture)
@@ -14,7 +13,6 @@ describe("jsx-button-props", () => {
         Effect.gen(function* () {
           const { plan, verified, receipt } = yield* executeRecipe(jsxButtonProps, undefined)
 
-          expect(plan.recipe.name).toBe("jsx-button-props")
           expect(verified.diagnosticDiff.introduced).toEqual([])
           expect(receipt.written).toHaveLength(2)
           expect(plan.unsupported.map(({ reason }) => reason)).toEqual([
@@ -50,7 +48,7 @@ describe("jsx-button-props", () => {
             expect(actual).toBe(original)
           }
 
-          const second = yield* Recipe.run(jsxButtonProps, undefined)
+          const second = yield* draftOf(jsxButtonProps, undefined)
           expect(second.edits).toHaveLength(0)
           expect(second.unsupported).toHaveLength(4)
         }),

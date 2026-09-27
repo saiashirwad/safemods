@@ -14,7 +14,7 @@ import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Console, Data, Effect, FileSystem, Option, Path } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
 import { applyVerifiedPlan } from "../src/Application.ts"
-import { run, type Recipe } from "../src/Recipe.ts"
+import type { Recipe } from "../src/Recipe.ts"
 import * as ProjectRelativePath from "../src/ProjectRelativePath.ts"
 import { actionOf, verify } from "../src/Verification/index.ts"
 import * as Workspace from "../src/Workspace/index.ts"
@@ -69,9 +69,8 @@ const defineExample = <Input, E, R>(example: {
   execute: (project: Workspace.ConfiguredProject.Type) => {
     const input = example.input(project)
     return Effect.gen(function* () {
-      const plan = yield* run(example.recipe, input)
-      const verified = yield* verify(plan, example.recipe, input)
-      return { plan, verified }
+      const verified = yield* verify(example.recipe, input)
+      return { verified }
     })
   },
 })

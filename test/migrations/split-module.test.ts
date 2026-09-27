@@ -3,8 +3,7 @@ import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { splitModule, type SplitModuleInput } from "../../examples/split-module.ts"
-import * as Recipe from "../../src/Recipe.ts"
-import { executeRecipe } from "../utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { withFixture, read } from "../utils/fixture.ts"
 
 const fixture = "migrations/split-module"
@@ -160,7 +159,7 @@ describe("split-module", () => {
             "export const retryLimit: string = 3",
           )
 
-          const second = yield* Recipe.run(splitModule, input)
+          const second = yield* draftOf(splitModule, input)
           expect(second.edits).toHaveLength(0)
           expect(second.fileOperations).toHaveLength(0)
         }),

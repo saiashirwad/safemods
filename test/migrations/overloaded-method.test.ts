@@ -1,9 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { overloadedMethod } from "../../examples/overloaded-method.ts"
-import * as Recipe from "../../src/Recipe.ts"
 import { fixturePath, withFixture, read } from "../utils/fixture.ts"
-import { executeRecipe } from "../utils/execute-recipe.ts"
+import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/overloaded-method"
 describe("overloaded-method", () => {
@@ -44,7 +43,7 @@ describe("overloaded-method", () => {
             yield* read(fixturePath(fixture), "src/lookalike.ts"),
           )
 
-          const second = yield* Recipe.run(overloadedMethod, input)
+          const second = yield* draftOf(overloadedMethod, input)
           expect(second.edits).toHaveLength(0)
           expect(second.unsupported).toHaveLength(1)
         }),
