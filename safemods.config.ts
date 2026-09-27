@@ -10,6 +10,7 @@ import {
   unusedOptionalParameters,
   weakReturns,
 } from "safemods/Checks"
+import { noUnknownFailures } from "./examples/no-unknown-failures.ts"
 
 const publicApi = [
   "src/{Application,Check,Draft,Finding,Inspect,ModuleSpecifier,Pattern,Plan,ProjectId,WorkspacePath,Query,Recipe,Type,bin}.ts",
@@ -48,7 +49,8 @@ export default {
       within: "src/{Sha256,ProjectId,WorkspacePath,Edit,Plan}.ts",
       forbidden: { packages: ["typescript"] },
     }),
-    unusedCode({ within: "src/**", tests: "test/**", publicApi }),
+    unusedCode({ within: "src/**", tests: "test/**", publicApi: [] }),
+    noUnknownFailures({ within: "src/**" }),
     unusedOptionalParameters({ within: "{src,examples}/**", publicApi }),
     ignoredReturns({ within: "{src,examples}/**" }),
     duplicatedFunctions({ within: "{src,examples,test}/**", minimumLength: 60 }),

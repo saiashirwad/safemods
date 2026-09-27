@@ -88,8 +88,6 @@ describe("workspace snapshots", () => {
           expect(library?.sourceFile.text).toContain("function target")
           expect(Option.getOrUndefined(project.fileNameOf(library!.sourceFile))).toBe(libraryPath)
           expect((yield* project.files).map((file) => file.fileName)).toContain(libraryPath)
-          expect((yield* project.textFile(libraryPath))?.text).toContain("function target")
-          expect((yield* project.textFiles).map((file) => file.fileName)).toContain(libraryPath)
         })),
   )
 

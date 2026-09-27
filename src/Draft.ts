@@ -3,7 +3,7 @@ import { textEdit, type TextEdit } from "./Edit.ts"
 import type { FileOperation, Plan } from "./Plan.ts"
 import type * as WorkspacePath from "./WorkspacePath.ts"
 import type { Selection } from "./Query.ts"
-import type { ProjectFile, ProjectSnapshot, TextFile } from "./Workspace/index.ts"
+import type { ProjectFile, ProjectSnapshot } from "./Workspace/index.ts"
 
 export type Draft = Plan
 
@@ -104,13 +104,13 @@ export const insertBefore = (project: ProjectSnapshot, node: Node, text: string)
 export const insertAfter = (project: ProjectSnapshot, node: Node, text: string): Draft =>
   oneEdit(editBetween(project, node, "after", text))
 
-export const replaceText = (file: TextFile, newText: string): Draft =>
+export const replaceText = (file: ProjectFile, newText: string): Draft =>
   oneEdit(
     textEdit({
       fileName: file.fileName,
-      sourceText: file.text,
+      sourceText: file.sourceFile.text,
       start: 0,
-      end: file.text.length,
+      end: file.sourceFile.text.length,
       newText,
     }),
   )
@@ -122,14 +122,14 @@ export const createFile = (fileName: WorkspacePath.Type, content: string): Draft
     content,
   })
 
-export const deleteFile = (file: ProjectFile | TextFile): Draft =>
+export const deleteFile = (file: ProjectFile): Draft =>
   oneOperation({
     kind: "delete",
     fileName: file.fileName,
   })
 
 export const moveFile = (
-  file: ProjectFile | TextFile,
+  file: ProjectFile,
   toFileName: WorkspacePath.Type,
 ): Draft =>
   oneOperation({

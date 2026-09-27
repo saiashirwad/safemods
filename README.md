@@ -64,31 +64,48 @@ Cheap syntactic filters go first. `Query.where` asks the checker, and questions 
 
 A check is an Effect that returns findings: a file, a span and a message. Questions about types go through the project snapshot, and `Type` reads Effect, Stream and Layer parameters off their variance structs.
 
+`examples/no-unknown-failures.ts` is one, and this repository runs it on itself:
+
 ```ts
 import { Effect, Option } from "effect"
+import type { Type as NativeType } from "typescript/unstable/async"
 import * as Check from "safemods/Check"
 import * as Query from "safemods/Query"
 import * as Type from "safemods/Type"
-import { WorkspaceSnapshot } from "safemods/Workspace"
+import type { ProjectSnapshot } from "safemods/Workspace"
 
-export const noUnknownFailures = Check.define(
-  "no-unknown-failures",
+const failureOf = (project: ProjectSnapshot, type: NativeType) =>
   Effect.gen(function* () {
-    const snapshot = yield* WorkspaceSnapshot
-    const project = snapshot.projects[0]!
-    const failing = yield* Query.calls(project).pipe(
+    const effect = yield* Type.effect(project, type)
+    if (Option.isSome(effect)) return Option.some({ kind: "an Effect", error: effect.value.error })
+    const stream = yield* Type.stream(project, type)
+    if (Option.isSome(stream)) return Option.some({ kind: "a Stream", error: stream.value.error })
+    const layer = yield* Type.layer(project, type)
+    if (Option.isSome(layer)) return Option.some({ kind: "a Layer", error: layer.value.error })
+    return Option.none()
+  })
+
+export const noUnknownFailures = (options: { readonly within: string }) =>
+  Check.perProject("no-unknown-failures", (project) =>
+    Query.calls(project).pipe(
+      Query.within(options.within),
       Query.typed,
-      Query.where(({ value }) =>
-        Effect.map(
-          Type.effect(project, value.type),
-          (parsed) => Option.isSome(parsed) && Type.isUnknown(parsed.value.error),
-        )
-      ),
       Query.collect,
-    )
-    return failing.map((call) => Check.report(call, "this Effect can fail with unknown"))
-  }),
-)
+      Effect.flatMap((calls) =>
+        Check.each(calls, (call) =>
+          Effect.map(failureOf(project, call.value.type), (failure) =>
+            Option.toArray(failure)
+              .filter(({ error }) =>
+                Type.isUnknown(error)
+              )
+              .map(({ kind }) =>
+                Check.report(
+                  call,
+                  `returns ${kind} that can fail with unknown: give the failure a type`,
+                )
+              )))
+      ),
+    ))
 ```
 
 List projects and checks in `safemods.config.ts`. Every path — a project config, a `within` glob, an edit, a finding — is relative to the directory holding that file. The rules that ship with the package come from `safemods/Checks`; a rule of your own is a file in your repository.
@@ -102,7 +119,7 @@ export default {
   projects: [{ id: "app", config: "tsconfig.json" }],
   checks: [
     layers({ within: "src/**", order: [["src/core.ts"], ["src/app.ts"]] }),
-    noUnknownFailures,
+    noUnknownFailures({ within: "src/**" }),
   ],
 } satisfies Check.Config
 ```
@@ -182,7 +199,7 @@ Application checks real paths immediately before each mutation. The portable fil
 
 ## Examples
 
-Each recipe in `examples/` has a fixture under `fixtures/migrations/`. The runner copies the fixture, applies the recipe to the copy, and prints `git diff HEAD`. The original fixture is not written.
+Each recipe in `examples/` has a fixture under `fixtures/migrations/`, and every public export is used by `src/` or an example: `unusedCode` in `safemods.config.ts` counts nothing else as a use. The runner copies the fixture, applies the recipe to the copy, and prints `git diff HEAD`. The original fixture is not written.
 
 ```sh
 pnpm example rename-package-import
@@ -205,6 +222,12 @@ pnpm example --help
 | `default-to-named`          | default export → named export                             |
 | `enum-to-const-object`      | string enum → const object and value union                |
 | `relative-js-extensions`    | add `.js` to relative specifiers                          |
+| `remove-debugger`           | delete `debugger` statements                              |
+| `let-to-const`              | `let` → `const` where no declared name is written again   |
+| `void-floating-promises`    | mark a dropped promise with `void`                        |
+| `concat-to-template`        | `"a" + b` → template literal for strings and numbers      |
+| `object-as-const`           | `as const` on exported all-literal objects                |
+| `normalize-line-endings`    | CRLF → LF                                                 |
 
 Requires Node 24+.
 

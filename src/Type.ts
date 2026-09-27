@@ -21,8 +21,6 @@ export const isAny = (type: NativeType): boolean =>
 
 export const isUnknown = (type: NativeType): boolean => (type.flags & TypeFlags.Unknown) !== 0
 
-export const isNever = (type: NativeType): boolean => (type.flags & TypeFlags.Never) !== 0
-
 type Parameters<Names extends Record<string, string>> = {
   readonly [Name in keyof Names]: NativeType
 }

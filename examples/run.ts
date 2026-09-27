@@ -19,18 +19,24 @@ import * as WorkspacePath from "../src/WorkspacePath.ts"
 import { actionOf, verify } from "../src/Verification/index.ts"
 import * as Workspace from "../src/Workspace/index.ts"
 import { asAssertionToSatisfies } from "./as-assertion-to-satisfies.ts"
+import { concatToTemplate } from "./concat-to-template.ts"
 import { defaultToNamed } from "./default-to-named.ts"
 import { enumToConstObject } from "./enum-to-const-object.ts"
 import { jsxButtonProps } from "./jsx-button-props.ts"
+import { letToConst } from "./let-to-const.ts"
 import { moveModule } from "./move-module.ts"
+import { normalizeLineEndings } from "./normalize-line-endings.ts"
+import { objectAsConst } from "./object-as-const.ts"
 import { overloadedMethod } from "./overloaded-method.ts"
 import { packageEntryPointSplit } from "./package-entry-point-split.ts"
 import { positionalToOptions } from "./positional-to-options.ts"
 import { relativeJsExtensions } from "./relative-js-extensions.ts"
+import { removeDebugger } from "./remove-debugger.ts"
 import { renameInterfaceProperty } from "./rename-interface-property.ts"
 import { renamePackageImport } from "./rename-package-import.ts"
 import { renameThroughBarrel } from "./rename-through-barrel.ts"
 import { splitModule } from "./split-module.ts"
+import { voidFloatingPromises } from "./void-floating-promises.ts"
 
 const repoRoot = NodePath.join(import.meta.dirname, "..")
 const fixturesRoot = NodePath.join(repoRoot, "fixtures")
@@ -164,6 +170,42 @@ const examples = [
     id: "relative-js-extensions",
     fixture: "fixtures/migrations/relative-js-extensions",
     recipe: relativeJsExtensions,
+    input: () => undefined,
+  }),
+  defineExample({
+    id: "remove-debugger",
+    fixture: "fixtures/migrations/remove-debugger",
+    recipe: removeDebugger,
+    input: () => undefined,
+  }),
+  defineExample({
+    id: "let-to-const",
+    fixture: "fixtures/migrations/let-to-const",
+    recipe: letToConst,
+    input: () => undefined,
+  }),
+  defineExample({
+    id: "void-floating-promises",
+    fixture: "fixtures/migrations/void-floating-promises",
+    recipe: voidFloatingPromises,
+    input: () => undefined,
+  }),
+  defineExample({
+    id: "concat-to-template",
+    fixture: "fixtures/migrations/concat-to-template",
+    recipe: concatToTemplate,
+    input: () => undefined,
+  }),
+  defineExample({
+    id: "object-as-const",
+    fixture: "fixtures/migrations/object-as-const",
+    recipe: objectAsConst,
+    input: () => undefined,
+  }),
+  defineExample({
+    id: "normalize-line-endings",
+    fixture: "fixtures/migrations/normalize-line-endings",
+    recipe: normalizeLineEndings,
     input: () => undefined,
   }),
 ]

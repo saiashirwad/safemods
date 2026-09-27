@@ -53,12 +53,6 @@ export interface ProjectFile {
   readonly sourceFile: SourceFile
 }
 
-export interface TextFile {
-  readonly project: ProjectSnapshot
-  readonly fileName: WorkspacePath.Type
-  readonly text: string
-}
-
 export interface ModuleExport {
   readonly name: string
   readonly symbol: NativeSymbol
@@ -84,11 +78,7 @@ export interface ProjectSnapshot {
   readonly file: (
     fileName: WorkspacePath.Type,
   ) => Effect.Effect<ProjectFile | undefined, ProjectSnapshotError>
-  readonly textFile: (
-    fileName: WorkspacePath.Type,
-  ) => Effect.Effect<TextFile | undefined, ProjectSnapshotError>
   readonly files: Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError>
-  readonly textFiles: Effect.Effect<ReadonlyArray<TextFile>, ProjectSnapshotError>
   readonly symbolNamed: (
     name: string,
     options: { readonly within: WorkspacePath.Type },
@@ -305,20 +295,7 @@ export const make = (options: {
 
     file: (fileName) => ownedFile(absolute(fileName)),
 
-    textFile: (fileName) =>
-      Effect.map(
-        ownedFile(absolute(fileName)),
-        (file) =>
-          file === undefined ? undefined : { project, fileName, text: file.sourceFile.text },
-      ),
-
     files,
-
-    textFiles: files.pipe(
-      Effect.map((files) =>
-        files.map((file) => ({ project, fileName: file.fileName, text: file.sourceFile.text }))
-      ),
-    ),
 
     symbolNamed: (name, { within }) =>
       Effect.gen(function* () {

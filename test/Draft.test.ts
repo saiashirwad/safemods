@@ -75,15 +75,10 @@ describe("drafts", () => {
       withProject({}, (project) =>
         Effect.gen(function* () {
           const library = (yield* project.file(workspacePath("src/library.ts")))!
-          const textLibrary = (yield* project.textFile(workspacePath("src/library.ts")))!
           const target = workspacePath("src/nested/library.ts")
 
-          expect(textLibrary).toMatchObject({
-            fileName: "src/library.ts",
-            text: expect.stringContaining("function target"),
-          })
           expect(
-            yield* applyFileEdits(textLibrary.text, Draft.replaceText(textLibrary, "new").edits),
+            yield* applyFileEdits(library.sourceFile.text, Draft.replaceText(library, "new").edits),
           ).toBe("new")
 
           expect(Draft.deleteFile(library).fileOperations).toEqual([

@@ -10,6 +10,5 @@ export type {
   ProjectFile,
   ProjectSnapshot,
   ProjectSnapshotError,
-  TextFile,
 } from "./ProjectSnapshot.ts"
 export { layer, ProjectNotInSnapshot, Workspace, WorkspaceSnapshot } from "./Workspace.ts"
