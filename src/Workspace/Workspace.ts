@@ -102,7 +102,7 @@ const make = (
 
         let active = true
         const ensureActive = Effect.suspend(() =>
-          active ? Effect.void : Effect.fail(new ProjectSnapshot.SnapshotExpired())
+          active ? Effect.void : new ProjectSnapshot.SnapshotExpired()
         )
 
         const projects = definition.projects.flatMap((configured) => {
@@ -125,7 +125,7 @@ const make = (
           project: (projectId) => {
             const project = projects.find((candidate) => candidate.project.id === projectId)
             return project === undefined ?
-              Effect.fail(new ProjectNotInSnapshot({ projectId })) :
+              new ProjectNotInSnapshot({ projectId }) :
               Effect.succeed(project)
           },
           file: (fileName) =>

@@ -82,5 +82,5 @@ const problem = (plan: Plan, before: Contents): string | undefined => {
 
 export const validate = (plan: Plan, before: Contents): Effect.Effect<void, InvalidPlan> => {
   const detail = problem(plan, before)
-  return detail === undefined ? Effect.void : Effect.fail(new InvalidPlan({ detail }))
+  return detail === undefined ? Effect.void : new InvalidPlan({ detail })
 }

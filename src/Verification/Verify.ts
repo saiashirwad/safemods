@@ -29,8 +29,8 @@ const readOptional = (path: string) =>
   Effect.flatMap(FileSystem.FileSystem, (fs) =>
     fs.readFile(path).pipe(
       Effect.catch((cause) =>
-        cause.reason._tag === "NotFound" ? Effect.succeed(undefined) : Effect.fail(cause)
-      ),
+        cause.reason._tag === "NotFound" ? Effect.succeed(undefined) : cause
+      ), 
     ))
 
 const withTargets = (captured: Contents, plan: Plan) =>
