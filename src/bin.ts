@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { NodeRuntime, NodeServices } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
+import { NodeRuntime } from "@effect/platform-node-shared"
 import { Console, Data, Effect, Predicate, Runtime, Schema } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
 import { applyVerifiedPlan } from "./Application.ts"
@@ -23,12 +24,23 @@ class PlanRejected extends Data.TaggedError("PlanRejected")<{}> {
 
 class CommandFailed extends Data.TaggedError("CommandFailed")<{ readonly cause: unknown }> {
   readonly [Runtime.errorExitCode] = 2
+  readonly [Runtime.errorReported] = false
 }
 
-const failed = (cause: unknown) =>
-  cause instanceof FindingsReported || cause instanceof PlanRejected ?
-    cause :
-    new CommandFailed({ cause })
+const reportFailure = (cause: unknown, format: "text" | "json" = "text") =>
+  Effect.gen(function* () {
+    if (cause instanceof FindingsReported || cause instanceof PlanRejected) return yield* cause
+    const message = cause instanceof Inspect.NotFound ?
+      cause.what :
+      cause instanceof Config.InvalidConfig ?
+      `${cause.path}: ${cause.cause instanceof Error ? cause.cause.message : String(cause.cause)}` :
+      cause instanceof Error ?
+      cause.message :
+      String(cause)
+    if (format === "json") yield* Console.log(JSON.stringify({ error: message }))
+    else yield* Console.error(message)
+    return yield* new CommandFailed({ cause })
+  })
 
 const configFlag = Flag.file("config").pipe(
   Flag.withDefault("safemods.config.ts"),
@@ -52,7 +64,7 @@ const check = Command.make(
       )
       yield* Console.error(`${findings.length} finding(s)`)
       if (findings.length > 0) return yield* new FindingsReported({ count: findings.length })
-    }).pipe(Effect.mapError(failed)),
+    }).pipe(Effect.catch((cause) => reportFailure(cause, format))),
 ).pipe(Command.withDescription("Run whole-program checks and fail on findings"))
 
 type Answer = ReturnType<typeof Inspect.type> | typeof Inspect.map
@@ -147,7 +159,7 @@ const run = Command.make(
         yield* applyVerifiedPlan(verified)
         yield* Console.log(`applied to ${verified.preview.files.length} file(s)`)
       }).pipe(Effect.provide(workspace))
-    }).pipe(Effect.mapError(failed)),
+    }).pipe(Effect.catch((cause) => reportFailure(cause))),
 ).pipe(Command.withDescription("Plan a recipe, verify it, and write it only with --apply"))
 
 const inspecting = (configFile: string, answer: Answer) =>
@@ -157,7 +169,7 @@ const inspecting = (configFile: string, answer: Answer) =>
       Effect.provide(workspace),
     )
     yield* Console.log(lines.join("\n"))
-  }).pipe(Effect.mapError(failed))
+  }).pipe(Effect.catch((cause) => reportFailure(cause)))
 
 const at = (name: string, description: string, answer: (position: string) => Answer) =>
   Command.make(

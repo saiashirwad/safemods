@@ -48,16 +48,28 @@ const fileNamed = (named: string) =>
 
 const targetAt = (position: string) =>
   Effect.gen(function* () {
-    const [path, line, column] = position.split(":")
-    if (path === undefined || line === undefined) {
+    const match = /^(.+):([1-9]\d*):([1-9]\d*)$/.exec(position)
+    if (match === null) {
       return yield* new NotFound({ what: `${position} is not path:line:column` })
     }
-    const file = yield* fileNamed(path)
+    const file = yield* fileNamed(match[1]!)
+    const line = Number(match[2])
+    const column = Number(match[3])
+    const lineText = file.sourceFile.text.split("\n")[line - 1]
+    if (
+      !Number.isSafeInteger(line) || !Number.isSafeInteger(column) ||
+      lineText === undefined || column > lineText.length
+    ) {
+      return yield* new NotFound({ what: `${position} is outside ${file.fileName}` })
+    }
     const offset = Position.offset(file.sourceFile.text, {
-      line: Number(line),
-      column: Number(column ?? 1),
+      line,
+      column,
     })
     const node = innermost(file.sourceFile, offset)
+    if (node === file.sourceFile) {
+      return yield* new NotFound({ what: `${position} has no node` })
+    }
     return {
       value: node,
       project: file.project,

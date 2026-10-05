@@ -33,14 +33,40 @@ export class InvalidPlan extends Data.TaggedError("InvalidPlan")<{ readonly deta
 export const targetOf = (operation: FileOperation): WorkspacePath.Type =>
   operation.kind === "move" ? operation.toFileName : operation.fileName
 
-const distinctBy = <A>(values: ReadonlyArray<A>): ReadonlyArray<A> => [
-  ...new Map(values.map((value) => [JSON.stringify(value), value])).values(),
-]
+const distinctBy = <A extends { readonly fileName: WorkspacePath.Type }>(
+  values: ReadonlyArray<A>,
+  same: (left: A, right: A) => boolean,
+): ReadonlyArray<A> => {
+  const seen = new Map<WorkspacePath.Type, Array<A>>()
+  return values.filter((value) => {
+    const matches = seen.get(value.fileName)
+    if (matches?.some((other) => same(other, value))) return false
+    if (matches === undefined) seen.set(value.fileName, [value])
+    else matches.push(value)
+    return true
+  })
+}
+
+const sameOperation = (left: FileOperation, right: FileOperation): boolean => {
+  if (left.kind !== right.kind || left.fileName !== right.fileName) return false
+  if (left.kind === "create") return right.kind === "create" && left.content === right.content
+  if (left.kind === "move") return right.kind === "move" && left.toFileName === right.toFileName
+  return true
+}
 
 export const distinct = (plan: Plan): Plan => ({
-  edits: distinctBy(plan.edits),
-  fileOperations: distinctBy(plan.fileOperations),
-  unsupported: distinctBy(plan.unsupported),
+  edits: distinctBy(
+    plan.edits,
+    (left, right) =>
+      left.start === right.start && left.end === right.end &&
+      left.expectedTextHash === right.expectedTextHash && left.newText === right.newText,
+  ),
+  fileOperations: distinctBy(plan.fileOperations, sameOperation),
+  unsupported: distinctBy(
+    plan.unsupported,
+    (left, right) =>
+      left.start === right.start && left.end === right.end && left.message === right.message,
+  ),
 })
 
 const problem = (plan: Plan, before: Contents): string | undefined => {

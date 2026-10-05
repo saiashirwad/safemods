@@ -145,7 +145,7 @@ safemods check --format json
 | `anyInPublicApi`           | a public export whose type contains `any`, followed through namespace re-exports                                                                       |
 | `suppressions`             | `@ts-ignore`, `@ts-expect-error`, lint-disable comments and `!` assertions                                                                             |
 
-This repository runs them on itself in `pnpm lint` (see `safemods.config.ts`), except `unjustifiedCasts`: `src/` still holds deliberate casts the rule reports.
+This repository enables some of these rules in `safemods.config.ts`; `pnpm lint` runs that config. `unjustifiedCasts` reports deliberate casts in `src/`. `anyInPublicApi` also remains off: its type walk reaches `any` inside Effect's declarations through otherwise typed public exports.
 
 ## Asking the compiler
 

@@ -48,6 +48,10 @@ const diagnosticKinds = [
   "getSemanticDiagnostics",
 ] as const
 
+const sameDiagnostic = (left: DiagnosticRecord, right: DiagnosticRecord): boolean =>
+  left.fileName === right.fileName && left.category === right.category &&
+  left.code === right.code && left.message === right.message
+
 export const collectDiagnostics = Effect.gen(function* () {
   const snapshot = yield* WorkspaceSnapshot
   const fs = yield* FileSystem.FileSystem
@@ -72,23 +76,19 @@ export const collectDiagnostics = Effect.gen(function* () {
       }
     }
   }
-  return [
-    ...new Map(
-      diagnostics.map((diagnostic) => [
-        JSON.stringify([
-          diagnostic.fileName,
-          diagnostic.start,
-          diagnostic.code,
-          diagnostic.message,
-        ]),
-        diagnostic,
-      ]),
-    ).values(),
-  ]
+  const byFile = new Map<WorkspacePath.Type | undefined, Array<DiagnosticRecord>>()
+  return diagnostics.filter((diagnostic) => {
+    const matches = byFile.get(diagnostic.fileName)
+    if (
+      matches?.some((other) =>
+        other.start === diagnostic.start && sameDiagnostic(other, diagnostic)
+      )
+    ) return false
+    if (matches === undefined) byFile.set(diagnostic.fileName, [diagnostic])
+    else matches.push(diagnostic)
+    return true
+  })
 })
-
-const identity = ({ category, code, fileName }: DiagnosticRecord): string =>
-  JSON.stringify([category, code, fileName])
 
 export const diffDiagnostics = (
   baseline: ReadonlyArray<DiagnosticRecord>,
@@ -102,14 +102,18 @@ export const diffDiagnostics = (
         undefined :
         (moves.get(diagnostic.fileName) ?? diagnostic.fileName),
     })),
-    identity,
+    (diagnostic) => diagnostic.fileName,
   )
   const introduced: Array<DiagnosticRecord> = []
   const unchanged: Array<DiagnosticRecord> = []
   for (const diagnostic of proposed) {
-    const matched = remaining.get(identity(diagnostic))?.pop()
-    if (matched === undefined) introduced.push(diagnostic)
-    else unchanged.push(diagnostic)
+    const matches = remaining.get(diagnostic.fileName)
+    const index = matches?.findIndex((other) => sameDiagnostic(other, diagnostic)) ?? -1
+    if (matches === undefined || index < 0) introduced.push(diagnostic)
+    else {
+      matches.splice(index, 1)
+      unchanged.push(diagnostic)
+    }
   }
   return { introduced, unchanged, resolved: [...remaining.values()].flat() }
 }

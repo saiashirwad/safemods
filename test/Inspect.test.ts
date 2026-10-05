@@ -6,14 +6,22 @@ import { withFixture } from "./utils/fixture.ts"
 
 const bin = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
 
-const safemods = (cwd: string, ...args: ReadonlyArray<string>) =>
+const runSafemods = (cwd: string, ...args: ReadonlyArray<string>) =>
   Effect.promise(
     () =>
-      new Promise<ReadonlyArray<string>>((resolve) =>
-        execFile(process.execPath, ["--conditions=source", bin, ...args], { cwd }, (_, stdout) =>
-          resolve(stdout.trimEnd().split("\n")))
+      new Promise<{ code: number; stdout: string; stderr: string }>((resolve) =>
+        execFile(
+          process.execPath,
+          ["--conditions=source", bin, ...args],
+          { cwd },
+          (error, stdout, stderr) =>
+            resolve({ code: typeof error?.code === "number" ? error.code : 0, stdout, stderr }),
+        )
       ),
   )
+
+const safemods = (cwd: string, ...args: ReadonlyArray<string>) =>
+  Effect.map(runSafemods(cwd, ...args), ({ stdout }) => stdout.trimEnd().split("\n"))
 
 describe("inspect commands", () => {
   effect(
@@ -81,4 +89,52 @@ describe("inspect commands", () => {
       ),
     { timeout: 60_000 },
   )
+
+  effect(
+    "rejects malformed and out-of-range positions without inventing an answer",
+    () =>
+      withFixture(
+        (root) =>
+          Effect.gen(function* () {
+            for (
+              const [position, reason] of [
+                ["src/lib.ts:1:14  export const area = 1", "is not path:line:column"],
+                ["src/lib.ts:99999:1", "is outside src/lib.ts"],
+                ["src/lib.ts:1:99999", "is outside src/lib.ts"],
+              ] as const
+            ) {
+              const result = yield* runSafemods(root, "type", position)
+              expect(result.code).toBe(2)
+              expect(result.stdout).toBe("")
+              expect(result.stderr.trim()).toBe(`${position} ${reason}`)
+            }
+            const missing = yield* runSafemods(root, "type", "src/lib.ts")
+            expect(missing.code).toBe(2)
+            expect(missing.stderr.trim()).toBe("src/lib.ts is not path:line:column")
+          }),
+        {
+          fixture: "empty",
+          files: {
+            "tsconfig.json": JSON.stringify({ include: ["src/**/*.ts"] }),
+            "safemods.config.ts":
+              'export default { projects: [{ id: "app", config: "tsconfig.json" }], checks: [] }\n',
+            "src/lib.ts": "export const area = 1\n",
+          },
+        },
+      ),
+  )
+
+  effect("prints a machine-readable error for a bad config in JSON mode", () =>
+    withFixture(
+      (root) =>
+        Effect.gen(function* () {
+          const result = yield* runSafemods(root, "check", "--format", "json")
+          expect(result.code).toBe(2)
+          expect(JSON.parse(result.stdout)).toEqual({
+            error: expect.stringContaining("safemods.config.ts"),
+          })
+          expect(result.stderr).toBe("")
+        }),
+      { fixture: "empty" },
+    ))
 })

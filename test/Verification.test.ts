@@ -60,13 +60,13 @@ describe("diagnostic diffs", () => {
     })
   })
 
-  it("treats changed error text as the same diagnostic kind", () => {
+  it("treats changed error text as a new diagnostic", () => {
     const before = diagnostic({ message: "Cannot find name 'before'" })
     const after = diagnostic({ message: "Cannot find name 'after'" })
     expect(diffDiagnostics([before], [after])).toEqual({
-      introduced: [],
-      resolved: [],
-      unchanged: [after],
+      introduced: [after],
+      resolved: [before],
+      unchanged: [],
     })
   })
 
@@ -114,7 +114,7 @@ describe("Verification.verify", () => {
       ),
   )
 
-  effect("accepts a renamed unresolved identifier at the same site", () =>
+  effect("rejects a new unresolved identifier at the same site", () =>
     withFixture(
       (_, app) =>
         Effect.gen(function* () {
@@ -128,12 +128,15 @@ describe("Verification.verify", () => {
               }),
           })
 
-          const verified = yield* Verification.verify(recipe, undefined)
-          expect(verified.diagnosticDiff.introduced).toEqual([])
-          expect(verified.diagnosticDiff.resolved).toEqual([])
-          expect(verified.diagnosticDiff.unchanged).toEqual([
-            expect.objectContaining({ code: 2304, message: "Cannot find name 'after'." }),
-          ])
+          const failure = yield* Effect.flip(Verification.verify(recipe, undefined))
+          expect(failure).toMatchObject({
+            _tag: "VerificationFailure",
+            policy: "diagnostics",
+            diagnostics: [expect.objectContaining({
+              code: 2304,
+              message: "Cannot find name 'after'.",
+            })],
+          })
         }),
       { files: { "src/message.ts": "before;\n" } },
     ))
@@ -291,6 +294,46 @@ describe("Verification.verify", () => {
           ).toBe(true)
         }),
       { files: { "src/broken.ts": "missingName;\n" } },
+    ))
+
+  effect("rejects a move that exchanges one missing module for another", () =>
+    withFixture(
+      (_, app) =>
+        Effect.gen(function* () {
+          const from = workspacePath("src/a.ts")
+          const to = workspacePath("src/nested/a.ts")
+          const recipe = Recipe.define("move-with-new-error", {
+            version: "1.0.0",
+            run: () =>
+              Effect.gen(function* () {
+                const project = yield* fixtureProject(app)
+                return Draft.moveFile((yield* project.file(from))!, to)
+              }),
+          })
+          const failure = yield* Effect.flip(Verification.verify(recipe, undefined))
+          expect(failure).toMatchObject({
+            _tag: "VerificationFailure",
+            policy: "diagnostics",
+            diagnostics: [expect.objectContaining({
+              fileName: to,
+              code: 2307,
+              message: expect.stringContaining("./local.js"),
+            })],
+          })
+        }),
+      {
+        fixture: "empty",
+        files: {
+          "tsconfig.json": JSON.stringify({
+            compilerOptions: { strict: true, module: "NodeNext", moduleResolution: "NodeNext" },
+            include: ["src/**/*.ts"],
+          }),
+          "src/a.ts":
+            'import { local } from "./local.js"\nimport { outside } from "../outside.js"\nexport { local, outside }\n',
+          "src/local.ts": "export const local = 1\n",
+          "src/outside.ts": "export const outside = 2\n",
+        },
+      },
     ))
 
   effect("locates a tsconfig diagnostic in the config file", () =>
