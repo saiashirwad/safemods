@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { textEdit } from "../src/Edit.ts"
-import { type FileOperation, type Plan, validate } from "../src/Plan.ts"
+import { distinct, type FileOperation, type Plan, validate } from "../src/Plan.ts"
 import type * as WorkspacePath from "../src/WorkspacePath.ts"
 import { workspacePath } from "./utils/domain.ts"
 
@@ -40,6 +40,38 @@ const outcome = (plan: Partial<Plan>) =>
   )
 
 describe("Plan.validate", () => {
+  effect(
+    "deduplicates equal proposals regardless of property insertion order",
+    () =>
+      Effect.gen(function* () {
+        const first = edit("src/index.ts", 0, 1)
+        const unsupported = { ...ref("src/index.ts"), start: 0, end: 1, message: "manual" }
+        const plan = distinct({
+          edits: [
+            first,
+            {
+              newText: first.newText,
+              expectedTextHash: first.expectedTextHash,
+              end: first.end,
+              start: first.start,
+              fileName: first.fileName,
+            },
+          ],
+          fileOperations: [create, { content: "", fileName: create.fileName, kind: "create" }],
+          unsupported: [
+            unsupported,
+            { message: "manual", end: 1, start: 0, fileName: unsupported.fileName },
+          ],
+        })
+        expect(plan).toEqual({
+          edits: [first],
+          fileOperations: [create],
+          unsupported: [unsupported],
+        })
+        expect(yield* outcome(plan)).toBe("valid")
+      }),
+  )
+
   effect(
     "accepts disjoint edits with a create, a delete, and a move",
     () =>

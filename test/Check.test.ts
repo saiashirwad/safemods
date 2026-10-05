@@ -6,6 +6,7 @@ import * as Check from "../src/Check.ts"
 import * as Query from "../src/Query.ts"
 import { WorkspaceSnapshot } from "../src/Workspace/index.ts"
 import { findingsOf } from "./utils/check.ts"
+import { workspacePath } from "./utils/domain.ts"
 import { withFixture } from "./utils/fixture.ts"
 
 const flagged = (name: string) =>
@@ -39,6 +40,41 @@ const safemods = (cwd: string, args: ReadonlyArray<string>) =>
   )
 
 describe("checks", () => {
+  effect("keeps distinct findings even when their text output is identical", () =>
+    withFixture(
+      () =>
+        Effect.gen(function* () {
+          const at = workspacePath("src/lib.ts")
+          const results = yield* Check.run([
+            Check.define("a b", Effect.succeed([Check.reportAt(at, "c")])),
+            Check.define(
+              "a",
+              Effect.succeed([
+                Check.reportAt(at, "b c"),
+                { fileName: at, start: 0, end: 1, message: "b c" },
+              ]),
+            ),
+          ])
+          expect(results.map(({ check, message, end }) => [check, message, end])).toEqual([
+            ["a", "b c", 0],
+            ["a", "b c", 1],
+            ["a b", "c", 0],
+          ])
+          expect(results.map(Check.format)).toEqual([
+            "src/lib.ts:1:1 a b c",
+            "src/lib.ts:1:1 a b c",
+            "src/lib.ts:1:1 a b c",
+          ])
+        }),
+      {
+        fixture: "empty",
+        files: {
+          "tsconfig.json": JSON.stringify({ include: ["src/**/*.ts"] }),
+          "src/lib.ts": "export const value = 1\n",
+        },
+      },
+    ))
+
   effect(
     "locates findings by workspace path with one-based lines and columns, in order",
     () =>

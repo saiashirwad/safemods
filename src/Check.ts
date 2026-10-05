@@ -78,7 +78,19 @@ const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
         const file = yield* snapshot.file(found.fileName)
         return Finding.locate(found, file?.sourceFile.text ?? "")
       }))
-    return [...new Map(results.map((result) => [format(result), result])).values()].sort(byPosition)
+    const byFile = new Map<WorkspacePath.Type, Array<Result>>()
+    for (const result of results) {
+      const matches = byFile.get(result.fileName)
+      if (
+        matches?.some((other) =>
+          other.start === result.start && other.end === result.end &&
+          other.check === result.check && other.message === result.message
+        )
+      ) continue
+      if (matches === undefined) byFile.set(result.fileName, [result])
+      else matches.push(result)
+    }
+    return [...byFile.values()].flat().sort(byPosition)
   })
 
 export const run = <E>(checks: ReadonlyArray<Check<E>>) =>
