@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { NodeRuntime, NodeServices } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
+import { NodeRuntime } from "@effect/platform-node-shared"
 import { Console, Data, Effect, Predicate, Runtime, Schema } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
 import { applyVerifiedPlan } from "./Application.ts"
