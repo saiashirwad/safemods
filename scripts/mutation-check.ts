@@ -7,14 +7,9 @@
  *
  * The working tree is restored after every mutant and on interruption.
  */
-import { spawnSync } from "node:child_process"
-import assert from "node:assert/strict"
-import { readFileSync, writeFileSync } from "node:fs"
-import { resolve } from "node:path"
-import { fileURLToPath } from "node:url"
-
-const root = resolve(fileURLToPath(new URL("..", import.meta.url)))
-const vitest = fileURLToPath(new URL("../node_modules/vitest/vitest.mjs", import.meta.url))
+import { NodeRuntime, NodeServices } from "@effect/platform-node"
+import { Console, Data, Effect, FileSystem, Path, Runtime } from "effect"
+import { runCommand } from "./run-command.ts"
 
 interface Mutant {
   readonly name: string
@@ -94,67 +89,89 @@ const mutants: ReadonlyArray<Mutant> = [
   },
 ]
 
-let active: { readonly path: string; readonly original: string } | undefined
-const restore = () => {
-  if (active !== undefined) {
-    writeFileSync(active.path, active.original)
-    active = undefined
-  }
+class MutationCheckFailed extends Data.TaggedError("MutationCheckFailed")<{
+  readonly message: string
+}> {
+  readonly [Runtime.errorExitCode] = 1
+  readonly [Runtime.errorReported] = false
 }
-process.on("exit", restore)
-const interrupted = (code: number) => () => {
-  restore()
-  process.exit(code)
-}
-process.on("SIGINT", interrupted(130))
-process.on("SIGTERM", interrupted(143))
 
-const runTest = (test: string) =>
-  spawnSync(process.execPath, [vitest, "run", test], { cwd: root, encoding: "utf8" })
+const program = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const root = yield* path.fromFileUrl(new URL("..", import.meta.url))
+  const vitest = path.join(root, "node_modules", "vitest", "vitest.mjs")
+  const runTest = (test: string) => runCommand(process.execPath, [vitest, "run", test], root)
 
-const verified = new Set<string>()
-const survivors: Array<Mutant> = []
-for (const mutant of mutants) {
+  const runMutant = (mutant: Mutant) =>
+    Effect.gen(function* () {
+      const file = path.resolve(root, mutant.file)
+      const original = yield* fs.readFileString(file)
+      const anchors = original.split(mutant.find).length - 1
+      if (anchors !== 1) {
+        return yield* new MutationCheckFailed({
+          message: `${mutant.file}: mutation anchor must appear exactly once`,
+        })
+      }
+      return yield* Effect.gen(function* () {
+        yield* fs.writeFileString(file, original.replace(mutant.find, mutant.replace))
+        return yield* runTest(mutant.test)
+      }).pipe(Effect.ensuring(fs.writeFileString(file, original).pipe(Effect.orDie)))
+    })
+
   // A test that fails on its own would make every mutant on it look killed, so
-  // prove it passes once before trusting a failure to mean the mutant died.
-  if (!verified.has(mutant.test)) {
-    const baseline = runTest(mutant.test)
-    assert.equal(
-      baseline.status,
-      0,
-      `${mutant.test} fails without a mutant:\n${baseline.stdout}\n${baseline.stderr}`,
-    )
-    verified.add(mutant.test)
-  }
-
-  const path = resolve(root, mutant.file)
-  const original = readFileSync(path, "utf8")
-  const anchors = original.split(mutant.find).length - 1
-  assert.equal(anchors, 1, `${mutant.file}: mutation anchor must appear exactly once`)
-
-  active = { path, original }
-  try {
-    writeFileSync(path, original.replace(mutant.find, mutant.replace))
-    const run = runTest(mutant.test)
-    if (run.status === null) {
-      throw new Error(`${mutant.name}: vitest did not exit (${run.error?.message ?? "unknown"})`)
-    }
-    if (run.status === 0) {
-      survivors.push(mutant)
-      console.log(`survived  ${mutant.name}  (${mutant.test})`)
-    } else {
-      console.log(`killed    ${mutant.name}`)
-    }
-  } finally {
-    restore()
-  }
-}
-
-if (survivors.length > 0) {
-  console.error(
-    `\n${survivors.length} of ${mutants.length} mutants survived; the suite does not detect them:`,
+  // prove each one passes once before trusting a failure to mean the mutant died.
+  const tests = Array.from(new Set(mutants.map((mutant) => mutant.test)))
+  yield* Effect.forEach(
+    tests,
+    (test) =>
+      runTest(test).pipe(
+        Effect.flatMap(({ exitCode, stdout, stderr }) =>
+          exitCode === 0 ?
+            Effect.void :
+            Effect.fail(
+              new MutationCheckFailed({
+                message: `${test} fails without a mutant:\n${stdout}\n${stderr}`,
+              }),
+            )
+        ),
+      ),
+    { concurrency: 1, discard: true },
   )
-  for (const survivor of survivors) console.error(`  ${survivor.file}: ${survivor.name}`)
-  process.exit(1)
-}
-console.log(`\nAll ${mutants.length} mutants killed.`)
+
+  const outcomes = yield* Effect.forEach(
+    mutants,
+    (mutant) =>
+      runMutant(mutant).pipe(
+        Effect.map(({ exitCode }) => ({ mutant, killed: exitCode !== 0 })),
+        Effect.tap(({ mutant, killed }) =>
+          Console.log(
+            killed ? `killed    ${mutant.name}` : `survived  ${mutant.name}  (${mutant.test})`,
+          )
+        ),
+      ),
+    { concurrency: 1 },
+  )
+
+  const survivors = outcomes.filter((outcome) => !outcome.killed).map((outcome) => outcome.mutant)
+  if (survivors.length > 0) {
+    return yield* new MutationCheckFailed({
+      message: [
+        `${survivors.length} of ${mutants.length} mutants survived; the suite does not detect them:`,
+        ...survivors.map((survivor) => `  ${survivor.file}: ${survivor.name}`),
+      ].join("\n"),
+    })
+  }
+  yield* Console.log(`\nAll ${mutants.length} mutants killed.`)
+})
+
+const report = <A, E, R>(self: Effect.Effect<A, E, R>) =>
+  self.pipe(
+    Effect.catch((error) =>
+      error instanceof MutationCheckFailed ?
+        Effect.andThen(Console.error(error.message), Effect.fail(error)) :
+        Effect.fail(error)
+    ),
+  )
+
+NodeRuntime.runMain(report(program).pipe(Effect.provide(NodeServices.layer)))
