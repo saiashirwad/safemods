@@ -5,17 +5,13 @@
  * declarations' shape, the checker confirms each pair, and each call is migrated only when it
  * resolves to the positional overload. Argument trivia is preserved; spreads are reported.
  */
+import { Proposal, Pattern as P, Query, Recipe, type Workspace } from "safemods"
 import { Effect } from "effect"
 import type { Identifier, NodeArray, ParameterDeclaration } from "typescript/unstable/ast"
 import { isFunctionDeclaration, isIdentifier, isSpreadElement } from "typescript/unstable/ast/is"
-import * as Draft from "safemods/Draft"
-import * as P from "safemods/Pattern"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { type ConfiguredProject, type ProjectSnapshot, WorkspaceSnapshot } from "safemods/Workspace"
 
 export interface PositionalToOptionsInput {
-  readonly project: ConfiguredProject.Type
+  readonly project: Workspace.ConfiguredProject.Type
 }
 
 const namesOf = (parameters: NodeArray<ParameterDeclaration>): ReadonlyArray<Identifier> =>
@@ -24,7 +20,7 @@ const namesOf = (parameters: NodeArray<ParameterDeclaration>): ReadonlyArray<Ide
   )
 
 const accepts = (
-  project: ProjectSnapshot,
+  project: Workspace.ProjectSnapshot,
   options: ParameterDeclaration,
   names: ReadonlyArray<Identifier>,
 ) =>
@@ -48,9 +44,8 @@ const accepts = (
 export const positionalToOptions = Recipe.define("positional-to-options", {
   version: "2.0.0",
   policies: { idempotence: "required" },
-  run: (input: PositionalToOptionsInput) =>
+  run: (snapshot, input: PositionalToOptionsInput) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
       const project = yield* snapshot.project(input.project.id)
 
       const overloads = yield* Query.match(project, {
@@ -68,10 +63,10 @@ export const positionalToOptions = Recipe.define("positional-to-options", {
 
       const drafts = yield* Effect.forEach(overloads, (positional) =>
         Effect.gen(function* () {
-          if (positional.value._tag !== "positional") return Draft.empty
+          if (positional.value._tag !== "positional") return Proposal.empty
           const { name, parameters } = positional.value.captures
           const names = namesOf(parameters)
-          if (names.length < 2 || names.length !== parameters.length) return Draft.empty
+          if (names.length < 2 || names.length !== parameters.length) return Proposal.empty
 
           const objectForms = yield* Effect.filter(overloads, (candidate) =>
             candidate.value._tag === "object" &&
@@ -79,22 +74,27 @@ export const positionalToOptions = Recipe.define("positional-to-options", {
               candidate.value.captures.name.text === name.text ?
               accepts(project, candidate.value.captures.options, names) :
               Effect.succeed(false))
-          if (objectForms.length === 0) return Draft.empty
+          if (objectForms.length === 0) return Proposal.empty
 
           const calls = yield* Query.calls(project).pipe(
-            Query.where(Query.resolvesToSignature([positional.value.node])),
+            Query.where(
+              Query.resolvesToSignature([{ ...positional, value: positional.value.node }]),
+            ),
           )
-          return Draft.concat(
+          return Proposal.concat(
             ...calls.map((selection) => {
               const call = selection.value
               if (call.arguments.some(isSpreadElement)) {
-                return Draft.unsupported(selection, "spread arguments hide which name each takes")
+                return Proposal.unsupported(
+                  selection,
+                  "spread arguments hide which name each takes",
+                )
               }
               const sourceFile = call.getSourceFile()
               const first = call.arguments[0]
               const last = call.arguments.at(-1)
               if (first === undefined || last === undefined) {
-                return Draft.empty
+                return Proposal.empty
               }
               const properties = call.arguments.map((argument, index) => {
                 const key = names[index]!.text
@@ -105,13 +105,15 @@ export const positionalToOptions = Recipe.define("positional-to-options", {
                 first.getStart(sourceFile),
               )
               const after = sourceFile.text.slice(last.getEnd(), call.getEnd())
-              return Draft.replaceSelection(
+              return Proposal.replaceSelection(
                 selection,
                 `${before}{ ${properties.join(", ")} }${after}`,
               )
             }),
           )
         }))
-      return Draft.concat(...drafts)
+      return Proposal.concat(...drafts)
     }),
 })
+
+export default positionalToOptions

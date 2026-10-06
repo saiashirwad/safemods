@@ -3,7 +3,7 @@ import { Effect, Option } from "effect"
 import type { Type as NativeType } from "typescript/unstable/async"
 import * as Query from "../src/Query.ts"
 import * as Type from "../src/Type.ts"
-import { collectDiagnostics } from "../src/Verification/Diagnostics.ts"
+import { collectDiagnostics } from "../src/Migration/Diagnostics.ts"
 import type { ProjectSnapshot, ProjectSnapshotError } from "../src/Workspace/index.ts"
 import { workspacePath } from "./utils/domain.ts"
 import { withProject } from "./utils/fixture.ts"
@@ -54,7 +54,7 @@ describe("types", () => {
     () =>
       withProject(
         { "src/effects.ts": SOURCE },
-        (project) =>
+        (project, snapshot) =>
           Effect.gen(function* () {
             const parse = <Parsed extends Record<string, NativeType>>(
               parser: (
@@ -68,7 +68,7 @@ describe("types", () => {
                 (type) => Effect.flatMap(parser(project, type), (found) => printed(project, found)),
               )
 
-            const diagnostics = yield* collectDiagnostics
+            const diagnostics = yield* collectDiagnostics(snapshot)
             expect(
               diagnostics.filter(({ fileName }) => fileName?.endsWith("src/effects.ts") === true),
             ).toEqual([])

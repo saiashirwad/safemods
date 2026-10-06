@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { normalizeLineEndings } from "../../examples/normalize-line-endings.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { read, withFixture } from "../utils/fixture.ts"
 
 describe("normalize-line-endings", () => {
@@ -16,7 +16,7 @@ describe("normalize-line-endings", () => {
             expect(yield* read(root, "src/windows.ts")).toBe(
               "export const first = 1\nexport const second = 2\n",
             )
-            expect((yield* draftOf(normalizeLineEndings, undefined)).edits).toEqual([])
+            expect((yield* proposalOf(normalizeLineEndings, undefined)).edits).toEqual([])
           }),
         { fixture: "migrations/normalize-line-endings" },
       ),

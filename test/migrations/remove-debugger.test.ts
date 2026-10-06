@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { removeDebugger } from "../../examples/remove-debugger.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { read, withFixture } from "../utils/fixture.ts"
 
 const fixture = "migrations/remove-debugger"
@@ -29,7 +29,7 @@ describe("remove-debugger", () => {
 export const note = "a debugger in a string stays"
 `,
             )
-            expect((yield* draftOf(removeDebugger, undefined)).edits).toEqual([])
+            expect((yield* proposalOf(removeDebugger, undefined)).edits).toEqual([])
           }),
         { fixture },
       ),

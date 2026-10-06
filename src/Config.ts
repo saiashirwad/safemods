@@ -4,7 +4,7 @@ import * as Workspace from "./Workspace/index.ts"
 
 export interface Config {
   readonly projects: ReadonlyArray<{ readonly id: string; readonly config: string }>
-  readonly checks: ReadonlyArray<Check.Check<unknown>>
+  readonly checks?: ReadonlyArray<Check.Check<unknown>>
 }
 
 export class InvalidConfig extends Data.TaggedError("InvalidConfig")<{
@@ -27,8 +27,12 @@ const isConfig = (value: unknown): value is Config =>
   Predicate.isObject(value) &&
   "projects" in value &&
   Array.isArray(value.projects) &&
-  "checks" in value &&
-  Array.isArray(value.checks)
+  (!("checks" in value) || value.checks === undefined ||
+    (Array.isArray(value.checks) && value.checks.every((check: unknown) =>
+      Predicate.isObject(check) &&
+      "name" in check && typeof check.name === "string" &&
+      "run" in check && typeof check.run === "function"
+    )))
 
 export interface Loaded {
   readonly config: Config
@@ -43,7 +47,8 @@ export const load = (file: string) =>
     if (!isConfig(config)) {
       return yield* new InvalidConfig({
         path: absolute,
-        cause: "the default export needs `projects` and `checks`",
+        cause:
+          "the default export needs `projects`; optional `checks` must have a string `name` and a `run` function",
       })
     }
     const definition = yield* Schema.decodeUnknownEffect(Workspace.WorkspaceDefinition.schema)({

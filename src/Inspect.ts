@@ -3,7 +3,7 @@ import type { Node } from "typescript/unstable/ast"
 import * as Position from "./Position.ts"
 import * as Query from "./Query.ts"
 import * as Type from "./Type.ts"
-import { type ProjectSnapshot, Workspace, WorkspaceSnapshot } from "./Workspace/index.ts"
+import { type ProjectSnapshot, Workspace, type WorkspaceSnapshot } from "./Workspace/index.ts"
 
 export class NotFound extends Data.TaggedError("NotFound")<{ readonly what: string }> {}
 
@@ -34,25 +34,39 @@ const innermost = (node: Node, offset: number): Node => {
   return found
 }
 
-const fileNamed = (named: string) =>
+const fileNamed = (snapshot: WorkspaceSnapshot, named: string, projectId?: string) =>
   Effect.gen(function* () {
     const fileName = (yield* Workspace).relativePath(named)
-    const file = fileName === undefined ?
+    const project = projectId === undefined ?
       undefined :
-      yield* (yield* WorkspaceSnapshot).file(fileName)
+      snapshot.projects.find((candidate) => candidate.project.id === projectId)
+    if (projectId !== undefined && project === undefined) {
+      return yield* new NotFound({ what: `${projectId} is not a configured project` })
+    }
+    const files = fileName === undefined ? [] : project === undefined ?
+      yield* snapshot.files(fileName) :
+      [yield* project.file(fileName)].filter((file) => file !== undefined)
+    if (files.length > 1) {
+      return yield* new NotFound({
+        what: `${named} belongs to multiple projects (${
+          files.map((file) => file.project.project.id).join(", ")
+        }); pass --project`,
+      })
+    }
+    const [file] = files
     if (file === undefined) {
       return yield* new NotFound({ what: `${named} is not a file of any configured project` })
     }
     return file
   })
 
-const targetAt = (position: string) =>
+const targetAt = (snapshot: WorkspaceSnapshot, position: string, projectId?: string) =>
   Effect.gen(function* () {
     const match = /^(.+):([1-9]\d*):([1-9]\d*)$/.exec(position)
     if (match === null) {
       return yield* new NotFound({ what: `${position} is not path:line:column` })
     }
-    const file = yield* fileNamed(match[1]!)
+    const file = yield* fileNamed(snapshot, match[1]!, projectId)
     const line = Number(match[2])
     const column = Number(match[3])
     const lineText = file.sourceFile.text.split("\n")[line - 1]
@@ -79,9 +93,9 @@ const targetAt = (position: string) =>
     } satisfies Query.Selection<Node>
   })
 
-export const type = (position: string) =>
+export const type = (position: string, projectId?: string) => (snapshot: WorkspaceSnapshot) =>
   Effect.gen(function* () {
-    const { project, value: node } = yield* targetAt(position)
+    const { project, value: node } = yield* targetAt(snapshot, position, projectId)
     const found = yield* project.typeOf(node)
     const symbol = yield* project.symbolOf(node)
     const declared = symbol === undefined ? [] : yield* project.declarationsOf(symbol)
@@ -92,16 +106,16 @@ export const type = (position: string) =>
     ]
   })
 
-export const refs = (position: string) =>
+export const refs = (position: string, projectId?: string) => (snapshot: WorkspaceSnapshot) =>
   Effect.gen(function* () {
-    const { project, value: node } = yield* targetAt(position)
+    const { project, value: node } = yield* targetAt(snapshot, position, projectId)
     const references = yield* project.referencesTo(node)
     return references.map((reference) => located(project, reference)).sort()
   })
 
-export const calls = (position: string) =>
+export const calls = (position: string, projectId?: string) => (snapshot: WorkspaceSnapshot) =>
   Effect.gen(function* () {
-    const selection = yield* targetAt(position)
+    const selection = yield* targetAt(snapshot, position, projectId)
     const { project } = selection
     const { calls: found, escapes } = yield* Query.usesOf(selection)
     return [
@@ -112,9 +126,9 @@ export const calls = (position: string) =>
     ]
   })
 
-export const exports = (path: string) =>
+export const exports = (path: string, projectId?: string) => (snapshot: WorkspaceSnapshot) =>
   Effect.gen(function* () {
-    const file = yield* fileNamed(path)
+    const file = yield* fileNamed(snapshot, path, projectId)
     const { project } = file
     const exported = yield* project.exportsOf(file)
     return yield* Effect.forEach(
@@ -138,9 +152,9 @@ const edges = (project: ProjectSnapshot) =>
       ),
   )
 
-export const deps = (path: string) =>
+export const deps = (path: string, projectId?: string) => (snapshot: WorkspaceSnapshot) =>
   Effect.gen(function* () {
-    const file = yield* fileNamed(path)
+    const file = yield* fileNamed(snapshot, path, projectId)
     const { project } = file
     const all = yield* edges(project)
     const unique = (names: ReadonlyArray<string>) => [...new Set(names)].sort()
@@ -154,38 +168,43 @@ export const deps = (path: string) =>
     ]
   })
 
-export const map = Effect.gen(function* () {
-  const snapshot = yield* WorkspaceSnapshot
-  const rows = yield* Effect.forEach(snapshot.projects, (project) =>
-    Effect.gen(function* () {
-      const files = yield* project.files
-      const all = yield* edges(project)
-      return yield* Effect.forEach(
-        files,
-        (file) =>
-          Effect.map(project.exportsOf(file), (exported) => ({
-            fileName: file.fileName,
-            lines: file.sourceFile.text.split("\n").length,
-            exports: exported.length,
-            importedBy: new Set(
-              all.filter(({ to }) => to === file.fileName).map(({ from }) => from),
-            ).size,
-            imports: new Set(all.filter(({ from }) => from === file.fileName).map(({ to }) => to))
-              .size,
-          })),
-        { concurrency: "unbounded" },
-      )
-    }))
-  return [
-    "lines  exports  imported-by  imports  file",
-    ...rows
-      .flat()
-      .sort((left, right) => right.importedBy - left.importedBy || right.lines - left.lines)
-      .map(
-        (row) =>
-          `${String(row.lines).padStart(5)}  ${String(row.exports).padStart(7)}  ${
-            String(row.importedBy).padStart(11)
-          }  ${String(row.imports).padStart(7)}  ${row.fileName}`,
-      ),
-  ]
-})
+export const map = (snapshot: WorkspaceSnapshot) =>
+  Effect.gen(function* () {
+    const rows = yield* Effect.forEach(snapshot.projects, (project) =>
+      Effect.gen(function* () {
+        const files = yield* project.files
+        const all = yield* edges(project)
+        return yield* Effect.forEach(
+          files,
+          (file) =>
+            Effect.map(project.exportsOf(file), (exported) => ({
+              projectId: project.project.id,
+              fileName: file.fileName,
+              lines: file.sourceFile.text.split("\n").length,
+              exports: exported.length,
+              importedBy: new Set(
+                all.filter(({ to }) => to === file.fileName).map(({ from }) => from),
+              ).size,
+              imports: new Set(all.filter(({ from }) => from === file.fileName).map(({ to }) => to))
+                .size,
+            })),
+          { concurrency: "unbounded" },
+        )
+      }))
+    return [
+      `lines  exports  imported-by  imports  file${
+        snapshot.projects.length > 1 ? " [project]" : ""
+      }`,
+      ...rows
+        .flat()
+        .sort((left, right) => right.importedBy - left.importedBy || right.lines - left.lines)
+        .map(
+          (row) =>
+            `${String(row.lines).padStart(5)}  ${String(row.exports).padStart(7)}  ${
+              String(row.importedBy).padStart(11)
+            }  ${String(row.imports).padStart(7)}  ${row.fileName}${
+              snapshot.projects.length > 1 ? ` [${row.projectId}]` : ""
+            }`,
+        ),
+    ]
+  })

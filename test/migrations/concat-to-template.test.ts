@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { concatToTemplate } from "../../examples/concat-to-template.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { fixturePath, read, withFixture } from "../utils/fixture.ts"
 
 const fixture = "migrations/concat-to-template"
@@ -14,9 +14,9 @@ describe("concat-to-template", () => {
         (root) =>
           Effect.gen(function* () {
             const original = yield* read(fixturePath(fixture), "src/greeting.ts")
-            const { plan, verified } = yield* executeRecipe(concatToTemplate, undefined)
+            const { verified } = yield* executeRecipe(concatToTemplate, undefined)
             expect(verified.diagnosticDiff.introduced).toEqual([])
-            expect(plan.unsupported.map(({ message }) => message)).toEqual([
+            expect(verified.unsupported.map(({ message }) => message)).toEqual([
               "a chain of + needs rewriting by hand",
             ])
             expect(yield* read(root, "src/greeting.ts")).toBe(
@@ -25,7 +25,7 @@ describe("concat-to-template", () => {
                 "`${age} years`",
               ).replace('"`" + name', "`\\`${name}`"),
             )
-            expect((yield* draftOf(concatToTemplate, undefined)).edits).toEqual([])
+            expect((yield* proposalOf(concatToTemplate, undefined)).edits).toEqual([])
           }),
         { fixture },
       ),

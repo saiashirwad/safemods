@@ -4,7 +4,7 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { moveModule, type MoveModuleInput } from "../../examples/move-module.ts"
 import { withFixture } from "../utils/fixture.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { workspacePath } from "../utils/domain.ts"
 
 const fixture = "migrations/move-module"
@@ -56,15 +56,14 @@ describe("move-module", () => {
             to: workspacePath("src/identity/account.ts"),
           }
 
-          const { plan, verified } = yield* executeRecipe(moveModule, input)
+          const { verified } = yield* executeRecipe(moveModule, input)
 
-          expect(plan.edits).toHaveLength(6)
-          expect(plan.fileOperations).toHaveLength(1)
-          expect(plan.fileOperations[0]).toMatchObject({
-            kind: "move",
-            fileName: "src/users/account.ts",
-            toFileName: "src/identity/account.ts",
-          })
+          expect(verified.preview.files.find((file) => file.movedFrom !== undefined)).toMatchObject(
+            {
+              movedFrom: "src/users/account.ts",
+              fileName: "src/identity/account.ts",
+            },
+          )
           expect(verified.diagnosticDiff.introduced).toHaveLength(0)
 
           const sourceExists = yield* Effect.tryPromise(() =>
@@ -135,7 +134,7 @@ describe("move-module", () => {
             Fs.readFile(Path.join(root, "src/diagnostics/baseline.ts"), "utf8")
           )
           expect(baseline).toContain("severity: 1")
-          const second = yield* draftOf(moveModule, input)
+          const second = yield* proposalOf(moveModule, input)
           expect(second.edits).toHaveLength(0)
           expect(second.fileOperations).toHaveLength(0)
         }),

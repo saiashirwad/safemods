@@ -2,7 +2,7 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { asAssertionToSatisfies } from "../../examples/as-assertion-to-satisfies.ts"
 import { withFixture, read } from "../utils/fixture.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/as-assertion-to-satisfies"
 
@@ -13,10 +13,9 @@ describe("as-assertion-to-satisfies", () => {
       withFixture(
         (root) =>
           Effect.gen(function* () {
-            const { plan, verified } = yield* executeRecipe(asAssertionToSatisfies, undefined)
+            const { verified } = yield* executeRecipe(asAssertionToSatisfies, undefined)
 
-            expect(plan.edits).toHaveLength(2)
-            expect(plan.unsupported.map(({ message }) => message).sort()).toEqual([
+            expect(verified.unsupported.map(({ message }) => message).sort()).toEqual([
               "chained assertion requires manual review",
               "const assertion is not a type conformance check",
               "parenthesized assertion requires manual review",
@@ -42,7 +41,7 @@ describe("as-assertion-to-satisfies", () => {
             expect(source).toContain('acceptRoute({ path: "/call", method: "GET" } as Route)')
             expect(source).toContain('export default { path: "/default", method: "GET" } as Route')
 
-            const second = yield* draftOf(asAssertionToSatisfies, undefined)
+            const second = yield* proposalOf(asAssertionToSatisfies, undefined)
             expect(second.edits).toHaveLength(0)
             expect(second.unsupported).toHaveLength(3)
           }),

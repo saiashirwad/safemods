@@ -3,7 +3,7 @@ import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { commonJsToEsm } from "../../examples/commonjs-to-esm.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { fixturePath, withFixture, read } from "../utils/fixture.ts"
 
 describe("commonjs-to-esm", () => {
@@ -11,8 +11,8 @@ describe("commonjs-to-esm", () => {
     withFixture(
       (root, project) =>
         Effect.gen(function* () {
-          const { plan, verified } = yield* executeRecipe(commonJsToEsm, { project })
-          expect(plan.unsupported.some(({ fileName }) => fileName === "src/namespace.ts")).toBe(
+          const { verified } = yield* executeRecipe(commonJsToEsm, { project })
+          expect(verified.unsupported.some(({ fileName }) => fileName === "src/namespace.ts")).toBe(
             false,
           )
           expect(yield* read(root, "src/namespace.ts")).toContain('require("local")')
@@ -57,9 +57,8 @@ describe("commonjs-to-esm", () => {
       (root, app) =>
         Effect.gen(function* () {
           const input = { project: app }
-          const { plan, verified } = yield* executeRecipe(commonJsToEsm, input)
+          const { verified } = yield* executeRecipe(commonJsToEsm, input)
 
-          expect(plan.edits).toHaveLength(8)
           expect(verified.diagnosticDiff.introduced).toHaveLength(0)
 
           const original = yield* Effect.tryPromise(() =>
@@ -68,7 +67,7 @@ describe("commonjs-to-esm", () => {
               "utf8",
             )
           )
-          expect(plan.unsupported.map(({ start, end }) => original.slice(start, end))).toEqual([
+          expect(verified.unsupported.map(({ start, end }) => original.slice(start, end))).toEqual([
             'const conditional = process.env.FEATURE && require("feature")',
             "exports[computedName] = conditional",
           ])
@@ -96,7 +95,7 @@ describe("commonjs-to-esm", () => {
           expect(shadowed).toContain('const loaded = require("node:path")')
           expect(shadowed).toContain("export default { loaded }")
 
-          const second = yield* draftOf(commonJsToEsm, input)
+          const second = yield* proposalOf(commonJsToEsm, input)
           expect(second.edits).toHaveLength(0)
           expect(second.unsupported).toHaveLength(2)
         }),

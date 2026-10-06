@@ -2,7 +2,7 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { packageEntryPointSplit } from "../../examples/package-entry-point-split.ts"
 import { fixturePath as fixtureDirectory, withFixture, read } from "../utils/fixture.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/package-entry-point-split"
 const fixturePath = fixtureDirectory(fixture)
@@ -13,10 +13,9 @@ describe("package-entry-point-split", () => {
       withFixture(
         (root) =>
           Effect.gen(function* () {
-            const { plan, verified } = yield* executeRecipe(packageEntryPointSplit, undefined)
+            const { verified } = yield* executeRecipe(packageEntryPointSplit, undefined)
 
-            expect(plan.edits).toHaveLength(6)
-            expect(plan.unsupported).toHaveLength(5)
+            expect(verified.unsupported).toHaveLength(5)
             expect(verified.preview.files).toHaveLength(4)
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
             expect(
@@ -40,7 +39,7 @@ describe("package-entry-point-split", () => {
               'export const packageName = "@acme/sdk"',
             )
 
-            const reasons = plan.unsupported.map(({ message }) => message)
+            const reasons = verified.unsupported.map(({ message }) => message)
             expect(reasons).toContain(
               "This declaration mixes exports from different package entry points",
             )
@@ -48,7 +47,7 @@ describe("package-entry-point-split", () => {
               "The root entry point is ambiguous here; choose @acme/sdk/auth or @acme/sdk/billing manually",
             )
 
-            const second = yield* draftOf(packageEntryPointSplit, undefined)
+            const second = yield* proposalOf(packageEntryPointSplit, undefined)
             expect(second.edits).toHaveLength(0)
             expect(second.unsupported).toHaveLength(5)
           }),

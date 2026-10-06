@@ -13,8 +13,8 @@ import {
 import { noUnknownFailures } from "./examples/no-unknown-failures.ts"
 
 const publicApi = [
-  "src/{Application,Check,Config,Draft,Finding,Inspect,ModuleSpecifier,Pattern,Plan,ProjectId,WorkspacePath,Query,Recipe,Type,bin}.ts",
-  "src/{Checks,Verification,Workspace}/index.ts",
+  "src/{Check,Config,Proposal,Finding,Inspect,ModuleSpecifier,Pattern,ProjectId,WorkspacePath,Query,Recipe,Type,bin,index}.ts",
+  "src/{Checks,Migration,Workspace}/index.ts",
 ]
 
 export default {
@@ -32,21 +32,20 @@ export default {
           "src/ModuleSpecifier.ts",
         ],
         ["src/Edit.ts"],
-        ["src/Plan.ts"],
         ["src/Workspace/"],
         ["src/Pattern.ts"],
         ["src/Query.ts", "src/Type.ts"],
-        ["src/Draft.ts", "src/Check.ts", "src/Inspect.ts"],
+        ["src/Proposal.ts", "src/Check.ts", "src/Inspect.ts"],
         ["src/Checks/"],
         ["src/Recipe.ts"],
-        ["src/Verification/"],
-        ["src/Application.ts", "src/Config.ts"],
-        ["src/bin.ts"],
+        ["src/Migration/"],
+        ["src/Config.ts"],
+        ["src/bin.ts", "src/index.ts"],
       ],
     }),
     weakReturns({ within: "{src,examples}/**" }),
     typeBoundaries({
-      within: "src/{Sha256,ProjectId,WorkspacePath,Edit,Plan}.ts",
+      within: "src/{Sha256,ProjectId,WorkspacePath,Edit}.ts",
       forbidden: { packages: ["typescript"] },
     }),
     unusedCode({ within: "src/**", tests: "test/**", publicApi: [] }),
@@ -57,7 +56,7 @@ export default {
     restrictedReferences({
       name: "unsafeNative",
       declaredIn: WorkspacePath.schema.make("src/Workspace/ProjectSnapshot.ts"),
-      allowedWithin: ["src/Workspace/**", "src/Verification/Diagnostics.ts", "test/**"],
+      allowedWithin: ["src/Workspace/**", "src/Migration/Diagnostics.ts", "test/**"],
     }),
   ],
 } satisfies Config.Config

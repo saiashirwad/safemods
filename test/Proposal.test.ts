@@ -1,6 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
-import * as Draft from "../src/Draft.ts"
+import { isStringLiteral } from "typescript/unstable/ast/is"
+import * as Proposal from "../src/Proposal.ts"
 import { applyFileEdits } from "../src/Edit.ts"
 import * as Query from "../src/Query.ts"
 import { workspacePath } from "./utils/domain.ts"
@@ -12,7 +13,32 @@ const ARGUMENTS_SOURCE = [
   "",
 ].join("\n")
 
-describe("drafts", () => {
+describe("proposals", () => {
+  effect(
+    "escapes replacement literal values without changing their runtime meaning",
+    () =>
+      withProject({
+        "src/literal.ts": "export const single = 'old'; export const double = \"old\";",
+      }, (project) =>
+        Effect.gen(function* () {
+          const value = "a'\"\\\n\r\t\0end"
+          const literals = yield* Query.nodes(project, isStringLiteral).pipe(
+            Query.within("src/literal.ts"),
+          )
+          const file = (yield* project.file(workspacePath("src/literal.ts")))!
+          const proposal = Proposal.concat(
+            ...literals.map(({ value: literal }) =>
+              Proposal.replaceStringLiteral(project, literal, value)
+            ),
+          )
+          const output = yield* applyFileEdits(file.sourceFile.text, proposal.edits)
+          const module = yield* Effect.tryPromise(() =>
+            import(`data:text/javascript,${encodeURIComponent(output)}`)
+          )
+          expect(module.single).toBe(value)
+          expect(module.double).toBe(value)
+        })),
+  )
   effect(
     "replace, insert, and remove produce hash-guarded edits at the node's range",
     () =>
@@ -22,11 +48,11 @@ describe("drafts", () => {
             Query.within("src/arguments.ts"),
           )
           const [first, second, third] = call!.value.arguments
-          const draft = Draft.concat(
-            Draft.replace(project, first!, "10"),
-            Draft.insertBefore(project, second!, "/* before */ "),
-            Draft.insertAfter(project, second!, " /* after */"),
-            Draft.remove(project, third!),
+          const draft = Proposal.concat(
+            Proposal.replace(project, first!, "10"),
+            Proposal.insertBefore(project, second!, "/* before */ "),
+            Proposal.insertAfter(project, second!, " /* after */"),
+            Proposal.remove(project, third!),
           )
           expect(yield* applyFileEdits(ARGUMENTS_SOURCE, draft.edits)).toContain(
             "run(10, /* before */ 2 /* after */, )",
@@ -43,7 +69,7 @@ describe("drafts", () => {
             Query.within("src/arguments.ts"),
           )
           const text = call!.value.getText()
-          const draft = Draft.replaceRange(
+          const draft = Proposal.replaceRange(
             call!,
             { start: text.indexOf("1, 2, 3"), end: text.indexOf("1, 2, 3") + 7 },
             "options",
@@ -60,7 +86,7 @@ describe("drafts", () => {
           const calls = yield* Query.calls(project).pipe(
             Query.within("src/arguments.ts"),
           )
-          const draft = Draft.replaceEach(calls, () => "run()")
+          const draft = Proposal.replaceEach(calls, () => "run()")
           expect(draft.edits).toHaveLength(1)
           expect(yield* applyFileEdits(ARGUMENTS_SOURCE, draft.edits)).toContain("result = run()")
         })),
@@ -75,23 +101,26 @@ describe("drafts", () => {
           const target = workspacePath("src/nested/library.ts")
 
           expect(
-            yield* applyFileEdits(library.sourceFile.text, Draft.replaceText(library, "new").edits),
+            yield* applyFileEdits(
+              library.sourceFile.text,
+              Proposal.replaceText(library, "new").edits,
+            ),
           ).toBe("new")
 
-          expect(Draft.deleteFile(library).fileOperations).toEqual([
+          expect(Proposal.deleteFile(library).fileOperations).toEqual([
             {
               kind: "delete",
               fileName: "src/library.ts",
             },
           ])
-          expect(Draft.moveFile(library, target).fileOperations).toEqual([
+          expect(Proposal.moveFile(library, target).fileOperations).toEqual([
             {
               kind: "move",
               fileName: "src/library.ts",
               toFileName: target,
             },
           ])
-          expect(Draft.createFile(target, "export {}\n").fileOperations).toEqual([
+          expect(Proposal.createFile(target, "export {}\n").fileOperations).toEqual([
             {
               kind: "create",
               fileName: target,

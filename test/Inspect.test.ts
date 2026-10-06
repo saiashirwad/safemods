@@ -25,6 +25,42 @@ const safemods = (cwd: string, ...args: ReadonlyArray<string>) =>
 
 describe("inspect commands", () => {
   effect(
+    "requires a project for shared files and uses the selected compiler options",
+    () =>
+      withFixture((root) =>
+        Effect.gen(function* () {
+          const ambiguous = yield* runSafemods(root, "type", "shared.ts:1:12")
+          expect(ambiguous.code).toBe(2)
+          expect(ambiguous.stderr).toContain("multiple projects")
+          expect(ambiguous.stderr).toContain("--project")
+          const strict = yield* runSafemods(root, "type", "shared.ts:1:12", "--project", "strict")
+          const loose = yield* runSafemods(root, "type", "shared.ts:1:12", "--project", "loose")
+          expect(strict.code).toBe(0)
+          expect(loose.code).toBe(0)
+          expect(strict.stdout).toContain("type      string | undefined")
+          expect(loose.stdout).toContain("type      string\n")
+          const mapped = yield* runSafemods(root, "map")
+          expect(mapped.stdout).toContain("shared.ts [strict]")
+          expect(mapped.stdout).toContain("shared.ts [loose]")
+        }), {
+        fixture: "empty",
+        files: {
+          "tsconfig.json": JSON.stringify({
+            compilerOptions: { strictNullChecks: true },
+            files: ["shared.ts"],
+          }),
+          "tsconfig.loose.json": JSON.stringify({
+            compilerOptions: { strictNullChecks: false },
+            files: ["shared.ts"],
+          }),
+          "safemods.config.ts":
+            'export default { projects: [{id: "strict", config: "tsconfig.json"}, {id: "loose", config: "tsconfig.loose.json"}] }\n',
+          "shared.ts": "export let value: string | undefined\n",
+        },
+      }),
+  )
+
+  effect(
     "answer from the compiler: types, references through aliases, direct calls, exports and the module graph",
     () =>
       withFixture(

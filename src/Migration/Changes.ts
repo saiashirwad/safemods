@@ -1,34 +1,14 @@
 import { Data, Effect } from "effect"
-import { firstConflict, type TextEdit } from "./Edit.ts"
-import type { Finding } from "./Finding.ts"
-import type * as WorkspacePath from "./WorkspacePath.ts"
+import { firstConflict } from "../Edit.ts"
+import type * as WorkspacePath from "../WorkspacePath.ts"
 
-export type { TextEdit } from "./Edit.ts"
-
-export type FileOperation =
-  | { readonly kind: "create"; readonly fileName: WorkspacePath.Type; readonly content: string }
-  | { readonly kind: "delete"; readonly fileName: WorkspacePath.Type }
-  | {
-    readonly kind: "move"
-    readonly fileName: WorkspacePath.Type
-    readonly toFileName: WorkspacePath.Type
-  }
-
-export interface PlanPolicies {
-  readonly maxAffectedFiles?: number
-  readonly diagnostics: "no-new-errors" | "allow-new-errors"
-  readonly idempotence: "required" | "not-promised"
-}
-
-export interface Plan {
-  readonly edits: ReadonlyArray<TextEdit>
-  readonly fileOperations: ReadonlyArray<FileOperation>
-  readonly unsupported: ReadonlyArray<Finding>
-}
+import type { FileOperation, Proposal } from "../Proposal.ts"
 
 export type Contents = ReadonlyMap<WorkspacePath.Type, Uint8Array | undefined>
 
-export class InvalidPlan extends Data.TaggedError("InvalidPlan")<{ readonly detail: string }> {}
+export class InvalidProposal
+  extends Data.TaggedError("InvalidProposal")<{ readonly detail: string }>
+{}
 
 export const targetOf = (operation: FileOperation): WorkspacePath.Type =>
   operation.kind === "move" ? operation.toFileName : operation.fileName
@@ -54,7 +34,7 @@ const sameOperation = (left: FileOperation, right: FileOperation): boolean => {
   return true
 }
 
-export const distinct = (plan: Plan): Plan => ({
+export const distinct = (plan: Proposal): Proposal => ({
   edits: distinctBy(
     plan.edits,
     (left, right) =>
@@ -69,10 +49,16 @@ export const distinct = (plan: Plan): Plan => ({
   ),
 })
 
-const problem = (plan: Plan, before: Contents): string | undefined => {
+const problem = (plan: Proposal, before: Contents): string | undefined => {
   const stateOf = (fileName: WorkspacePath.Type): "file" | "missing" | undefined =>
     !before.has(fileName) ? undefined : before.get(fileName) === undefined ? "missing" : "file"
 
+  for (const edit of plan.edits) {
+    if (
+      !Number.isSafeInteger(edit.start) || !Number.isSafeInteger(edit.end) || edit.start < 0 ||
+      edit.end < edit.start
+    ) return `Invalid edit range in ${edit.fileName}`
+  }
   if (firstConflict(plan.edits) !== undefined) return "Overlapping edits"
   const edited = new Set<string>()
   for (const edit of plan.edits) {
@@ -106,7 +92,10 @@ const problem = (plan: Plan, before: Contents): string | undefined => {
   return undefined
 }
 
-export const validate = (plan: Plan, before: Contents): Effect.Effect<void, InvalidPlan> => {
+export const validate = (
+  plan: Proposal,
+  before: Contents,
+): Effect.Effect<void, InvalidProposal> => {
   const detail = problem(plan, before)
-  return detail === undefined ? Effect.void : new InvalidPlan({ detail })
+  return detail === undefined ? Effect.void : new InvalidProposal({ detail })
 }

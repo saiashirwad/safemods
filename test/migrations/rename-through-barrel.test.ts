@@ -2,7 +2,7 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { renameThroughBarrel } from "../../examples/rename-through-barrel.ts"
 import { withFixture, read as readSource } from "../utils/fixture.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/rename-through-barrel"
 
@@ -212,7 +212,7 @@ describe("rename-through-barrel", () => {
             expect(yield* readSource(root, "src/auth/session.ts")).toBe(unchangedSession)
             expect(yield* readSource(root, "src/users/directory.ts")).toBe(unchangedDirectory)
             expect(yield* readSource(root, "src/audit/metrics.ts")).toBe(unchangedMetrics)
-            const second = yield* draftOf(renameThroughBarrel, undefined)
+            const second = yield* proposalOf(renameThroughBarrel, undefined)
             expect(second.edits).toHaveLength(0)
           }),
         { fixture },

@@ -3,7 +3,7 @@ import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { defaultToNamed, type DefaultToNamedInput } from "../../examples/default-to-named.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { fixturePath as fixtureDirectory, withFixture } from "../utils/fixture.ts"
 import { workspacePath } from "../utils/domain.ts"
 
@@ -56,9 +56,8 @@ describe("default-to-named", () => {
             exportName: "authenticate",
           }
 
-          const { plan, verified } = yield* executeRecipe(defaultToNamed, input)
+          const { verified } = yield* executeRecipe(defaultToNamed, input)
 
-          expect(plan.edits).toHaveLength(4)
           expect(verified.diagnosticDiff.introduced).toHaveLength(0)
 
           const read = (relative: string) =>
@@ -102,7 +101,7 @@ describe("default-to-named", () => {
           expect(yield* read("src/diagnostics.ts")).toContain(
             "export const servicePort: string = 8080",
           )
-          const second = yield* draftOf(defaultToNamed, input)
+          const second = yield* proposalOf(defaultToNamed, input)
           expect(second.edits).toHaveLength(0)
         }),
       { fixture },

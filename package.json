@@ -5,11 +5,6 @@
   "sideEffects": false,
   "type": "module",
   "exports": {
-    "./Application": {
-      "source": "./src/Application.ts",
-      "types": "./dist/src/Application.d.ts",
-      "default": "./dist/src/Application.js"
-    },
     "./Check": {
       "source": "./src/Check.ts",
       "types": "./dist/src/Check.d.ts",
@@ -25,11 +20,6 @@
       "types": "./dist/src/Config.d.ts",
       "default": "./dist/src/Config.js"
     },
-    "./Draft": {
-      "source": "./src/Draft.ts",
-      "types": "./dist/src/Draft.d.ts",
-      "default": "./dist/src/Draft.js"
-    },
     "./Finding": {
       "source": "./src/Finding.ts",
       "types": "./dist/src/Finding.d.ts",
@@ -44,11 +34,6 @@
       "source": "./src/Pattern.ts",
       "types": "./dist/src/Pattern.d.ts",
       "default": "./dist/src/Pattern.js"
-    },
-    "./Plan": {
-      "source": "./src/Plan.ts",
-      "types": "./dist/src/Plan.d.ts",
-      "default": "./dist/src/Plan.js"
     },
     "./ProjectId": {
       "source": "./src/ProjectId.ts",
@@ -75,15 +60,25 @@
       "types": "./dist/src/Type.d.ts",
       "default": "./dist/src/Type.js"
     },
-    "./Verification": {
-      "source": "./src/Verification/index.ts",
-      "types": "./dist/src/Verification/index.d.ts",
-      "default": "./dist/src/Verification/index.js"
-    },
     "./Workspace": {
       "source": "./src/Workspace/index.ts",
       "types": "./dist/src/Workspace/index.d.ts",
       "default": "./dist/src/Workspace/index.js"
+    },
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./Proposal": {
+      "source": "./src/Proposal.ts",
+      "types": "./dist/src/Proposal.d.ts",
+      "default": "./dist/src/Proposal.js"
+    },
+    "./Migration": {
+      "source": "./src/Migration/index.ts",
+      "types": "./dist/src/Migration/index.d.ts",
+      "default": "./dist/src/Migration/index.js"
     }
   },
   "bin": {

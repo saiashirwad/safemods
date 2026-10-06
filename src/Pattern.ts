@@ -55,12 +55,19 @@ const isCapture = (value: unknown): value is Capture<string> => isTagged(value, 
 export const isNode = (value: unknown): value is Node =>
   typeof value === "object" && value !== null && "kind" in value && "forEachChild" in value
 
+const mergeCaptures = (left: object, right: Captures): Captures => {
+  for (const name of Object.keys(right)) {
+    if (Object.hasOwn(left, name)) throw new Error(`Duplicate capture name: ${name}`)
+  }
+  return { ...left, ...right }
+}
+
 const matchAll = (pairs: ReadonlyArray<readonly [unknown, unknown]>): Captures | undefined => {
   let captures: Captures = {}
   for (const [pattern, value] of pairs) {
     const matched = matchField(pattern, value)
     if (matched === undefined) return undefined
-    captures = { ...captures, ...matched }
+    captures = mergeCaptures(captures, matched)
   }
   return captures
 }
@@ -97,7 +104,9 @@ export const bind = <const Name extends string, A extends Node, C>(
 ): Pattern<A, Simplify<C & { readonly [K in Name]: A }>> =>
   make(pattern.guard, (candidate) => {
     const captures = pattern.match(candidate)
-    return captures === undefined ? undefined : { ...captures, [name]: candidate }
+    return captures === undefined ?
+      undefined :
+      mergeCaptures(Object.assign({}, captures), { [name]: candidate })
   })
 
 const matchFields = (fields: object): (candidate: Node) => Captures | undefined => {

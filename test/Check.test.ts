@@ -4,7 +4,6 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Check from "../src/Check.ts"
 import * as Query from "../src/Query.ts"
-import { WorkspaceSnapshot } from "../src/Workspace/index.ts"
 import { findingsOf } from "./utils/check.ts"
 import { workspacePath } from "./utils/domain.ts"
 import { withFixture } from "./utils/fixture.ts"
@@ -12,13 +11,13 @@ import { withFixture } from "./utils/fixture.ts"
 const flagged = (name: string) =>
   Check.define(
     `flagged:${name}`,
-    Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
-      const found = yield* Query.identifiers(snapshot.projects[0]!).pipe(
-        Query.filter(({ value }) => value.text === name),
-      )
-      return found.map((selection) => Check.report(selection, `${name} is flagged`))
-    }),
+    (snapshot) =>
+      Effect.gen(function* () {
+        const found = yield* Query.identifiers(snapshot.projects[0]!).pipe(
+          Query.filter(({ value }) => value.text === name),
+        )
+        return found.map((selection) => Check.report(selection, `${name} is flagged`))
+      }),
   )
 
 const repoFile = (relative: string): string =>
@@ -46,13 +45,14 @@ describe("checks", () => {
         Effect.gen(function* () {
           const at = workspacePath("src/lib.ts")
           const results = yield* Check.run([
-            Check.define("a b", Effect.succeed([Check.reportAt(at, "c")])),
+            Check.define("a b", () => Effect.succeed([Check.reportAt(at, "c")])),
             Check.define(
               "a",
-              Effect.succeed([
-                Check.reportAt(at, "b c"),
-                { fileName: at, start: 0, end: 1, message: "b c" },
-              ]),
+              () =>
+                Effect.succeed([
+                  Check.reportAt(at, "b c"),
+                  { fileName: at, start: 0, end: 1, message: "b c" },
+                ]),
             ),
           ])
           expect(results.map(({ check, message, end }) => [check, message, end])).toEqual([

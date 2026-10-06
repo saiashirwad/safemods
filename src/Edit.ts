@@ -85,7 +85,10 @@ export const applyFileEdits = (
     }
     let output = sourceText
     for (const edit of sorted.reverse()) {
-      if (edit.start < 0 || edit.start > edit.end || edit.end > sourceText.length) {
+      if (
+        !Number.isSafeInteger(edit.start) || !Number.isSafeInteger(edit.end) || edit.start < 0 ||
+        edit.start > edit.end || edit.end > sourceText.length
+      ) {
         return yield* new InvalidEdit({ edit, reason: "range" })
       }
       if (Sha256.digest(sourceText.slice(edit.start, edit.end)) !== edit.expectedTextHash) {

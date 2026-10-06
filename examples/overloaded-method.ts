@@ -4,6 +4,7 @@
  * re-exported receivers are followed and same-named methods are ignored. Spreads are reported
  * rather than guessed at.
  */
+import { Proposal, Pattern as P, Query, Recipe, type Workspace } from "safemods"
 import { Effect } from "effect"
 import type { CallExpression, Node } from "typescript/unstable/ast"
 import {
@@ -11,14 +12,9 @@ import {
   isFunctionDeclaration,
   isSpreadElement,
 } from "typescript/unstable/ast/is"
-import * as Draft from "safemods/Draft"
-import * as P from "safemods/Pattern"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 
 export interface OverloadedMethodInput {
-  readonly project: ConfiguredProject.Type
+  readonly project: Workspace.ConfiguredProject.Type
 }
 
 const takesCallbackLast = ({ project, value }: Query.Selection<Node>) =>
@@ -51,9 +47,8 @@ const promiseForm = (call: CallExpression): string | undefined => {
 export const overloadedMethod = Recipe.define("overloaded-method", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: (input: OverloadedMethodInput) =>
+  run: (snapshot, input: OverloadedMethodInput) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
       const project = yield* snapshot.project(input.project.id)
       const callbackOverloads = yield* Query.nodes(project, isFunctionDeclaration).pipe(
         Query.within("src/legacy-client.ts"),
@@ -61,16 +56,18 @@ export const overloadedMethod = Recipe.define("overloaded-method", {
         Query.where(takesCallbackLast),
       )
       const calls = yield* Query.calls(project).pipe(
-        Query.where(Query.resolvesToSignature(callbackOverloads.map(({ value }) => value))),
+        Query.where(Query.resolvesToSignature(callbackOverloads)),
       )
 
-      return Draft.concat(
+      return Proposal.concat(
         ...calls.map((selection) => {
           const replacement = promiseForm(selection.value)
           return replacement === undefined ?
-            Draft.unsupported(selection, "spread arguments prevent overload selection") :
-            Draft.replaceSelection(selection, replacement)
+            Proposal.unsupported(selection, "spread arguments prevent overload selection") :
+            Proposal.replaceSelection(selection, replacement)
         }),
       )
     }),
 })
+
+export default overloadedMethod

@@ -2,7 +2,7 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { jsxButtonProps } from "../../examples/jsx-button-props.ts"
 import { fixturePath as fixtureDirectory, withFixture, read as readUtf8 } from "../utils/fixture.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/jsx-button-props"
 const fixturePath = fixtureDirectory(fixture)
@@ -11,11 +11,11 @@ describe("jsx-button-props", () => {
     withFixture(
       (root) =>
         Effect.gen(function* () {
-          const { plan, verified, receipt } = yield* executeRecipe(jsxButtonProps, undefined)
+          const { verified, receipt } = yield* executeRecipe(jsxButtonProps, undefined)
 
           expect(verified.diagnosticDiff.introduced).toEqual([])
           expect(receipt.written).toHaveLength(2)
-          expect(plan.unsupported.map(({ message }) => message)).toEqual([
+          expect(verified.unsupported.map(({ message }) => message)).toEqual([
             "oldLabel: duplicate label prop",
             "oldLabel: JSX spread may contain label",
             "oldLabel: JSX spread may contain label",
@@ -48,7 +48,7 @@ describe("jsx-button-props", () => {
             expect(actual).toBe(original)
           }
 
-          const second = yield* draftOf(jsxButtonProps, undefined)
+          const second = yield* proposalOf(jsxButtonProps, undefined)
           expect(second.edits).toHaveLength(0)
           expect(second.unsupported).toHaveLength(4)
         }),

@@ -2,7 +2,7 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { positionalToOptions } from "../../examples/positional-to-options.ts"
 import { fixturePath as fixtureDirectory, withFixture, read as readUtf8 } from "../utils/fixture.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/positional-to-options"
 const fixturePath = fixtureDirectory(fixture)
@@ -27,7 +27,7 @@ describe("positional-to-options", () => {
         (root, app) =>
           Effect.gen(function* () {
             const input = { project: app }
-            const { plan, verified, receipt } = yield* executeRecipe(positionalToOptions, input)
+            const { verified, receipt } = yield* executeRecipe(positionalToOptions, input)
 
             expect(verified.diagnosticDiff.introduced).toEqual([])
             expect(
@@ -56,7 +56,7 @@ describe("positional-to-options", () => {
                 ),
             )
             expect(
-              plan.unsupported.map(({ start, end }) => originalCollect.slice(start, end)),
+              verified.unsupported.map(({ start, end }) => originalCollect.slice(start, end)),
             ).toEqual(["createCharge(...batch)"])
 
             const originalLogin = yield* readUtf8(fixturePath, "src/auth/login.ts")
@@ -102,7 +102,7 @@ describe("positional-to-options", () => {
               ])
               expect(actual).toBe(original)
             }
-            const second = yield* draftOf(positionalToOptions, input)
+            const second = yield* proposalOf(positionalToOptions, input)
             expect(second.edits).toHaveLength(0)
           }),
         { fixture },

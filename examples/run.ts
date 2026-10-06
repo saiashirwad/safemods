@@ -13,11 +13,7 @@ import { promisify } from "node:util"
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Console, Data, Effect, FileSystem, Option, Path } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
-import { applyVerifiedPlan } from "../src/Application.ts"
-import type { Recipe } from "../src/Recipe.ts"
-import * as WorkspacePath from "../src/WorkspacePath.ts"
-import { actionOf, verify } from "../src/Verification/index.ts"
-import * as Workspace from "../src/Workspace/index.ts"
+import { Migration, type Recipe, WorkspacePath, Workspace } from "safemods"
 import { asAssertionToSatisfies } from "./as-assertion-to-satisfies.ts"
 import { concatToTemplate } from "./concat-to-template.ts"
 import { defaultToNamed } from "./default-to-named.ts"
@@ -67,7 +63,7 @@ export interface ExampleResult {
 const defineExample = <Input, E, R>(example: {
   readonly id: string
   readonly fixture: string
-  readonly recipe: Recipe<Input, E, R>
+  readonly recipe: Recipe.Recipe<Input, E, R>
   readonly input: (project: Workspace.ConfiguredProject.Type) => Input
 }) => ({
   id: example.id,
@@ -75,7 +71,7 @@ const defineExample = <Input, E, R>(example: {
   execute: (project: Workspace.ConfiguredProject.Type) => {
     const input = example.input(project)
     return Effect.gen(function* () {
-      const verified = yield* verify(example.recipe, input)
+      const verified = yield* Migration.verify(example.recipe, input)
       return { verified }
     })
   },
@@ -284,7 +280,7 @@ export const runExample = Effect.fn("runExample")(function* (
   const { verified } = yield* Effect.gen(function* () {
     const executed = yield* example.execute(project)
     if (!preview) {
-      yield* applyVerifiedPlan(executed.verified)
+      yield* executed.verified.apply
     }
     return executed
   }).pipe(Effect.provide(Workspace.layer(definition, workspace)))
@@ -297,7 +293,7 @@ export const runExample = Effect.fn("runExample")(function* (
     applied: !preview,
     files: verified.preview.files.map((file) => ({
       fileName: file.fileName,
-      action: actionOf(file),
+      action: Migration.actionOf(file),
     })),
     diff,
   }

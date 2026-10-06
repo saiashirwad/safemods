@@ -44,6 +44,7 @@ import {
   type Type as NativeType,
 } from "typescript/unstable/async"
 import * as Pattern from "./Pattern.ts"
+import { NodeNotOwned } from "./Workspace/ProjectSnapshot.ts"
 import type * as WorkspacePath from "./WorkspacePath.ts"
 import type {
   IntrinsicTypeName,
@@ -96,11 +97,29 @@ export type Scope = ProjectSnapshot | ReadonlyArray<ProjectFile>
 
 const isFiles = (scope: Scope): scope is ReadonlyArray<ProjectFile> => Array.isArray(scope)
 
-const distinct = (files: ReadonlyArray<ProjectFile>): Iterable<ProjectFile> =>
-  new Map(files.map((file) => [file.fileName, file])).values()
-
-const filesIn = (scope: Scope): Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError> =>
-  isFiles(scope) ? Effect.succeed([...distinct(scope)]) : scope.files
+const filesIn = (scope: Scope): Effect.Effect<ReadonlyArray<ProjectFile>, ProjectSnapshotError> => {
+  if (!isFiles(scope)) return scope.files
+  return Effect.gen(function* () {
+    const seen = new Map<ProjectSnapshot, Set<WorkspacePath.Type>>()
+    const files: Array<ProjectFile> = []
+    for (const file of scope) {
+      const ownedName = file.project.fileNameOf(file.sourceFile)
+      if (Option.isNone(ownedName) || ownedName.value !== file.fileName) {
+        return yield* new NodeNotOwned({ fileName: file.sourceFile.fileName })
+      }
+      let names = seen.get(file.project)
+      if (names === undefined) {
+        names = new Set()
+        seen.set(file.project, names)
+      }
+      if (!names.has(file.fileName)) {
+        names.add(file.fileName)
+        files.push(file)
+      }
+    }
+    return files
+  })
+}
 
 const selectionsIn = <A extends Node>(
   file: ProjectFile,
@@ -519,18 +538,24 @@ const sameNode = (left: Node, right: Node): boolean =>
   left.pos === right.pos &&
   left.end === right.end &&
   left.kind === right.kind &&
-  left.getSourceFile().fileName === right.getSourceFile().fileName
+  left.getSourceFile() === right.getSourceFile()
 
 export const resolvesToSignature =
-  (declarations: ReadonlyArray<Node>) =>
+  (declarations: ReadonlyArray<Selection<Node>>) =>
   ({ project, value }: Selection<CallExpression>): Effect.Effect<boolean, ProjectSnapshotError> =>
     Effect.gen(function* () {
+      for (const declaration of declarations) {
+        const sourceFile = declaration.value.getSourceFile()
+        if (declaration.project !== project || Option.isNone(project.fileNameOf(sourceFile))) {
+          return yield* new NodeNotOwned({ fileName: sourceFile.fileName })
+        }
+      }
       const signature = yield* project.resolvedSignature(value)
       if (signature === undefined) return false
       const resolved = yield* project.signatureDeclaration(signature)
       return (
         resolved !== undefined &&
-        declarations.some((declaration) => sameNode(declaration, resolved))
+        declarations.some((declaration) => sameNode(declaration.value, resolved))
       )
     })
 

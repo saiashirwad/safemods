@@ -4,12 +4,8 @@
  * `./auth/index.js` when that is the file it names. Specifiers that name no project file are
  * reported rather than guessed at.
  */
+import { Proposal, ModuleSpecifier, Query, Recipe } from "safemods"
 import { Effect } from "effect"
-import * as Draft from "safemods/Draft"
-import * as ModuleSpecifier from "safemods/ModuleSpecifier"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { WorkspaceSnapshot } from "safemods/Workspace"
 
 const rewritable = new Set<Query.ModuleReferenceKind>([
   "import",
@@ -27,31 +23,28 @@ const needsRewrite = ({ value }: Query.Selection<Query.ResolvedModuleReference>)
 
 const rewrite =
   (files: ReadonlySet<string>) =>
-  (selection: Query.Selection<Query.ResolvedModuleReference>): Draft.Draft => {
+  (selection: Query.Selection<Query.ResolvedModuleReference>): Proposal.Proposal => {
     const { specifier, resolved } = selection.value
     const from = selection.fileName
     const target = resolved?.fileName ?? ModuleSpecifier.fileNamedBy(files, from, specifier.text)
     if (target === undefined) {
-      return Draft.unsupported(selection, `${specifier.text} names no project file`)
+      return Proposal.unsupported(selection, `${specifier.text} names no project file`)
     }
     const next = ModuleSpecifier.emitted(ModuleSpecifier.between(from, target))
-    return Draft.replaceStringLiteral(selection.project, specifier, next)
+    return Proposal.replaceStringLiteral(selection.project, specifier, next)
   }
 
-export const relativeJsExtensions = Recipe.define("relative-js-extensions", {
+export const relativeJsExtensions = Recipe.perProject("relative-js-extensions", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: () =>
+  run: (project) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
-      const drafts = yield* Effect.forEach(snapshot.projects, (project) =>
-        Effect.gen(function* () {
-          const files = new Set<string>((yield* project.files).map((file) => file.fileName))
-          const references = yield* Query.resolvedModuleReferences(project).pipe(
-            Query.filter(needsRewrite),
-          )
-          return Draft.concat(...references.map(rewrite(files)))
-        }))
-      return Draft.concat(...drafts)
+      const files = new Set<string>((yield* project.files).map((file) => file.fileName))
+      const references = yield* Query.resolvedModuleReferences(project).pipe(
+        Query.filter(needsRewrite),
+      )
+      return Proposal.concat(...references.map(rewrite(files)))
     }),
 })
+
+export default relativeJsExtensions

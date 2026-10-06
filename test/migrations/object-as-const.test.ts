@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { objectAsConst } from "../../examples/object-as-const.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { fixturePath, read, withFixture } from "../utils/fixture.ts"
 
 const fixture = "migrations/object-as-const"
@@ -25,7 +25,7 @@ describe("object-as-const", () => {
                 "export const Limits = { retries: 3, timeout: 1000 } as const",
               ),
             )
-            expect((yield* draftOf(objectAsConst, undefined)).edits).toEqual([])
+            expect((yield* proposalOf(objectAsConst, undefined)).edits).toEqual([])
           }),
         { fixture },
       ),

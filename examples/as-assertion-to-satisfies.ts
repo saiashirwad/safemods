@@ -5,6 +5,7 @@
  * their precedence or intermediate asserted type can change meaning. `as const` and assertions
  * outside a variable initializer are intentionally unrelated to this migration.
  */
+import { Proposal, Pattern as P, Query, Recipe } from "safemods"
 import { Effect } from "effect"
 import type { AsExpression } from "typescript/unstable/ast"
 import {
@@ -14,11 +15,6 @@ import {
   isTypeReferenceNode,
   isVariableDeclaration,
 } from "typescript/unstable/ast/is"
-import * as Draft from "safemods/Draft"
-import * as P from "safemods/Pattern"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { WorkspaceSnapshot } from "safemods/Workspace"
 
 const needsReview = P.tagged({
   "chained assertion requires manual review": P.node(isAsExpression, {
@@ -45,26 +41,21 @@ const operatorRange = (node: AsExpression): { readonly start: number; readonly e
   return { start, end: start + keyword[0].length }
 }
 
-const draftFor = (selection: Query.Selection<AsExpression>): Draft.Draft => {
+const draftFor = (selection: Query.Selection<AsExpression>): Proposal.Proposal => {
   const review = needsReview(selection.value)
   return review === undefined ?
-    Draft.replaceRange(selection, operatorRange(selection.value), "satisfies") :
-    Draft.unsupported(selection, review._tag)
+    Proposal.replaceRange(selection, operatorRange(selection.value), "satisfies") :
+    Proposal.unsupported(selection, review._tag)
 }
 
-export const asAssertionToSatisfies = Recipe.define("as-assertion-to-satisfies", {
+export const asAssertionToSatisfies = Recipe.perProject("as-assertion-to-satisfies", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: () =>
-    Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
-      const drafts = yield* Effect.forEach(snapshot.projects, (project) =>
-        Query.nodes(project, isAsExpression).pipe(
-          Query.filter((selection) =>
-            isVariableInitializer(selection.value)
-          ),
-          Effect.map((selections) => Draft.concat(...selections.map(draftFor))),
-        ))
-      return Draft.concat(...drafts)
-    }),
+  run: (project) =>
+    Query.nodes(project, isAsExpression).pipe(
+      Query.filter((selection) => isVariableInitializer(selection.value)),
+      Effect.map((selections) => Proposal.concat(...selections.map(draftFor))),
+    ),
 })
+
+export default asAssertionToSatisfies

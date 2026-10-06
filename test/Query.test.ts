@@ -1,5 +1,6 @@
 import { describe, effect, expect } from "@effect/vitest"
-import { Effect, Predicate } from "effect"
+import { NodeServices } from "@effect/platform-node"
+import { Effect, Layer, Option, Predicate } from "effect"
 import { and, refineKey } from "is-kit"
 import { SyntaxKind, type Expression, type Node } from "typescript/unstable/ast"
 import {
@@ -7,9 +8,12 @@ import {
   isFunctionDeclaration,
   isPropertySignatureDeclaration,
 } from "typescript/unstable/ast/is"
+import { vi } from "vitest"
 import * as Query from "../src/Query.ts"
 import { workspacePath } from "./utils/domain.ts"
-import { withProject } from "./utils/fixture.ts"
+import { withFixture, withProject } from "./utils/fixture.ts"
+import * as Proposal from "../src/Proposal.ts"
+import { layer as workspaceLayer, Workspace, WorkspaceDefinition } from "../src/Workspace/index.ts"
 
 const ARITY_SOURCE = [
   "export function run(): void {",
@@ -40,6 +44,242 @@ const hasTwoArguments = refineKey(
 )
 
 describe("queries", () => {
+  effect(
+    "semantic queries retain multi-node native batches grouped by source file",
+    () =>
+      withProject({
+        "src/batch-a.ts": "export const first = 1; export const second = 2\n",
+        "src/batch-b.ts": "export const third = 3; export const fourth = 4\n",
+      }, (project) =>
+        Effect.gen(function* () {
+          const spy = yield* project.unsafeNative((native) =>
+            Effect.sync(() => vi.spyOn(native.checker, "getTypeAtLocation"))
+          )
+          yield* Effect.gen(function* () {
+            const typed = yield* Query.identifiers(project).pipe(
+              Query.within("src/batch-*.ts"),
+              Query.typed,
+            )
+            expect(typed).toHaveLength(4)
+            expect(
+              spy.mock.calls.map(([nodes]) => nodes.length).sort((left, right) => left - right),
+            ).toEqual([2, 2])
+            for (const [nodes] of spy.mock.calls) {
+              expect(new Set(nodes.map((node) => node.getSourceFile())).size).toBe(1)
+            }
+          }).pipe(Effect.ensuring(Effect.sync(() => spy.mockRestore())))
+        })),
+  )
+
+  effect(
+    "shared file scopes preserve both compiler contexts regardless of input order",
+    () =>
+      withFixture((root) =>
+        Effect.gen(function* () {
+          const definition = yield* WorkspaceDefinition.make({
+            projects: [
+              { id: "strict", config: "tsconfig.json" },
+              { id: "loose", config: "tsconfig.loose.json" },
+            ],
+          })
+          yield* Workspace.use((workspace) =>
+            workspace.withSnapshot(
+              (snapshot) =>
+                Effect.gen(function* () {
+                  const files = yield* Effect.forEach(
+                    snapshot.projects,
+                    (project) => project.file(workspacePath("shared.ts")),
+                  )
+                  for (const ordered of [files, [...files].reverse()]) {
+                    const selections = yield* Query.identifiers([
+                      ordered[0]!,
+                      ordered[1]!,
+                      ordered[0]!,
+                    ]).pipe(Query.typed)
+                    const results = yield* Effect.forEach(selections, ({ project, value }) =>
+                      Effect.map(
+                        project.typeToString(value.type),
+                        (type) => [project.project.id, type],
+                      ))
+                    expect(results).toEqual([["loose", "string"], ["strict", "string | undefined"]])
+                  }
+                }),
+            )
+          ).pipe(
+            Effect.provide(
+              Layer.provideMerge(workspaceLayer(definition, root), NodeServices.layer),
+            ),
+          )
+        }), {
+        fixture: "empty",
+        files: {
+          "tsconfig.json": JSON.stringify({
+            compilerOptions: { strictNullChecks: true },
+            files: ["shared.ts"],
+          }),
+          "tsconfig.loose.json": JSON.stringify({
+            compilerOptions: { strictNullChecks: false },
+            files: ["shared.ts"],
+          }),
+          "shared.ts": "export let value: string | undefined\n",
+        },
+      }),
+  )
+
+  effect(
+    "stale syntax cannot claim ownership in a later snapshot",
+    () =>
+      withFixture((_, app) =>
+        Workspace.use((workspace) =>
+          Effect.gen(function* () {
+            const stale = yield* workspace.withSnapshot((snapshot) =>
+              Effect.gen(function* () {
+                const project = yield* snapshot.project(app.id)
+                const file = yield* project.file(workspacePath("src/library.ts"))
+                return { project, file: file! }
+              })
+            )
+            expect(Option.isSome(Query.selectionOf(stale.project, stale.file.sourceFile))).toBe(
+              true,
+            )
+            expect((yield* Effect.exit(stale.project.typeOf(stale.file.sourceFile)))._tag).toBe(
+              "Failure",
+            )
+            yield* workspace.withSnapshot((snapshot) =>
+              Effect.gen(function* () {
+                const project = yield* snapshot.project(app.id)
+                const current = yield* project.file(stale.file.fileName)
+                expect(Option.isSome(Query.selectionOf(project, current!.sourceFile))).toBe(true)
+                expect(Option.isNone(project.fileNameOf(stale.file.sourceFile))).toBe(true)
+                expect(Option.isNone(Query.selectionOf(project, stale.file.sourceFile))).toBe(true)
+                expect(() => Proposal.replace(project, stale.file.sourceFile, "")).toThrow(
+                  "Node is not in project",
+                )
+                expect(yield* Effect.result(Query.identifiers([{ ...stale.file, project }])))
+                  .toMatchObject({ _tag: "Failure", failure: { _tag: "NodeNotOwned" } })
+                const spy = yield* project.unsafeNative((native) =>
+                  Effect.sync(() => vi.spyOn(native.checker, "getTypeAtLocation"))
+                )
+                yield* Effect.gen(function* () {
+                  const results = yield* Effect.forEach(
+                    [current!.sourceFile, stale.file.sourceFile],
+                    (node) => Effect.result(project.typeOf(node)),
+                    { concurrency: "unbounded" },
+                  )
+                  expect(results[0]!._tag).toBe("Success")
+                  expect(results[1]).toMatchObject({
+                    _tag: "Failure",
+                    failure: { _tag: "NodeNotOwned" },
+                  })
+                  expect(spy).toHaveBeenCalledTimes(1)
+                  expect(spy.mock.calls[0]![0]).toEqual([current!.sourceFile])
+                }).pipe(Effect.ensuring(Effect.sync(() => spy.mockRestore())))
+              })
+            )
+          })
+        )
+      ),
+  )
+
+  effect(
+    "signature queries reject declarations from another project or an expired snapshot",
+    () =>
+      withFixture((root) =>
+        Effect.gen(function* () {
+          const definition = yield* WorkspaceDefinition.make({
+            projects: [
+              { id: "first", config: "tsconfig.json" },
+              { id: "second", config: "tsconfig.second.json" },
+            ],
+          })
+          yield* Workspace.use((workspace) =>
+            Effect.gen(function* () {
+              const declarations = yield* workspace.withSnapshot((snapshot) =>
+                Effect.gen(function* () {
+                  const [first, second] = snapshot.projects
+                  const declarations = yield* Query.nodes(first!, isFunctionDeclaration)
+                  expect(
+                    yield* Query.calls(first!).pipe(
+                      Query.where(Query.resolvesToSignature(declarations)),
+                    ),
+                  ).toHaveLength(1)
+                  expect(
+                    yield* Effect.result(
+                      Query.calls(second!).pipe(
+                        Query.where(Query.resolvesToSignature(declarations)),
+                      ),
+                    ),
+                  ).toMatchObject({ _tag: "Failure", failure: { _tag: "NodeNotOwned" } })
+                  return declarations
+                })
+              )
+              yield* workspace.withSnapshot((snapshot) =>
+                Effect.gen(function* () {
+                  expect(
+                    yield* Effect.result(
+                      Query.calls(snapshot.projects[0]!).pipe(
+                        Query.where(Query.resolvesToSignature(declarations)),
+                      ),
+                    ),
+                  ).toMatchObject({ _tag: "Failure", failure: { _tag: "NodeNotOwned" } })
+                })
+              )
+            })
+          ).pipe(
+            Effect.provide(
+              Layer.provideMerge(workspaceLayer(definition, root), NodeServices.layer),
+            ),
+          )
+        }), {
+        fixture: "empty",
+        files: {
+          "tsconfig.json": JSON.stringify({ files: ["shared.ts"] }),
+          "tsconfig.second.json": JSON.stringify({ files: ["shared.ts"] }),
+          "shared.ts": "export function chosen(value: number) { return value }\nchosen(1)\n",
+        },
+      }),
+  )
+
+  effect(
+    "external library syntax under the workspace root is not an owned edit location",
+    () =>
+      withProject({
+        "src/external.ts": 'import { external } from "external"\nexport const value = external\n',
+        "node_modules/external/package.json": JSON.stringify({
+          name: "external",
+          types: "index.d.ts",
+        }),
+        "node_modules/external/index.d.ts": "export declare const external: string\n",
+      }, (project) =>
+        Effect.gen(function* () {
+          const external = yield* project.unsafeNative((native) =>
+            Effect.promise(async () => {
+              const names = await native.program.getSourceFileNames()
+              return native.program.getSourceFile(
+                names.find((name) => name.endsWith("/external/index.d.ts"))!,
+              )
+            })
+          )
+          expect(external).toBeDefined()
+          expect(yield* project.file(workspacePath("node_modules/external/index.d.ts")))
+            .toBeUndefined()
+          expect(Option.isNone(project.fileNameOf(external!))).toBe(true)
+          expect(Option.isNone(Query.selectionOf(project, external!))).toBe(true)
+          expect(() => Proposal.replace(project, external!, "")).toThrow("Node is not in project")
+          expect(yield* Effect.result(project.typeOf(external!))).toMatchObject({
+            _tag: "Failure",
+            failure: { _tag: "NodeNotOwned" },
+          })
+          expect(
+            yield* Effect.result(Query.identifiers([{
+              project,
+              fileName: workspacePath("node_modules/external/index.d.ts"),
+              sourceFile: external!,
+            }])),
+          ).toMatchObject({ _tag: "Failure", failure: { _tag: "NodeNotOwned" } })
+        })),
+  )
+
   effect(
     "sources stay on project-owned files",
     () =>
@@ -375,7 +615,7 @@ describe("queries", () => {
             )
             expect(overloads).toHaveLength(1)
             const calls = yield* Query.calls(project).pipe(
-              Query.where(Query.resolvesToSignature(overloads.map(({ value }) => value))),
+              Query.where(Query.resolvesToSignature(overloads)),
             )
             expect(calls.map(({ value }) => value.getText())).toEqual([
               "parse(10, 16)",

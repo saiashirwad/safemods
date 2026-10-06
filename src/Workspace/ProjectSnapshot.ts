@@ -33,7 +33,11 @@ export class SymbolNotFound extends Data.TaggedError("SymbolNotFound")<{
   readonly fileName: WorkspacePath.Type
 }> {}
 
-export type ProjectSnapshotError = WorkspaceCompilerError | SnapshotExpired
+export class NodeNotOwned extends Data.TaggedError("NodeNotOwned")<{
+  readonly fileName: string
+}> {}
+
+export type ProjectSnapshotError = WorkspaceCompilerError | SnapshotExpired | NodeNotOwned
 
 const intrinsicTypeGetters = {
   string: "getStringType",
@@ -215,6 +219,22 @@ export const make = (options: {
   const relative = (absoluteName: string): Option.Option<WorkspacePath.Type> =>
     decodePath(path.relative(workspaceRoot, absoluteName))
 
+  const ownedSources = new WeakMap<SourceFile, WorkspacePath.Type>()
+
+  const ensureOwned = (node: Node): Effect.Effect<void, NodeNotOwned> =>
+    Effect.suspend(() => {
+      const source = node.getSourceFile()
+      return ownedSources.has(source) ?
+        Effect.void :
+        Effect.fail(new NodeNotOwned({ fileName: source.fileName }))
+    })
+
+  const nodeRequest = <A>(node: Node, operation: string, evaluate: () => PromiseLike<A>) =>
+    Effect.andThen(
+      ensureActive,
+      Effect.andThen(ensureOwned(node), nativeRequest(operation, evaluate)),
+    )
+
   const fileInfoOf = memoize(async (absoluteName: string): Promise<FileInfo | undefined> => {
     const sourceFile = await program.getSourceFile(absoluteName)
     if (sourceFile === undefined) return undefined
@@ -225,6 +245,7 @@ export const make = (options: {
     const fileName = defaultLibrary || external ?
       undefined :
       Option.getOrUndefined(relative(sourceFile.fileName))
+    if (fileName !== undefined) ownedSources.set(sourceFile, fileName)
     return { sourceFile, fileName }
   })
 
@@ -242,7 +263,9 @@ export const make = (options: {
     const nodes = await Promise.all(handles.map((handle) => handle.resolve(native)))
     const owned = await Promise.all(
       nodes.map(async (node) =>
-        node !== undefined && (await projectFileOf(node.getSourceFile().fileName)) !== undefined ?
+        node !== undefined &&
+          (await projectFileOf(node.getSourceFile().fileName))?.sourceFile ===
+            node.getSourceFile() ?
           node :
           undefined
       ),
@@ -280,7 +303,11 @@ export const make = (options: {
             ),
         ),
     })
-    return (node) => Effect.request(question({ node }), resolver)
+    return (node) =>
+      Effect.andThen(
+        ensureActive,
+        Effect.andThen(ensureOwned(node), Effect.request(question({ node }), resolver)),
+      )
   }
 
   const files = request("getSourceFileNames", () => program.getSourceFileNames()).pipe(
@@ -291,7 +318,7 @@ export const make = (options: {
   const project: ProjectSnapshot = {
     project: configured,
 
-    fileNameOf: (sourceFile) => relative(sourceFile.fileName),
+    fileNameOf: (sourceFile) => Option.fromUndefinedOr(ownedSources.get(sourceFile)),
 
     file: (fileName) => ownedFile(absolute(fileName)),
 
@@ -316,6 +343,8 @@ export const make = (options: {
 
     exportsOf: (source) =>
       Effect.gen(function* () {
+        yield* ensureActive
+        if ("sourceFile" in source) yield* ensureOwned(source.sourceFile)
         const exported = yield* request("getExportsOfModule", async () => {
           const module = "sourceFile" in source ?
             (await checker.getSymbolAtLocation([source.sourceFile]))[0] :
@@ -351,7 +380,7 @@ export const make = (options: {
         )),
 
     referencesTo: (node) =>
-      request("getReferencedSymbolsForNode", async () => {
+      nodeRequest(node, "getReferencedSymbolsForNode", async () => {
         const entries = await checker.getReferencedSymbolsForNode(
           node,
           node.getStart(node.getSourceFile()),
@@ -373,7 +402,7 @@ export const make = (options: {
       }),
 
     contextualTypeOf: (expression) =>
-      request("getContextualType", () => checker.getContextualType(expression)),
+      nodeRequest(expression, "getContextualType", () => checker.getContextualType(expression)),
 
     unionMembersOf: (type) =>
       type.isUnionType() ?
@@ -423,13 +452,14 @@ export const make = (options: {
     indexInfosOf: (type) => request("getIndexInfosOfType", () => checker.getIndexInfosOfType(type)),
 
     signatureOf: (declaration) =>
-      request(
+      nodeRequest(
+        declaration,
         "getSignatureFromDeclaration",
         () => checker.getSignatureFromDeclaration(declaration),
       ),
 
     resolvedSignature: (call) =>
-      request("getResolvedSignature", () => checker.getResolvedSignature(call)),
+      nodeRequest(call, "getResolvedSignature", () => checker.getResolvedSignature(call)),
 
     signatureDeclaration: (signature) =>
       request(

@@ -3,6 +3,7 @@
  * through barrels, import aliases and JSDoc links. Same-named symbols elsewhere are left alone.
  * Mentions the compiler cannot resolve (prose, @example blocks, strings) are reported, not edited.
  */
+import { Proposal, WorkspacePath, Query, Recipe, type Workspace } from "safemods"
 import { Array as Arr, Effect, Schema } from "effect"
 import type { Node } from "typescript/unstable/ast"
 import {
@@ -11,11 +12,6 @@ import {
   isSourceFile,
   isVariableDeclaration,
 } from "typescript/unstable/ast/is"
-import * as Draft from "../src/Draft.ts"
-import * as WorkspacePath from "../src/WorkspacePath.ts"
-import * as Query from "../src/Query.ts"
-import * as Recipe from "../src/Recipe.ts"
-import { type ProjectSnapshot, WorkspaceSnapshot } from "../src/Workspace/index.ts"
 
 const Input = Schema.Struct({
   file: WorkspacePath.schema,
@@ -36,7 +32,7 @@ const declaresAtTopLevel = (name: Node): boolean => {
 const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 const unresolvedMentions = (
-  project: ProjectSnapshot,
+  project: Workspace.ProjectSnapshot,
   name: string,
   references: ReadonlyArray<Query.Selection<Node>>,
   resolved: ReadonlySet<string>,
@@ -45,12 +41,12 @@ const unresolvedMentions = (
     const mention = new RegExp(`\\b${escaped(name)}\\b`, "g")
     const edited = new Set(references.map(({ fileName }) => fileName))
     const files = (yield* project.files).filter(({ fileName }) => edited.has(fileName))
-    return Draft.concat(
+    return Proposal.concat(
       ...files.flatMap(({ fileName, sourceFile }) =>
         [...sourceFile.text.matchAll(mention)]
           .filter(({ index }) => !resolved.has(at(fileName, index)))
           .map(({ index }) =>
-            Draft.unsupported(
+            Proposal.unsupported(
               { value: sourceFile, project, fileName, start: index, end: index + name.length },
               `mentions ${name} in a comment or string the compiler cannot resolve`,
             )
@@ -59,39 +55,37 @@ const unresolvedMentions = (
     )
   })
 
-export const renameSymbol = Recipe.define("rename-symbol", {
+export const renameSymbol = Recipe.perProject("rename-symbol", {
   version: "1.0.0",
   schema: Input,
   policies: { idempotence: "required" },
-  run: ({ file, name, to }) =>
+  run: (project, { file, name, to }) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
-      const drafts = yield* Effect.forEach(snapshot.projects, (project) =>
-        Effect.gen(function* () {
-          const spelled = yield* Query.identifiers(project).pipe(
-            Query.filter(({ value }) => value.text === name),
-          )
-          const declarations = spelled.filter(
-            (selection) => selection.fileName === file && declaresAtTopLevel(selection.value),
-          )
-          const found = yield* Effect.forEach(declarations, (declaration) =>
-            Query.referencesTo(declaration).pipe(
-              Query.filter(({ value }) => isIdentifier(value) && value.text === name),
-            ))
-          const references = Arr.dedupeWith(
-            found.flat(),
-            (left, right) =>
-              left.fileName === right.fileName && left.start === right.start,
-          )
-          const resolved = new Set(
-            [...spelled, ...references].map(({ fileName, start }) => at(fileName, start)),
-          )
-          return Draft.concat(
-            Draft.replaceEach(references, ({ value }) =>
-              isShorthandPropertyAssignment(value.parent) ? `${name}: ${to}` : to),
-            yield* unresolvedMentions(project, name, references, resolved),
-          )
-        }))
-      return Draft.concat(...drafts)
+      const spelled = yield* Query.identifiers(project).pipe(
+        Query.filter(({ value }) => value.text === name),
+      )
+      const declarations = spelled.filter(
+        (selection) => selection.fileName === file && declaresAtTopLevel(selection.value),
+      )
+      const found = yield* Effect.forEach(declarations, (declaration) =>
+        Query.referencesTo(declaration).pipe(
+          Query.filter(({ value }) =>
+            isIdentifier(value) && value.text === name
+          ),
+        ))
+      const references = Arr.dedupeWith(
+        found.flat(),
+        (left, right) => left.fileName === right.fileName && left.start === right.start,
+      )
+      const resolved = new Set(
+        [...spelled, ...references].map(({ fileName, start }) => at(fileName, start)),
+      )
+      return Proposal.concat(
+        Proposal.replaceEach(references, ({ value }) =>
+          isShorthandPropertyAssignment(value.parent) ? `${name}: ${to}` : to),
+        yield* unresolvedMentions(project, name, references, resolved),
+      )
     }),
 })
+
+export default renameSymbol

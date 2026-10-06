@@ -1,3 +1,4 @@
+import { Proposal, Pattern as P, Query, Recipe } from "safemods"
 import { Effect } from "effect"
 import type { ExportSpecifier, ImportSpecifier } from "typescript/unstable/ast"
 import {
@@ -7,11 +8,6 @@ import {
   isNamedExports,
   isNamedImports,
 } from "typescript/unstable/ast/is"
-import * as Draft from "safemods/Draft"
-import * as P from "safemods/Pattern"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { WorkspaceSnapshot } from "safemods/Workspace"
 
 const ROOT = "@acme/sdk"
 const entryPointByExport = new Map([
@@ -43,35 +39,33 @@ const namedBindings = P.either(
 const entryPointOf = (element: ImportSpecifier | ExportSpecifier): string | undefined =>
   entryPointByExport.get(element.propertyName?.text ?? element.name.text)
 
-const split = (selection: Query.Selection<Query.ModuleReference>): Draft.Draft => {
+const split = (selection: Query.Selection<Query.ModuleReference>): Proposal.Proposal => {
   const bound = namedBindings.match(selection.value.node)
   if (bound === undefined) {
-    return Draft.unsupported(selection, AMBIGUOUS)
+    return Proposal.unsupported(selection, AMBIGUOUS)
   }
   const entryPoints = new Set([...bound.elements].map(entryPointOf))
   const [entryPoint] = entryPoints
   if (entryPoints.size !== 1 || entryPoint === undefined) {
-    return Draft.unsupported(selection, MIXED)
+    return Proposal.unsupported(selection, MIXED)
   }
-  return Draft.replaceStringLiteral(
+  return Proposal.replaceStringLiteral(
     selection.project,
     selection.value.specifier,
     `${ROOT}/${entryPoint}`,
   )
 }
 
-export const packageEntryPointSplit = Recipe.define("package-entry-point-split", {
+export const packageEntryPointSplit = Recipe.perProject("package-entry-point-split", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: () =>
+  run: (project) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
-      const references = yield* Effect.forEach(snapshot.projects, (project) =>
-        Query.moduleReferences(project).pipe(
-          Query.filter(({ value }) =>
-            value.specifier.text === ROOT
-          ),
-        ))
-      return Draft.concat(...references.flat().map(split))
+      const references = yield* Query.moduleReferences(project).pipe(
+        Query.filter(({ value }) => value.specifier.text === ROOT),
+      )
+      return Proposal.concat(...references.map(split))
     }),
 })
+
+export default packageEntryPointSplit

@@ -10,14 +10,11 @@ import {
   type ProjectSnapshot,
   Workspace,
   WorkspaceDefinition,
-  WorkspaceSnapshot,
+  type WorkspaceSnapshot,
 } from "../../src/Workspace/index.ts"
 
 export const fixturePath = (name: string): string =>
   fileURLToPath(new URL(`../../fixtures/${name}/`, import.meta.url))
-
-export const fixtureProject = (app: ConfiguredProject.Type) =>
-  WorkspaceSnapshot.use((snapshot) => snapshot.project(app.id))
 
 export const withFixture = <A, E, R>(
   use: (root: string, app: ConfiguredProject.Type) => Effect.Effect<A, E, R>,
@@ -61,13 +58,15 @@ export const withFixture = <A, E, R>(
 
 export const withProject = <A, E, R>(
   files: Record<string, string>,
-  use: (project: ProjectSnapshot) => Effect.Effect<A, E, R>,
+  use: (project: ProjectSnapshot, snapshot: WorkspaceSnapshot) => Effect.Effect<A, E, R>,
   options: { readonly dependencies?: boolean } = {},
 ) =>
   withFixture(
     (_, app) =>
       Workspace.use((workspace) =>
-        workspace.withSnapshot(Effect.flatMap(fixtureProject(app), use))
+        workspace.withSnapshot((snapshot) =>
+          Effect.flatMap(snapshot.project(app.id), (project) => use(project, snapshot))
+        )
       ),
     { files, ...options },
   )

@@ -2,6 +2,7 @@
  * Convert a conservative subset of top-level CommonJS to ESM.
  * Unsupported CommonJS-shaped statements are reported rather than guessed at.
  */
+import { Proposal, Pattern as P, Query, Recipe, type Workspace } from "safemods"
 import { Effect } from "effect"
 import {
   type BindingElement,
@@ -27,14 +28,9 @@ import {
   isVariableDeclarationList,
   isVariableStatement,
 } from "typescript/unstable/ast/is"
-import * as Draft from "safemods/Draft"
-import * as P from "safemods/Pattern"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 
 export interface CommonJsToEsmInput {
-  readonly project: ConfiguredProject.Type
+  readonly project: Workspace.ConfiguredProject.Type
 }
 
 const identifier = /^[A-Za-z_$][\w$]*$/
@@ -204,9 +200,8 @@ const isUnsupported = (statement: Statement, globalRequires: ReadonlySet<Node>):
 export const commonJsToEsm = Recipe.define("commonjs-to-esm", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: (input: CommonJsToEsmInput) =>
+  run: (snapshot, input: CommonJsToEsmInput) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
       const project = yield* snapshot.project(input.project.id)
       const globalRequires = new Set<Node>(
         (yield* Query.match(project, { require: requireCall }).pipe(
@@ -214,17 +209,17 @@ export const commonJsToEsm = Recipe.define("commonjs-to-esm", {
         )).map(({ value }) => value.node),
       )
       const files = yield* project.files
-      const drafts: Array<Draft.Draft> = []
+      const drafts: Array<Proposal.Proposal> = []
       for (const file of files) {
         for (const statement of file.sourceFile.statements) {
           const replacement = replacementFor(statement, globalRequires)
           if (replacement !== undefined) {
-            drafts.push(Draft.replace(project, statement, replacement))
+            drafts.push(Proposal.replace(project, statement, replacement))
             continue
           }
           if (!isUnsupported(statement, globalRequires)) continue
           drafts.push(
-            Draft.unsupported(
+            Proposal.unsupported(
               {
                 value: statement,
                 project,
@@ -237,6 +232,8 @@ export const commonJsToEsm = Recipe.define("commonjs-to-esm", {
           )
         }
       }
-      return Draft.concat(...drafts)
+      return Proposal.concat(...drafts)
     }),
 })
+
+export default commonJsToEsm

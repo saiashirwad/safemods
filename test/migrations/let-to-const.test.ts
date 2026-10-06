@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { letToConst } from "../../examples/let-to-const.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { fixturePath, read, withFixture } from "../utils/fixture.ts"
 
 const fixture = "migrations/let-to-const"
@@ -22,7 +22,7 @@ describe("let-to-const", () => {
                 "const [first, second] = values",
               ).replace("for (let name of list)", "for (const name of list)"),
             )
-            expect((yield* draftOf(letToConst, undefined)).edits).toEqual([])
+            expect((yield* proposalOf(letToConst, undefined)).edits).toEqual([])
           }),
         { fixture },
       ),

@@ -2,33 +2,28 @@
  * Mark a promise that a statement drops on the floor with `void`, so the choice not to await
  * it is visible. A call counts when the checker gives it a type with a `then` member.
  */
+import { Proposal, Query, Recipe } from "safemods"
 import { Effect } from "effect"
 import { isExpressionStatement } from "typescript/unstable/ast/is"
-import * as Draft from "safemods/Draft"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { WorkspaceSnapshot } from "safemods/Workspace"
 
-export const voidFloatingPromises = Recipe.define("void-floating-promises", {
+export const voidFloatingPromises = Recipe.perProject("void-floating-promises", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: () =>
+  run: (project) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
-      const floating = yield* Effect.forEach(snapshot.projects, (project) =>
-        Query.calls(project).pipe(
-          Query.filter(({ value }) =>
-            isExpressionStatement(value.parent)
-          ),
-          Query.typed,
-          Query.where(({ value }) =>
-            Effect.map(project.propertyOf(value.type, "then"), (then) => then !== undefined)
-          ),
-        ))
-      return Draft.concat(
-        ...floating.flat().map(({ project, value }) =>
-          Draft.insertBefore(project, value.node, "void ")
+      const floating = yield* Query.calls(project).pipe(
+        Query.filter(({ value }) => isExpressionStatement(value.parent)),
+        Query.typed,
+        Query.where(({ value }) =>
+          Effect.map(project.propertyOf(value.type, "then"), (then) => then !== undefined)
+        ),
+      )
+      return Proposal.concat(
+        ...floating.map(({ project, value }) =>
+          Proposal.insertBefore(project, value.node, "void ")
         ),
       )
     }),
 })
+
+export default voidFloatingPromises

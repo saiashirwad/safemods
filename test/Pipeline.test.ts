@@ -1,12 +1,9 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import type { CallExpression } from "typescript/unstable/ast"
-import * as Application from "../src/Application.ts"
-import type * as Plan from "../src/Plan.ts"
 import type * as Query from "../src/Query.ts"
-import type * as Verification from "../src/Verification/index.ts"
 import { workspacePath } from "./utils/domain.ts"
-import { draftOf, executeRecipe } from "./utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "./utils/execute-recipe.ts"
 import { read, withFixture } from "./utils/fixture.ts"
 import { migrateImportSource } from "./utils/migrate-import-source.ts"
 import { wrapTargetInput, type WrapTargetInput } from "./utils/wrap-target-input.ts"
@@ -17,7 +14,7 @@ type Equal<Left, Right> = (<Value>() => Value extends Left ? 1 : 2) extends
 type Assert<Value extends true> = Value
 
 export type _RecipeInputInference = Assert<
-  Equal<Parameters<typeof wrapTargetInput.run>[0], WrapTargetInput>
+  Equal<Parameters<typeof wrapTargetInput.run>[1], WrapTargetInput>
 >
 
 export type _CallInference = Assert<
@@ -30,15 +27,6 @@ export type _CallInference = Assert<
     CallExpression
   >
 >
-
-const _rawPlanIsNotApplicationAuthority = (plan: Plan.Plan) =>
-  // @ts-expect-error Application accepts only a VerifiedPlan
-  Application.applyVerifiedPlan(plan)
-void _rawPlanIsNotApplicationAuthority
-
-const _verifiedPlanIsApplicationAuthority = (verified: Verification.VerifiedPlan) =>
-  Application.applyVerifiedPlan(verified)
-void _verifiedPlanIsApplicationAuthority
 
 describe("run → verify → apply", () => {
   effect(
@@ -68,7 +56,7 @@ describe("run → verify → apply", () => {
             "publicTarget({ value: 4 })",
           )
 
-          const second = yield* draftOf(wrapTargetInput, input)
+          const second = yield* proposalOf(wrapTargetInput, input)
           expect(second.edits).toEqual([])
         })
       ),
@@ -78,12 +66,12 @@ describe("run → verify → apply", () => {
     withFixture(
       (root, app) =>
         Effect.gen(function* () {
-          const { plan } = yield* executeRecipe(migrateImportSource, {
+          const { receipt } = yield* executeRecipe(migrateImportSource, {
             project: app,
             from: "./legacy.js",
             to: "./replacement.js",
           })
-          expect(plan.edits).toHaveLength(1)
+          expect(receipt.written).toHaveLength(1)
 
           const consumer = yield* read(root, "src/import-consumer.ts")
           expect(consumer).toContain("from './replacement.js'")

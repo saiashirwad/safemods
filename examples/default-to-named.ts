@@ -2,6 +2,7 @@
  * Convert `export default function authenticate` into a named export and
  * rewrite default import sites plus `export { default as authenticate }` barrels.
  */
+import { Proposal, Pattern as P, type WorkspacePath, Query, Recipe, type Workspace } from "safemods"
 import { Effect } from "effect"
 import { and, refineDefinedKey, refineKey } from "is-kit"
 import {
@@ -20,15 +21,9 @@ import {
   isNamedExports,
   isNamedImports,
 } from "typescript/unstable/ast/is"
-import * as Draft from "safemods/Draft"
-import * as P from "safemods/Pattern"
-import type * as WorkspacePath from "safemods/WorkspacePath"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 
 export interface DefaultToNamedInput {
-  readonly project: ConfiguredProject.Type
+  readonly project: Workspace.ConfiguredProject.Type
   /** Project-relative file that currently default-exports the function. */
   readonly declarationFile: WorkspacePath.Type
   readonly exportName: string
@@ -78,9 +73,8 @@ const rebinding = (element: ExportSpecifier, exportName: string): string | undef
 export const defaultToNamed = Recipe.define("default-to-named", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: (input: DefaultToNamedInput) =>
+  run: (snapshot, input: DefaultToNamedInput) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
       const project = yield* snapshot.project(input.project.id)
       const exported = yield* project.symbolNamed(input.exportName, {
         within: input.declarationFile,
@@ -110,7 +104,7 @@ export const defaultToNamed = Recipe.define("default-to-named", {
       const importEdits = defaultImports.map(({ project, value }) => {
         const clause = value.importClause
         const binding = namedBinding(clause.name.text, input.exportName)
-        return Draft.replace(project, clause, importClauseText(binding, clause.namedBindings))
+        return Proposal.replace(project, clause, importClauseText(binding, clause.namedBindings))
       })
 
       const reexportEdits = reexports.flatMap(({ project, value }) => {
@@ -118,15 +112,17 @@ export const defaultToNamed = Recipe.define("default-to-named", {
         if (clause === undefined) return []
         return clause.elements.flatMap((element) => {
           const binding = rebinding(element, input.exportName)
-          return binding === undefined ? [] : [Draft.replace(project, element, binding)]
+          return binding === undefined ? [] : [Proposal.replace(project, element, binding)]
         })
       })
 
-      return Draft.concat(
-        Draft.replaceEach(defaultFunctions, ({ value }) =>
+      return Proposal.concat(
+        Proposal.replaceEach(defaultFunctions, ({ value }) =>
           value.getText().replace(/^export\s+default\s+/, "export ")),
         ...importEdits,
         ...reexportEdits,
       )
     }),
 })
+
+export default defaultToNamed

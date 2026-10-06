@@ -1,7 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { textEdit } from "../src/Edit.ts"
-import { distinct, type FileOperation, type Plan, validate } from "../src/Plan.ts"
+import { distinct, validate } from "../src/Migration/Changes.ts"
+import type { FileOperation, Proposal } from "../src/Proposal.ts"
 import type * as WorkspacePath from "../src/WorkspacePath.ts"
 import { workspacePath } from "./utils/domain.ts"
 
@@ -34,12 +35,12 @@ const move: FileOperation = {
   toFileName: workspacePath("src/moved.ts"),
 }
 
-const outcome = (plan: Partial<Plan>) =>
+const outcome = (plan: Partial<Proposal>) =>
   validate({ edits: [], fileOperations: [], unsupported: [], ...plan }, contents).pipe(
     Effect.match({ onFailure: (error) => error.detail, onSuccess: () => "valid" }),
   )
 
-describe("Plan.validate", () => {
+describe("proposal validation", () => {
   effect(
     "deduplicates equal proposals regardless of property insertion order",
     () =>
@@ -93,7 +94,7 @@ describe("Plan.validate", () => {
     "rejects plans whose changes contradict each other or the captured files",
     () =>
       Effect.gen(function* () {
-        const cases: ReadonlyArray<readonly [Partial<Plan>, string]> = [
+        const cases: ReadonlyArray<readonly [Partial<Proposal>, string]> = [
           [
             { edits: [edit("src/index.ts", 0, 2), edit("src/index.ts", 1, 3)] },
             "Overlapping edits",

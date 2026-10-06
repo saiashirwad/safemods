@@ -2,6 +2,7 @@
  * Rename Account.displayName to Account.label. The checker decides which identifiers refer to
  * the property, so same-named properties on other types are left alone.
  */
+import { Proposal, Pattern as P, WorkspacePath, Query, Recipe } from "safemods"
 import { Effect } from "effect"
 import type { Identifier } from "typescript/unstable/ast"
 import {
@@ -12,12 +13,6 @@ import {
   isShorthandPropertyAssignment,
   isStringLiteral,
 } from "typescript/unstable/ast/is"
-import * as Draft from "../src/Draft.ts"
-import * as P from "../src/Pattern.ts"
-import * as WorkspacePath from "../src/WorkspacePath.ts"
-import * as Query from "../src/Query.ts"
-import * as Recipe from "../src/Recipe.ts"
-import { WorkspaceSnapshot } from "../src/Workspace/index.ts"
 
 const DECLARATION_FILE = WorkspacePath.schema.make("src/account.ts")
 const OLD_NAME = "displayName"
@@ -38,11 +33,10 @@ const keepsLocalBinding = (node: Identifier): boolean =>
 export const renameInterfaceProperty = Recipe.define("rename-interface-property", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: () =>
+  run: (snapshot) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
       const project = snapshot.projects[0]
-      if (project === undefined) return Draft.empty
+      if (project === undefined) return Proposal.empty
 
       const [declaration] = yield* Query.identifiers(project).pipe(
         Query.within(DECLARATION_FILE),
@@ -50,7 +44,7 @@ export const renameInterfaceProperty = Recipe.define("rename-interface-property"
           ({ value }) => value.text === OLD_NAME && isPropertySignatureDeclaration(value.parent),
         ),
       )
-      if (declaration === undefined) return Draft.empty
+      if (declaration === undefined) return Proposal.empty
 
       const references = yield* Query.referencesTo(declaration).pipe(
         Query.filter((selection): selection is Query.Selection<Identifier> =>
@@ -59,11 +53,11 @@ export const renameInterfaceProperty = Recipe.define("rename-interface-property"
       )
       const computed = yield* Query.match(project, { computedAccess })
 
-      return Draft.concat(
-        Draft.replaceEach(references, ({ value }) =>
+      return Proposal.concat(
+        Proposal.replaceEach(references, ({ value }) =>
           keepsLocalBinding(value) ? `${NEW_NAME}: ${OLD_NAME}` : NEW_NAME),
         ...computed.map((selection) =>
-          Draft.unsupported(
+          Proposal.unsupported(
             selection,
             `Computed Account[${JSON.stringify(OLD_NAME)}] access requires manual review`,
           )
@@ -71,3 +65,5 @@ export const renameInterfaceProperty = Recipe.define("rename-interface-property"
       )
     }),
 })
+
+export default renameInterfaceProperty

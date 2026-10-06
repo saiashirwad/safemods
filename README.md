@@ -2,78 +2,66 @@
 
 Type-directed codemods for TypeScript 7, built on Effect.
 
-Pre-alpha. Two things run on the same compiler snapshot:
+Pre-alpha. Recipes and checks use scoped compiler snapshots:
 
-- **Recipes** query the checker and emit a draft; `verify` previews it, refuses new diagnostics and can require idempotence; apply writes only a verified plan.
+- **Recipes** query the checker and emit a proposal; verification previews it, refuses new diagnostics and can require idempotence. Only the verified result can be applied.
 - **Checks** query the checker and report findings. `safemods check` prints them as `path:line:column check message` and exits non-zero, so a coding agent gets a precise rejection without anyone spending tokens on it.
+
+Save a recipe in `recipes/remove-debugger.ts`:
 
 ```ts
 import { Effect } from "effect"
-import * as Draft from "safemods/Draft"
-import * as WorkspacePath from "safemods/WorkspacePath"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { WorkspaceSnapshot } from "safemods/Workspace"
+import { isDebuggerStatement } from "typescript/unstable/ast/is"
+import { Proposal, Query, Recipe } from "safemods"
 
-const store = WorkspacePath.schema.make("src/accounts/store.ts")
-
-export const renameThroughBarrel = Recipe.define("rename-through-barrel", {
+export default Recipe.perProject("remove-debugger", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: () =>
+  run: (project) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
-      const project = snapshot.projects[0]!
-      const symbol = yield* project.symbolNamed("loadAccount", { within: store })
-      const matches = yield* Query.identifiers(project).pipe(
-        Query.filter((selection) => selection.value.text === "loadAccount"),
-        Query.where(Query.resolvesTo(symbol)),
+      const statements = yield* Query.nodes(project, isDebuggerStatement)
+      return Proposal.concat(
+        ...statements.map(({ value }) => Proposal.remove(project, value)),
       )
-      return Draft.replaceEach(matches, () => "findAccount")
     }),
 })
 ```
 
-Run it against a workspace:
+`Recipe.perProject` runs against every configured project and combines their proposals. For a transformation that selects a project or coordinates several, use `Recipe.define` with `run: (snapshot, input) => ...`; the snapshot is an explicit argument, not an Effect service.
+
+List the workspace's projects in `safemods.config.ts`:
 
 ```ts
-import { NodeServices } from "@effect/platform-node"
-import { Effect, Layer } from "effect"
-import { applyVerifiedPlan } from "safemods/Application"
-import { verify } from "safemods/Verification"
-import * as Workspace from "safemods/Workspace"
+import { Config } from "safemods"
 
-const migrate = Effect.gen(function* () {
-  const verified = yield* verify(renameThroughBarrel, undefined)
-  return yield* applyVerifiedPlan(verified)
-})
-
-export const main = Effect.gen(function* () {
-  const definition = yield* Workspace.WorkspaceDefinition.make({
-    projects: [{ id: "app", config: "tsconfig.json" }],
-  })
-  const workspace = Workspace.layer(definition, process.cwd())
-  return yield* migrate.pipe(Effect.provide(Layer.merge(workspace, NodeServices.layer)))
-})
+export default {
+  projects: [{ id: "app", config: "tsconfig.json" }],
+} satisfies Config.Config
 ```
+
+Preview first, then apply:
+
+```sh
+safemods run recipes/remove-debugger.ts
+safemods run recipes/remove-debugger.ts --apply
+```
+
+For recipes with an input schema, pass JSON with `--input`. Without `--apply`, verification writes nothing.
 
 Cheap syntactic filters go first. `Query.where` asks the checker, and questions asked about many nodes at once are sent as one request per file.
 
 ## Checks
 
-A check is an Effect that returns findings: a file, a span and a message. Questions about types go through the project snapshot, and `Type` reads Effect, Stream and Layer parameters off their variance structs.
+A check has a `run(snapshot)` callback returning an Effect of findings: a file, a span and a message. Questions about types go through the project snapshot, and `Type` reads Effect, Stream and Layer parameters off their variance structs.
 
 `examples/no-unknown-failures.ts` is one, and this repository runs it on itself:
 
 ```ts
 import { Effect, Option } from "effect"
 import type { Type as NativeType } from "typescript/unstable/async"
-import * as Check from "safemods/Check"
-import * as Query from "safemods/Query"
-import * as Type from "safemods/Type"
-import type { ProjectSnapshot } from "safemods/Workspace"
+import { Check, Query, Type, Workspace } from "safemods"
 
-const failureOf = (project: ProjectSnapshot, type: NativeType) =>
+const failureOf = (project: Workspace.ProjectSnapshot, type: NativeType) =>
   Effect.gen(function* () {
     const effect = yield* Type.effect(project, type)
     if (Option.isSome(effect)) return Option.some({ kind: "an Effect", error: effect.value.error })
@@ -109,14 +97,13 @@ export const noUnknownFailures = (options: { readonly within: string }) =>
 List projects and checks in `safemods.config.ts`. Every path — a project config, a `within` glob, an edit, a finding — is relative to the directory holding that file. The rules that ship with the package come from `safemods/Checks`; a rule of your own is a file in your repository.
 
 ```ts
-import type * as Config from "safemods/Config"
-import { layers } from "safemods/Checks"
+import { Config, Checks } from "safemods"
 import { noUnknownFailures } from "./checks/no-unknown-failures.ts"
 
 export default {
   projects: [{ id: "app", config: "tsconfig.json" }],
   checks: [
-    layers({ within: "src/**", order: [["src/core.ts"], ["src/app.ts"]] }),
+    Checks.layers({ within: "src/**", order: [["src/core.ts"], ["src/app.ts"]] }),
     noUnknownFailures({ within: "src/**" }),
   ],
 } satisfies Config.Config
@@ -158,7 +145,14 @@ safemods exports src/Query.ts        # its exports with their types
 safemods type src/Query.ts:279:14    # the type and declaration of what is there
 safemods refs src/Query.ts:279:14    # every reference, through aliases and re-exports
 safemods calls src/Query.ts:279:14   # every direct call, and whether other uses exist
+safemods type src/shared.ts:1:12 --project app
 ```
+
+If a file belongs to more than one project, the inspection commands require `--project`. `map` labels each compiler context. Workspace snapshots return all contexts through `snapshot.files(path)`; semantic queries use an explicit project.
+
+`Query.resolvesToSignature` takes declaration selections, retaining their project context rather than accepting bare nodes. Foreign or expired selections are rejected before resolving the candidate call.
+
+Native type and signature objects still come from TypeScript. Their project ownership is not checked. Do not reuse them in another project or snapshot. The structural type walk also has limits for instantiated conditional types; it is not a proof of every reachable public type.
 
 ## Reading the code
 
@@ -166,34 +160,63 @@ Read in this order; each step uses only what came before.
 
 1. `src/Workspace/ProjectSnapshot.ts` — the interface at the top is every question you can ask the compiler. `perNode` is why asking about thousands of nodes costs one call per file.
 2. `src/Query.ts` — a query is an Effect returning `Selection`s (a node plus where it is) in file and position order. `where` filters with a compiler question.
-3. `src/Check.ts` — a check is a name and an Effect returning findings; `run` locates each at `path:line:column`.
+3. `src/Check.ts` — a check is a name and a snapshot callback returning findings; `run` locates each at `path:line:column`.
 4. `src/Checks/Layers.ts` — the smallest real rule, thirty lines. Then `WeakReturns.ts` for one that uses types.
 5. `src/bin.ts` — the command: load the config, run the checks, set the exit code.
-6. `src/Draft.ts`, `src/Recipe.ts`, `src/Plan.ts`, `src/Verification/`, `src/Application.ts` — the codemod half, in the order a recipe flows through them.
+6. `src/Proposal.ts`, `src/Recipe.ts`, `src/Migration/` — the codemod half: propose, verify, then apply.
 
 ## Modules
 
 Each module depends only on the ones above it.
 
-| Module                                   | Responsibility                                                        |
-| ---------------------------------------- | --------------------------------------------------------------------- |
-| `Sha256`, `ProjectId`, `WorkspacePath`   | branded value types                                                   |
-| `Position`, `Finding`, `ModuleSpecifier` | line and column; a located message; parse, relate and emit specifiers |
-| `Edit`                                   | hash-guarded text edits and their application                         |
-| `Plan`                                   | edits and file operations, and the rules a valid plan obeys           |
-| `Workspace`                              | compiler snapshots; every snapshot is a fresh view of disk + overlay  |
-| `Pattern`                                | syntax shapes with typed captures, combined into tagged matches       |
-| `Query`, `Type`                          | selected syntax nodes in order; predicates and parsers over types     |
-| `Draft`, `Check`                         | proposed edits and file operations; checks and their results          |
-| `Checks`                                 | the rules that ship with the package                                  |
-| `Recipe`                                 | define a transformation: name, version, policies, input schema, run   |
-| `Verification`                           | run a recipe, preview exact bytes, diff diagnostics, replay           |
-| `Application`                            | write a verified plan, refusing stale files and symlink escapes       |
-| `Config`                                 | load `safemods.config.ts` and the workspace it describes              |
-| `Inspect`                                | answers for `map`, `deps`, `exports`, `type`, `refs` and `calls`      |
-| `bin`                                    | the `safemods` command                                                |
+| Module                                   | Responsibility                                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------------- |
+| `Sha256`, `ProjectId`, `WorkspacePath`   | branded value types                                                                   |
+| `Position`, `Finding`, `ModuleSpecifier` | line and column; a located message; parse, relate and emit specifiers                 |
+| `Edit`                                   | hash-guarded text edits and their application                                         |
+| `Workspace`                              | compiler snapshots; every snapshot is a fresh view of disk + overlay                  |
+| `Pattern`                                | syntax shapes with typed captures, combined into tagged matches                       |
+| `Query`, `Type`                          | selected syntax nodes in order; predicates and parsers over types                     |
+| `Proposal`                               | pure constructors for proposed edits, file operations and unsupported locations       |
+| `Check`                                  | checks and their results                                                              |
+| `Checks`                                 | the rules that ship with the package                                                  |
+| `Recipe`                                 | define a transformation: name, version, policies, input schema, run                   |
+| `Migration`                              | verify proposals and apply captured results, refusing stale files and symlink escapes |
+| `Config`                                 | load `safemods.config.ts` and the workspace it describes                              |
+| `Inspect`                                | answers for `map`, `deps`, `exports`, `type`, `refs` and `calls`                      |
+| `bin`                                    | the `safemods` command                                                                |
 
-Application checks real paths once before writing anything, then again right before it moves aside or writes each file. The portable filesystem API does not offer directory handles or atomic no-follow operations, so this confines normal symlink layouts but cannot guarantee safety against a hostile process swapping symlinks between a check and mutation.
+Verification uses one captured input base for planning, diagnostics and replay. It records compiler file reads, missing paths, directory listings and real paths, including dependencies outside the workspace. It rejects changed observations before returning a verified result and again before application. This is not an atomic filesystem snapshot.
+
+Diagnostics retain their project ID. Their filenames are workspace-relative when possible and absolute for external files, so an existing error in one context cannot mask a new error in another.
+
+Application checks real paths before writing and again near each mutation. Installation uses hard links to avoid overwriting a destination created after preflight. The filesystem must support hard links. Recovery preserves originals and temporary files when it cannot establish ownership, and reports their paths. Cleanup failure after a successful commit is reported separately.
+
+Do not run concurrent writers during application. Portable filesystem operations cannot guarantee safety against a hostile process swapping paths or symlinks between a check and mutation.
+
+## Programmatic migrations
+
+`Migration.verify(recipe, input)` returns `{ preview, unsupported, diagnosticDiff, apply }`. The `apply` field is an Effect that captures the verified changes; there is no separate application function.
+
+The preview is a detached copy. Changing its buffers cannot change the bytes applied. Application also retains the original workspace and platform services, so providing a different workspace later cannot redirect writes.
+
+```ts
+import { NodeServices } from "@effect/platform-node"
+import { Effect, Layer } from "effect"
+import { Migration, Workspace } from "safemods"
+import removeDebugger from "./recipes/remove-debugger.ts"
+
+export const main = Effect.gen(function* () {
+  const definition = yield* Workspace.WorkspaceDefinition.make({
+    projects: [{ id: "app", config: "tsconfig.json" }],
+  })
+  const workspace = Workspace.layer(definition, process.cwd())
+  return yield* Effect.gen(function* () {
+    const verified = yield* Migration.verify(removeDebugger, undefined)
+    return yield* verified.apply
+  }).pipe(Effect.provide(Layer.merge(workspace, NodeServices.layer)))
+})
+```
 
 ## Examples
 

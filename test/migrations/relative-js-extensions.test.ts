@@ -2,7 +2,7 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { relativeJsExtensions } from "../../examples/relative-js-extensions.ts"
 import { fixturePath as fixtureDirectory, withFixture, read } from "../utils/fixture.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/relative-js-extensions"
 const fixturePath = fixtureDirectory(fixture)
@@ -52,16 +52,17 @@ describe("relative-js-extensions", () => {
       withFixture(
         (root) =>
           Effect.gen(function* () {
-            const { plan, verified } = yield* executeRecipe(relativeJsExtensions, undefined)
+            const { verified } = yield* executeRecipe(relativeJsExtensions, undefined)
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
 
             const extra = yield* read(root, "src/extra.ts")
             expect(extra).toContain('from "./auth/index.js"')
             expect(extra).toContain('from "./config.local.js"')
             expect(extra).toContain('from "./missing"')
-            expect(plan.unsupported.map(({ fileName, message }) => [fileName, message])).toEqual([
-              ["src/extra.ts", "./missing names no project file"],
-            ])
+            expect(verified.unsupported.map(({ fileName, message }) => [fileName, message]))
+              .toEqual([
+                ["src/extra.ts", "./missing names no project file"],
+              ])
           }),
         {
           fixture,
@@ -85,9 +86,8 @@ describe("relative-js-extensions", () => {
       withFixture(
         (root) =>
           Effect.gen(function* () {
-            const { plan, verified } = yield* executeRecipe(relativeJsExtensions, undefined)
+            const { verified } = yield* executeRecipe(relativeJsExtensions, undefined)
 
-            expect(plan.edits).toHaveLength(14)
             expect(verified.preview.files).toHaveLength(6)
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
             expect(
@@ -150,7 +150,7 @@ describe("relative-js-extensions", () => {
 
             const logger = yield* read(root, "src/telemetry/logger.ts")
             expect(logger).toContain('from "node:util"')
-            const second = yield* draftOf(relativeJsExtensions, undefined)
+            const second = yield* proposalOf(relativeJsExtensions, undefined)
             expect(second.edits).toHaveLength(0)
           }),
         { fixture },

@@ -148,8 +148,6 @@ const originOf = (
     return declared === type ? undefined : declared
   })
 
-const expansions = new WeakMap<NativeType, ReadonlyArray<NativeType>>()
-
 const expand = (
   project: ProjectSnapshot,
   type: NativeType,
@@ -180,19 +178,6 @@ const expand = (
     ]
   })
 
-const mentionedBy = (
-  project: ProjectSnapshot,
-  type: NativeType,
-): Effect.Effect<ReadonlyArray<NativeType>, ProjectSnapshotError> =>
-  Effect.suspend(() => {
-    const known = expansions.get(type)
-    if (known !== undefined) return Effect.succeed(known)
-    return Effect.map(expand(project, type), (mentioned) => {
-      expansions.set(type, mentioned)
-      return mentioned
-    })
-  })
-
 export const mentions = <E, R>(
   project: ProjectSnapshot,
   type: NativeType,
@@ -214,7 +199,7 @@ export const mentions = <E, R>(
       }
       const discovered = yield* Effect.forEach(
         level,
-        (candidate) => mentionedBy(project, candidate),
+        (candidate) => expand(project, candidate),
         { concurrency: "unbounded" },
       )
       frontier = discovered.flat()

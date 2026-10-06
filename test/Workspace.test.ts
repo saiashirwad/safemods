@@ -4,17 +4,19 @@ import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Layer, Option, Schema } from "effect"
 import {
+  WorkspaceCompilerError,
   type ModuleExport,
   SnapshotExpired,
   Workspace,
   WorkspaceDefinition,
-  WorkspaceSnapshot,
+  type WorkspaceSnapshot,
   layer as workspaceLayer,
 } from "../src/Workspace/index.ts"
 import { isObjectLiteralExpression } from "typescript/unstable/ast/is"
 import * as Query from "../src/Query.ts"
+import { InputSnapshot } from "../src/Workspace/InputSnapshot.ts"
 import { workspacePath } from "./utils/domain.ts"
-import { fixturePath, fixtureProject, withFixture, withProject, write } from "./utils/fixture.ts"
+import { fixturePath, withFixture, withProject, write } from "./utils/fixture.ts"
 
 const libraryPath = workspacePath("src/library.ts")
 
@@ -55,17 +57,20 @@ describe("workspace snapshots", () => {
         const shared = workspacePath("nested/src/shared.ts")
         const owners = yield* Workspace.use((workspace) =>
           workspace.withSnapshot(
-            Effect.gen(function* () {
-              const snapshot = yield* WorkspaceSnapshot
-              expect((yield* snapshot.file(shared))?.fileName).toBe(shared)
-              const owners = yield* Effect.forEach(snapshot.projects, (project) =>
-                Effect.map(
-                  project.files,
-                  (files) =>
-                    files.some((file) => file.fileName === shared) ? [project.project.id] : [],
-                ))
-              return owners.flat()
-            }),
+            (snapshot) =>
+              Effect.gen(function* () {
+                expect((yield* snapshot.files(shared)).map((file) => file.fileName)).toEqual([
+                  shared,
+                  shared,
+                ])
+                const owners = yield* Effect.forEach(snapshot.projects, (project) =>
+                  Effect.map(
+                    project.files,
+                    (files) =>
+                      files.some((file) => file.fileName === shared) ? [project.project.id] : [],
+                  ))
+                return owners.flat()
+              }),
           )
         ).pipe(
           Effect.provide(
@@ -97,14 +102,15 @@ describe("workspace snapshots", () => {
         Effect.gen(function* () {
           const workspace = yield* Workspace
           yield* workspace.withSnapshot(
-            Effect.gen(function* () {
-              const project = yield* fixtureProject(app)
-              const outside = workspacePath("shared/outside.ts")
-              const file = yield* project.file(outside)
-              expect(file?.sourceFile.text).toContain("function outside")
-              expect(Option.getOrUndefined(project.fileNameOf(file!.sourceFile))).toBe(outside)
-              expect((yield* project.files).map((source) => source.fileName)).toContain(outside)
-            }),
+            (snapshot) =>
+              Effect.gen(function* () {
+                const project = yield* snapshot.project(app.id)
+                const outside = workspacePath("shared/outside.ts")
+                const file = yield* project.file(outside)
+                expect(file?.sourceFile.text).toContain("function outside")
+                expect(Option.getOrUndefined(project.fileNameOf(file!.sourceFile))).toBe(outside)
+                expect((yield* project.files).map((source) => source.fileName)).toContain(outside)
+              }),
           )
         }),
       {
@@ -145,10 +151,11 @@ describe("workspace snapshots", () => {
         Effect.gen(function* () {
           const workspace = yield* Workspace
           const libraryText = workspace.withSnapshot(
-            Effect.gen(function* () {
-              const project = yield* fixtureProject(app)
-              return (yield* project.file(libraryPath))?.sourceFile.text
-            }),
+            (snapshot) =>
+              Effect.gen(function* () {
+                const project = yield* snapshot.project(app.id)
+                return (yield* project.file(libraryPath))?.sourceFile.text
+              }),
           )
           expect(yield* libraryText).toContain("function target")
           yield* write(root, libraryPath, "export const rewritten = 1\n")
@@ -172,17 +179,26 @@ describe("workspace snapshots", () => {
             deleted: new Set([Path.join(root, "src/barrel.ts")]),
           }
           yield* workspace.withSnapshot(
-            Effect.gen(function* () {
-              const project = yield* fixtureProject(app)
-              expect((yield* project.file(created))?.sourceFile.text).toBe(
-                "export const created = 1\n",
-              )
-              expect((yield* project.file(libraryPath))?.sourceFile.text).toBe(
-                "export const replaced = 1\n",
-              )
-              expect(yield* project.file(workspacePath("src/barrel.ts"))).toBeUndefined()
-            }),
-            overlay,
+            (snapshot) =>
+              Effect.gen(function* () {
+                const project = yield* snapshot.project(app.id)
+                expect((yield* project.file(created))?.sourceFile.text).toBe(
+                  "export const created = 1\n",
+                )
+                expect((yield* project.file(libraryPath))?.sourceFile.text).toBe(
+                  "export const replaced = 1\n",
+                )
+                expect(yield* project.file(workspacePath("src/barrel.ts"))).toBeUndefined()
+                const captured = yield* snapshot.capture
+                expect(new TextDecoder().decode(captured.get(created))).toBe(
+                  "export const created = 1\n",
+                )
+                expect(new TextDecoder().decode(captured.get(libraryPath))).toBe(
+                  "export const replaced = 1\n",
+                )
+                expect(captured.has(workspacePath("src/barrel.ts"))).toBe(false)
+              }),
+            { overlay },
           )
         })
       ),
@@ -199,19 +215,187 @@ describe("workspace snapshots", () => {
             await Fs.symlink(Path.join(root, "real"), Path.join(root, "src/link"), "dir")
           })
           const workspace = yield* Workspace
-          const fileNames = Effect.gen(function* () {
-            const project = yield* fixtureProject(app)
-            return (yield* project.files).map((file) => file.fileName).sort()
-          })
+          const fileNames = (snapshot: WorkspaceSnapshot) =>
+            Effect.gen(function* () {
+              const project = yield* snapshot.project(app.id)
+              return (yield* project.files).map((file) => file.fileName).sort()
+            })
           const onDisk = yield* workspace.withSnapshot(fileNames)
           const overlaid = yield* workspace.withSnapshot(fileNames, {
-            files: new Map(),
-            deleted: new Set(),
+            overlay: { files: new Map(), deleted: new Set() },
           })
           expect(onDisk).toContain("src/link/linked.ts")
           expect(overlaid).toEqual(onDisk)
         })
       ),
+  )
+
+  effect(
+    "rejects a missing or overlaid-away configured project",
+    () =>
+      withFixture((root) =>
+        Effect.gen(function* () {
+          const workspace = yield* Workspace
+          const config = Path.join(root, "tsconfig.json")
+          expect(
+            yield* Effect.flip(workspace.withSnapshot(() => Effect.void, {
+              overlay: { files: new Map(), deleted: new Set([config]) },
+            })),
+          ).toBeInstanceOf(WorkspaceCompilerError)
+          yield* Effect.promise(() => Fs.unlink(config))
+          expect(yield* Effect.flip(workspace.withSnapshot(() => Effect.void))).toBeInstanceOf(
+            WorkspaceCompilerError,
+          )
+        })
+      ),
+  )
+
+  effect(
+    "shared inputs retain source discovery and raw BOM bytes",
+    () =>
+      withFixture((root, app) =>
+        Effect.gen(function* () {
+          const workspace = yield* Workspace
+          const inputs = new InputSnapshot()
+          const text = "\uFEFFexport const original = 1\n"
+          yield* write(root, libraryPath, text)
+          const read = workspace.withSnapshot(
+            (snapshot) =>
+              Effect.gen(function* () {
+                const project = yield* snapshot.project(app.id)
+                return {
+                  names: (yield* project.files).map((file) => file.fileName),
+                  text: (yield* project.file(libraryPath))?.sourceFile.text,
+                  captured: yield* snapshot.capture,
+                }
+              }),
+            { inputs },
+          )
+          const before = yield* read
+          expect([...before.captured.get(libraryPath)!]).toEqual([
+            ...new TextEncoder().encode(text),
+          ])
+          const copy = inputs.readBytes(Path.join(root, libraryPath))!
+          copy.fill(0)
+          yield* inputs.checkFresh
+          yield* write(root, "src/new.ts", "export const added = 1\n")
+          yield* write(root, libraryPath, "export const changed = 1\n")
+          const after = yield* read
+          expect(after.names).toEqual(before.names)
+          expect(after.text).toBe(before.text)
+          expect(after.captured.get(libraryPath)).toEqual(before.captured.get(libraryPath))
+          const error = yield* Effect.flip(inputs.checkFresh)
+          expect(Path.isAbsolute(error.path)).toBe(true)
+        })
+      ),
+  )
+
+  effect(
+    "negative observations remain missing and detect creation",
+    () =>
+      withFixture((root) =>
+        Effect.gen(function* () {
+          const target = Path.join(root, "absent")
+          for (
+            const hook of [
+              "readFile",
+              "fileExists",
+              "directoryExists",
+              "getAccessibleEntries",
+              "realpath",
+            ] as const
+          ) {
+            const inputs = new InputSnapshot()
+            const fs = inputs.fileSystem()
+            const before = fs[hook]!(target)
+            expect(before).not.toBeUndefined()
+            yield* inputs.checkFresh
+            yield* Effect.promise(async () => {
+              if (hook === "directoryExists" || hook === "getAccessibleEntries") {
+                await Fs.mkdir(target)
+              } else await Fs.writeFile(target, "created")
+            })
+            expect(fs[hook]!(target)).toEqual(before)
+            expect((yield* Effect.flip(inputs.checkFresh)).path).toBe(target)
+            yield* Effect.promise(() => Fs.rm(target, { recursive: true }))
+          }
+        })
+      ),
+  )
+
+  effect(
+    "compiler observations detect new source membership",
+    () =>
+      withFixture((root) =>
+        Effect.gen(function* () {
+          const workspace = yield* Workspace
+          const inputs = new InputSnapshot()
+          yield* workspace.withSnapshot(() => Effect.void, { inputs })
+          yield* inputs.checkFresh
+          yield* write(root, "src/discovered.ts", "export const discovered = 1\n")
+          expect((yield* Effect.flip(inputs.checkFresh)).path).toBe(Path.join(root, "src"))
+        })
+      ),
+  )
+
+  effect(
+    "compiler observations include configs outside the workspace root",
+    () =>
+      withFixture((root) => {
+        const external = `${root}-base.json`
+        return Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            Fs.writeFile(external, JSON.stringify({ compilerOptions: { strict: true } }))
+          )
+          yield* write(
+            root,
+            "tsconfig.json",
+            JSON.stringify({ extends: external, include: ["src/**/*.ts"] }),
+          )
+          const workspace = yield* Workspace
+          const inputs = new InputSnapshot()
+          yield* workspace.withSnapshot(() => Effect.void, { inputs })
+          yield* inputs.checkFresh
+          yield* Effect.promise(() =>
+            Fs.writeFile(external, JSON.stringify({ compilerOptions: { strict: false } }))
+          )
+          expect((yield* Effect.flip(inputs.checkFresh)).path).toBe(external)
+        }).pipe(Effect.ensuring(Effect.promise(() => Fs.rm(external, { force: true }))))
+      }),
+  )
+
+  effect(
+    "compiler observations detect extends and package metadata changes",
+    () =>
+      withFixture((root) =>
+        Effect.gen(function* () {
+          const workspace = yield* Workspace
+          for (const name of ["base.json", "package.json"]) {
+            const inputs = new InputSnapshot()
+            yield* workspace.withSnapshot(() => Effect.void, { inputs })
+            yield* inputs.checkFresh
+            yield* write(
+              root,
+              name,
+              name === "base.json" ?
+                JSON.stringify({ compilerOptions: { strict: false } }) :
+                JSON.stringify({ type: "commonjs" }),
+            )
+            expect((yield* Effect.flip(inputs.checkFresh)).path).toBe(Path.join(root, name))
+          }
+        }), {
+        fixture: "empty",
+        files: {
+          "tsconfig.json": JSON.stringify({
+            extends: "./base.json",
+            compilerOptions: { module: "NodeNext" },
+            include: ["src/**/*.ts"],
+          }),
+          "base.json": JSON.stringify({ compilerOptions: { strict: true } }),
+          "package.json": JSON.stringify({ type: "module" }),
+          "src/main.ts": "export const main = 1\n",
+        },
+      }),
   )
 
   effect(
@@ -330,7 +514,7 @@ describe("workspace snapshots", () => {
       withFixture((_, app) =>
         Effect.gen(function* () {
           const workspace = yield* Workspace
-          const escaped = yield* workspace.withSnapshot(fixtureProject(app))
+          const escaped = yield* workspace.withSnapshot((snapshot) => snapshot.project(app.id))
           expect(yield* Effect.flip(escaped.files)).toBeInstanceOf(SnapshotExpired)
           expect(
             yield* Effect.flip(escaped.symbolNamed("target", { within: libraryPath })),

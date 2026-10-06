@@ -6,7 +6,7 @@ import {
   enumToConstObject,
   type EnumToConstObjectInput,
 } from "../../examples/enum-to-const-object.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { withFixture } from "../utils/fixture.ts"
 import { workspacePath } from "../utils/domain.ts"
 
@@ -24,8 +24,8 @@ describe("enum-to-const-object", () => {
       (root, app) =>
         Effect.gen(function* () {
           const input = inputFor(app)
-          const { plan, verified } = yield* executeRecipe(enumToConstObject, input)
-          expect(plan.edits).toHaveLength(1)
+          const { verified } = yield* executeRecipe(enumToConstObject, input)
+
           expect(verified.diagnosticDiff.introduced).toHaveLength(0)
           const text = yield* Effect.tryPromise(() =>
             Fs.readFile(Path.join(root, "src/status.ts"), "utf8")
@@ -35,7 +35,7 @@ describe("enum-to-const-object", () => {
           expect(text).toContain("export type Status = (typeof Status)[keyof typeof Status]")
           expect(text).toContain("The request has not started")
           expect(text).toContain("Kept stable for persisted records")
-          expect((yield* draftOf(enumToConstObject, input)).edits).toHaveLength(0)
+          expect((yield* proposalOf(enumToConstObject, input)).edits).toHaveLength(0)
         }),
       { fixture },
     ))
@@ -44,8 +44,8 @@ describe("enum-to-const-object", () => {
     withFixture(
       (root, app) =>
         Effect.gen(function* () {
-          const { plan } = yield* executeRecipe(enumToConstObject, inputFor(app))
-          expect(plan.edits.map((edit) => edit.fileName)).toEqual(["src/status.ts"])
+          const { verified } = yield* executeRecipe(enumToConstObject, inputFor(app))
+          expect(verified.preview.files.map((file) => file.fileName)).toEqual(["src/status.ts"])
           expect(
             yield* Effect.tryPromise(() =>
               Fs.readFile(Path.join(root, "src/other/status.ts"), "utf8")
@@ -66,7 +66,7 @@ describe("enum-to-const-object", () => {
             )
           )
           for (const enumName of ["Numeric", "Computed", "Merged"]) {
-            const failure = yield* draftOf(enumToConstObject, {
+            const failure = yield* proposalOf(enumToConstObject, {
               project: app,
               declarationFile: workspacePath("src/unsupported.ts"),
               enumName,

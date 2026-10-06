@@ -1,6 +1,7 @@
 import { Effect, Order } from "effect"
 import { applyFileEdits } from "../Edit.ts"
-import { type Contents, InvalidPlan, type Plan } from "../Plan.ts"
+import { type Contents, InvalidProposal } from "./Changes.ts"
+import type { Proposal } from "../Proposal.ts"
 import type * as WorkspacePath from "../WorkspacePath.ts"
 
 export type FileState =
@@ -14,7 +15,7 @@ export interface FilePreview {
   readonly movedFrom?: WorkspacePath.Type
 }
 
-export interface PlanPreview {
+export interface MigrationPreview {
   readonly sources: ReadonlyArray<FilePreview>
   readonly files: ReadonlyArray<FilePreview>
 }
@@ -29,21 +30,21 @@ const stateOf = (bytes: Uint8Array | undefined): FileState =>
   bytes === undefined ? { exists: false } : { exists: true, text: decoder.decode(bytes), bytes }
 
 export const previewOf = (
-  plan: Plan,
+  plan: Proposal,
   contents: Contents,
-): Effect.Effect<PlanPreview, InvalidPlan> =>
+): Effect.Effect<MigrationPreview, InvalidProposal> =>
   Effect.gen(function* () {
     const after = new Map(contents)
     for (const [fileName, edits] of Map.groupBy(plan.edits, (edit) => edit.fileName)) {
       const original = contents.get(fileName)
       if (original === undefined) {
-        return yield* new InvalidPlan({ detail: `Missing source ${fileName}` })
+        return yield* new InvalidProposal({ detail: `Missing source ${fileName}` })
       }
       const text = yield* Effect.try(() => decoder.decode(original)).pipe(
-        Effect.mapError(() => new InvalidPlan({ detail: `Invalid UTF-8 in ${fileName}` })),
+        Effect.mapError(() => new InvalidProposal({ detail: `Invalid UTF-8 in ${fileName}` })),
       )
       const edited = yield* applyFileEdits(text, edits).pipe(
-        Effect.mapError(({ _tag }) => new InvalidPlan({ detail: `${_tag} in ${fileName}` })),
+        Effect.mapError(({ _tag }) => new InvalidProposal({ detail: `${_tag} in ${fileName}` })),
       )
       const hasByteOrderMark = original[0] === 0xef && original[1] === 0xbb && original[2] === 0xbf
       after.set(fileName, encoder.encode((hasByteOrderMark ? "\uFEFF" : "") + edited))
@@ -71,8 +72,16 @@ export const previewOf = (
       after: stateOf(after.get(fileName)),
       ...(movedFrom.has(fileName) ? { movedFrom: movedFrom.get(fileName)! } : {}),
     })
-    return {
-      sources: [...contents.keys()].map(toPreview),
-      files: [...changed].sort(Order.String).map(toPreview),
-    }
+    return yield* Effect.try({
+      try: () => ({
+        sources: [...contents.keys()].map(toPreview),
+        files: [...changed].sort(Order.String).map(toPreview).filter(({ before, after }) =>
+          before.exists && after.exists ?
+            before.bytes.length !== after.bytes.length ||
+            before.bytes.some((byte, index) => byte !== after.bytes[index]) :
+            before.exists !== after.exists
+        ),
+      }),
+      catch: (cause) => new InvalidProposal({ detail: `Invalid UTF-8: ${String(cause)}` }),
+    })
   })

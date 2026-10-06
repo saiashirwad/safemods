@@ -2,7 +2,7 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { renamePackageImport } from "../../examples/rename-package-import.ts"
 import { fixturePath as fixtureDirectory, withFixture, read } from "../utils/fixture.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/rename-package-import"
 const fixturePath = fixtureDirectory(fixture)
@@ -14,9 +14,8 @@ describe("rename-package-import", () => {
       withFixture(
         (root) =>
           Effect.gen(function* () {
-            const { plan, verified } = yield* executeRecipe(renamePackageImport, undefined)
+            const { verified } = yield* executeRecipe(renamePackageImport, undefined)
 
-            expect(plan.edits).toHaveLength(7)
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
             expect(
               verified.diagnosticDiff.unchanged.some((diagnostic) => diagnostic.code === 2322),
@@ -66,7 +65,7 @@ describe("rename-package-import", () => {
               yield* read(fixturePath, "src/acme-modules.ts"),
             )
             expect(yield* read(root, "src/webhooks/inbox.ts")).toContain("deliveryId: 4012")
-            const second = yield* draftOf(renamePackageImport, undefined)
+            const second = yield* proposalOf(renamePackageImport, undefined)
             expect(second.edits).toHaveLength(0)
           }),
         { fixture },

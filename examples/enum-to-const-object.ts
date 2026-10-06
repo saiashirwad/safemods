@@ -1,15 +1,11 @@
 /** Convert a non-ambient, unmerged string enum into an `as const` object and value union. */
+import { Proposal, type WorkspacePath, Query, Recipe, type Workspace } from "safemods"
 import { Data, Effect, Predicate } from "effect"
 import { SyntaxKind, type EnumDeclaration, type EnumMember } from "typescript/unstable/ast"
 import { isEnumDeclaration, isIdentifier, isStringLiteral } from "typescript/unstable/ast/is"
-import * as Draft from "safemods/Draft"
-import type * as WorkspacePath from "safemods/WorkspacePath"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 
 export interface EnumToConstObjectInput {
-  readonly project: ConfiguredProject.Type
+  readonly project: Workspace.ConfiguredProject.Type
   readonly declarationFile: WorkspacePath.Type
   readonly enumName: string
 }
@@ -61,15 +57,14 @@ const reasonFor = (declaration: EnumDeclaration): string | undefined =>
 export const enumToConstObject = Recipe.define("enum-to-const-object", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: (input: EnumToConstObjectInput) =>
+  run: (snapshot, input: EnumToConstObjectInput) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
       const project = yield* snapshot.project(input.project.id)
       const [target] = yield* Query.nodes(project, isEnumDeclaration).pipe(
         Query.within(input.declarationFile),
         Query.filter(({ value }) => value.name.text === input.enumName),
       )
-      if (target === undefined) return Draft.empty
+      if (target === undefined) return Proposal.empty
 
       const symbol = yield* project.symbolOf(target.value.name)
       const declarations = symbol === undefined ? [] : yield* project.declarationsOf(symbol)
@@ -82,6 +77,8 @@ export const enumToConstObject = Recipe.define("enum-to-const-object", {
       if (reasons.length > 0) {
         return yield* new UnsupportedEnum({ enumName: input.enumName, reasons })
       }
-      return Draft.replaceSelection(target, replacement(target.value, input.enumName))
+      return Proposal.replaceSelection(target, replacement(target.value, input.enumName))
     }),
 })
+
+export default enumToConstObject

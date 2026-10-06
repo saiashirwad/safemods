@@ -1,10 +1,10 @@
 import { Effect } from "effect"
 import { isObjectLiteralExpression } from "typescript/unstable/ast/is"
-import * as Draft from "../../src/Draft.ts"
+import * as Proposal from "../../src/Proposal.ts"
 import type * as WorkspacePath from "../../src/WorkspacePath.ts"
 import * as Query from "../../src/Query.ts"
 import * as Recipe from "../../src/Recipe.ts"
-import { type ConfiguredProject, WorkspaceSnapshot } from "../../src/Workspace/index.ts"
+import type { ConfiguredProject } from "../../src/Workspace/index.ts"
 
 export interface WrapTargetInput {
   readonly project: ConfiguredProject.Type
@@ -15,9 +15,8 @@ export interface WrapTargetInput {
 export const wrapTargetInput = Recipe.define("wrap-target-input", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: (input: WrapTargetInput) =>
+  run: (snapshot, input: WrapTargetInput) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
       const project = yield* snapshot.project(input.project.id)
 
       const target = yield* project.symbolNamed("target", { within: input.declarationFile })
@@ -30,10 +29,10 @@ export const wrapTargetInput = Recipe.define("wrap-target-input", {
         ),
       )
 
-      return Draft.concat(
+      return Proposal.concat(
         ...matches.map(({ project, value: call }) => {
           const argument = call.arguments[0]!
-          return Draft.replace(project, argument, `{ ${input.property}: ${argument.getText()} }`)
+          return Proposal.replace(project, argument, `{ ${input.property}: ${argument.getText()} }`)
         }),
       )
     }),

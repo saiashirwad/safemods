@@ -68,7 +68,7 @@ const sources = (root: string) =>
 
 describe("safemods run", () => {
   effect(
-    "previews without writing, then writes exactly the verified plan for a project below the workspace root",
+    "previews without writing, then writes exactly the verified migration for a project below the workspace root",
     () =>
       withFixture(
         (root) =>
@@ -79,6 +79,24 @@ describe("safemods run", () => {
               lines: [
                 "  modify packages/app/src/lib.ts",
                 "  modify packages/app/src/user.ts",
+                "--- a/packages/app/src/lib.ts",
+                "+++ b/packages/app/src/lib.ts",
+                "@@ -1,3 +1,3 @@",
+                "-/** Use {@link area}. Example: area(2) */",
+                "-export const area = (n: number): number => n * n",
+                "-export const size = (n: number): number => n",
+                "+/** Use {@link squared}. Example: area(2) */",
+                "+export const squared = (n: number): number => n * n",
+                "+export const size = (n: number): number => n",
+                "--- a/packages/app/src/user.ts",
+                "+++ b/packages/app/src/user.ts",
+                "@@ -1,3 +1,3 @@",
+                '-import { area as measure } from "./lib.js"',
+                '-import { area } from "./other.js"',
+                "-export const total = measure(2) + area.length",
+                '+import { squared as measure } from "./lib.js"',
+                '+import { area } from "./other.js"',
+                "+export const total = measure(2) + area.length",
                 "left for you (1):",
                 "  packages/app/src/lib.ts:1:32 mentions area in a comment or string the compiler cannot resolve",
                 "verified: 0 new diagnostic(s), 0 resolved",

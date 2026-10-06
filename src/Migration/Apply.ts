@@ -5,23 +5,20 @@ import {
   Effect,
   Exit,
   FileSystem,
+  Option,
   Path,
   type PlatformError,
 } from "effect"
-import * as Sha256 from "./Sha256.ts"
-import {
-  type FilePreview,
-  type FileState,
-  StalePlanError,
-  type VerifiedPlan,
-} from "./Verification/index.ts"
-import { Workspace } from "./Workspace/index.ts"
+import * as Sha256 from "../Sha256.ts"
+import type { FilePreview, FileState, MigrationPreview } from "./Preview.ts"
+import { StaleMigrationError } from "./Errors.ts"
+import { Workspace } from "../Workspace/index.ts"
 
 export interface ApplicationOperationFailure {
   readonly phase: "commit" | "rollback" | "cleanup"
   readonly operation: "write" | "remove" | "restore" | "cleanup-temporary" | "cleanup-backup"
   readonly path: string
-  readonly cause: Cause.Cause<PlatformError.PlatformError>
+  readonly cause: Cause.Cause<PlatformError.PlatformError | RecoveryConflict>
 }
 
 export class ApplicationFailure extends Data.TaggedError("ApplicationFailure")<{
@@ -41,10 +38,14 @@ interface Target {
   readonly mode: number | undefined
 }
 
+class RecoveryConflict extends Data.TaggedError("RecoveryConflict")<{
+  readonly target: string
+  readonly anchor: string
+}> {}
+
 interface Journal {
   readonly backups: Array<{ readonly target: string; readonly backup: string }>
-  readonly written: Set<string>
-  readonly temporaries: Set<string>
+  readonly writes: Array<{ readonly target: string; readonly temporary: string }>
 }
 
 const failed = (cause: unknown) => new ApplicationFailure({ reason: "filesystem", cause })
@@ -81,7 +82,7 @@ const requireState = Effect.fn("Application.requireState")(function* (
   expected: FileState,
 ) {
   const fs = yield* FileSystem.FileSystem
-  const stale = new StalePlanError({ fileName: file.fileName })
+  const stale = new StaleMigrationError({ path: file.fileName })
   const exists = yield* fs.exists(target).pipe(Effect.mapError(failed))
   if (exists !== expected.exists) return yield* stale
   if (!expected.exists) return
@@ -89,16 +90,16 @@ const requireState = Effect.fn("Application.requireState")(function* (
   if (Sha256.digest(bytes) !== Sha256.digest(expected.bytes)) return yield* stale
 })
 
-const preflight = Effect.fn("Application.preflight")(function* (verified: VerifiedPlan) {
+const preflight = Effect.fn("Application.preflight")(function* (preview: MigrationPreview) {
   const fs = yield* FileSystem.FileSystem
   const sources = new Map<string, string>()
-  for (const source of verified.preview.sources) {
+  for (const source of preview.sources) {
     const target = yield* confine(source)
     yield* requireState(source, target, source.before)
     sources.set(source.fileName, target)
   }
   const targets: Array<Target> = []
-  for (const file of verified.preview.files) {
+  for (const file of preview.files) {
     const path = yield* confine(file)
     const modeSource = file.movedFrom !== undefined ?
       sources.get(file.movedFrom) :
@@ -125,8 +126,8 @@ const moveAside = Effect.fn("Application.moveAside")(function* (target: Target, 
   if (!target.file.before.exists) return
   const backup = yield* uniqueName(target.path, "backup")
   yield* confine(target.file)
-  yield* fs.rename(target.path, backup).pipe(Effect.mapError(failed))
   journal.backups.push({ target: target.path, backup })
+  yield* fs.rename(target.path, backup).pipe(Effect.mapError(failed))
 })
 
 const write = Effect.fn("Application.write")(function* (target: Target, journal: Journal) {
@@ -139,20 +140,21 @@ const write = Effect.fn("Application.write")(function* (target: Target, journal:
   )
   const temporary = yield* uniqueName(target.path, "tmp")
   yield* confine(target.file)
-  journal.temporaries.add(temporary)
+  journal.writes.push({ target: target.path, temporary })
   yield* fs.writeFile(temporary, target.file.after.bytes, { flag: "wx", mode: target.mode }).pipe(
     Effect.mapError(failed),
   )
-  journal.written.add(target.path)
-  yield* fs.rename(temporary, target.path).pipe(Effect.mapError(failed))
-  journal.temporaries.delete(temporary)
+  if (target.mode !== undefined) {
+    yield* fs.chmod(temporary, target.mode).pipe(Effect.mapError(failed))
+  }
+  yield* fs.link(temporary, target.path).pipe(Effect.mapError(failed))
 })
 
 const attempt = (
   phase: ApplicationOperationFailure["phase"],
   operation: ApplicationOperationFailure["operation"],
   path: string,
-  action: Effect.Effect<void, PlatformError.PlatformError>,
+  action: Effect.Effect<void, PlatformError.PlatformError | RecoveryConflict>,
 ) =>
   Effect.map(
     Effect.exit(action),
@@ -162,22 +164,60 @@ const attempt = (
 
 const rollback = Effect.fn("Application.rollback")(function* (
   journal: Journal,
-  cause: Cause.Cause<ApplicationFailure | StalePlanError>,
-): Effect.fn.Return<never, ApplicationFailure | StalePlanError, FileSystem.FileSystem> {
+  cause: Cause.Cause<ApplicationFailure | StaleMigrationError>,
+): Effect.fn.Return<never, ApplicationFailure | StaleMigrationError, FileSystem.FileSystem> {
   const fs = yield* FileSystem.FileSystem
   const failures = [
     ...(yield* Effect.forEach(
-      journal.written,
-      (target) => attempt("rollback", "remove", target, fs.remove(target, { force: true })),
+      journal.writes.toReversed(),
+      ({ target, temporary }) =>
+        Effect.gen(function* () {
+          const failures = yield* attempt(
+            "rollback",
+            "remove",
+            target,
+            Effect.gen(function* () {
+              if (yield* fs.exists(target)) {
+                if (!(yield* fs.exists(temporary))) {
+                  return yield* new RecoveryConflict({ target, anchor: temporary })
+                }
+                const installed = yield* fs.stat(target)
+                const staged = yield* fs.stat(temporary)
+                if (
+                  installed.dev !== staged.dev || Option.isNone(installed.ino) ||
+                  Option.isNone(staged.ino) || installed.ino.value !== staged.ino.value
+                ) {
+                  return yield* new RecoveryConflict({ target, anchor: temporary })
+                }
+                yield* fs.remove(target)
+              }
+            }),
+          )
+          if (failures.length > 0) return failures
+          return yield* attempt(
+            "rollback",
+            "cleanup-temporary",
+            temporary,
+            fs.remove(temporary, { force: true }),
+          )
+        }),
     )),
     ...(yield* Effect.forEach(
       journal.backups.toReversed(),
-      ({ target, backup }) => attempt("rollback", "restore", target, fs.rename(backup, target)),
-    )),
-    ...(yield* Effect.forEach(
-      journal.temporaries,
-      (temporary) =>
-        attempt("rollback", "cleanup-temporary", temporary, fs.remove(temporary, { force: true })),
+      ({ target, backup }) =>
+        attempt(
+          "rollback",
+          "restore",
+          backup,
+          Effect.gen(function* () {
+            if (!(yield* fs.exists(backup))) {
+              if (yield* fs.exists(target)) return
+              return yield* new RecoveryConflict({ target, anchor: backup })
+            }
+            yield* fs.link(backup, target)
+            yield* fs.remove(backup)
+          }),
+        ),
     )),
   ].flat()
   if (failures.length > 0) {
@@ -188,18 +228,28 @@ const rollback = Effect.fn("Application.rollback")(function* (
 
 const cleanup = Effect.fn("Application.cleanup")(function* (journal: Journal) {
   const fs = yield* FileSystem.FileSystem
-  const failures = (yield* Effect.forEach(journal.backups, ({ backup }) =>
-    attempt("cleanup", "cleanup-backup", backup, fs.remove(backup, { force: true })))).flat()
+  const failures = [
+    ...(yield* Effect.forEach(
+      journal.backups,
+      ({ backup }) =>
+        attempt("cleanup", "cleanup-backup", backup, fs.remove(backup, { force: true })),
+    )),
+    ...(yield* Effect.forEach(
+      journal.writes,
+      ({ temporary }) =>
+        attempt("cleanup", "cleanup-temporary", temporary, fs.remove(temporary, { force: true })),
+    )),
+  ].flat()
   if (failures.length > 0) {
     return yield* new ApplicationFailure({ reason: "committed", failures })
   }
 })
 
-export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(function* (
-  verified: VerifiedPlan,
+export const apply = Effect.fn("Application.apply")(function* (
+  preview: MigrationPreview,
 ) {
-  const targets = yield* preflight(verified)
-  const journal: Journal = { backups: [], written: new Set(), temporaries: new Set() }
+  const targets = yield* preflight(preview)
+  const journal: Journal = { backups: [], writes: [] }
   const commit = Effect.gen(function* () {
     for (const target of targets) yield* moveAside(target, journal)
     for (const target of targets) yield* write(target, journal)
@@ -211,7 +261,7 @@ export const applyVerifiedPlan = Effect.fn("Application.applyVerifiedPlan")(func
     )
   )
   return {
-    written: verified.preview.files.filter((file) => file.after.exists),
-    removed: verified.preview.files.filter((file) => !file.after.exists),
+    written: preview.files.filter((file) => file.after.exists),
+    removed: preview.files.filter((file) => !file.after.exists),
   } satisfies ApplicationReceipt
 })

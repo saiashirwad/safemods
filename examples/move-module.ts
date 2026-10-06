@@ -2,17 +2,19 @@
  * Move a module, rewriting every relative import and re-export that points at
  * it, plus the moved module's own relative specifiers.
  */
+import {
+  Proposal,
+  ModuleSpecifier,
+  type WorkspacePath,
+  Query,
+  Recipe,
+  type Workspace,
+} from "safemods"
 import { dirname, normalize } from "node:path/posix"
 import { Effect } from "effect"
-import * as Draft from "safemods/Draft"
-import * as ModuleSpecifier from "safemods/ModuleSpecifier"
-import type * as WorkspacePath from "safemods/WorkspacePath"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 
 export interface MoveModuleInput {
-  readonly project: ConfiguredProject.Type
+  readonly project: Workspace.ConfiguredProject.Type
   readonly from: WorkspacePath.Type
   readonly to: WorkspacePath.Type
 }
@@ -34,7 +36,7 @@ const sameExtensionAs = (path: string, specifier: string): string => {
 
 const rewrite =
   (input: MoveModuleInput) =>
-  (selection: Query.Selection<Query.ResolvedModuleReference>): ReadonlyArray<Draft.Draft> => {
+  (selection: Query.Selection<Query.ResolvedModuleReference>): ReadonlyArray<Proposal.Proposal> => {
     const { project, fileName, value } = selection
     const specifier = value.specifier
     const insideMoved = fileName === input.from
@@ -46,23 +48,27 @@ const rewrite =
       sameExtensionAs(ModuleSpecifier.between(from, input.to), specifier.text) :
       ModuleSpecifier.between(from, pathNamedBy(fileName, specifier.text))
     if (next === specifier.text) return []
-    return [Draft.replaceStringLiteral(project, specifier, next)]
+    return [Proposal.replaceStringLiteral(project, specifier, next)]
   }
 
 export const moveModule = Recipe.define("move-module", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: (input: MoveModuleInput) =>
+  run: (snapshot, input: MoveModuleInput) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
       const project = yield* snapshot.project(input.project.id)
       const moved = yield* project.file(input.from)
-      if (moved === undefined) return Draft.empty
+      if (moved === undefined) return Proposal.empty
 
       const references = yield* Query.resolvedModuleReferences(project).pipe(
         Query.filter(isRelative),
       )
 
-      return Draft.concat(Draft.moveFile(moved, input.to), ...references.flatMap(rewrite(input)))
+      return Proposal.concat(
+        Proposal.moveFile(moved, input.to),
+        ...references.flatMap(rewrite(input)),
+      )
     }),
 })
+
+export default moveModule

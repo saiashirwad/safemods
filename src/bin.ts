@@ -1,15 +1,14 @@
 #!/usr/bin/env node
 import { NodeServices } from "@effect/platform-node"
 import { NodeRuntime } from "@effect/platform-node-shared"
-import { Console, Data, Effect, Predicate, Runtime, Schema } from "effect"
+import { Console, Data, Effect, Option, Runtime, Schema } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
-import { applyVerifiedPlan } from "./Application.ts"
 import * as Check from "./Check.ts"
 import * as Config from "./Config.ts"
 import * as Inspect from "./Inspect.ts"
 import * as Finding from "./Finding.ts"
-import type * as Recipe from "./Recipe.ts"
-import { actionOf, type FilePreview, verify } from "./Verification/index.ts"
+import * as Recipe from "./Recipe.ts"
+import { actionOf, type FilePreview, verify } from "./Migration/index.ts"
 import * as Workspace from "./Workspace/index.ts"
 
 class FindingsReported extends Data.TaggedError("FindingsReported")<{ readonly count: number }> {
@@ -17,7 +16,7 @@ class FindingsReported extends Data.TaggedError("FindingsReported")<{ readonly c
   readonly [Runtime.errorReported] = false
 }
 
-class PlanRejected extends Data.TaggedError("PlanRejected")<{}> {
+class MigrationRejected extends Data.TaggedError("MigrationRejected")<{}> {
   readonly [Runtime.errorExitCode] = 1
   readonly [Runtime.errorReported] = false
 }
@@ -29,7 +28,7 @@ class CommandFailed extends Data.TaggedError("CommandFailed")<{ readonly cause: 
 
 const reportFailure = (cause: unknown, format: "text" | "json" = "text") =>
   Effect.gen(function* () {
-    if (cause instanceof FindingsReported || cause instanceof PlanRejected) return yield* cause
+    if (cause instanceof FindingsReported || cause instanceof MigrationRejected) return yield* cause
     const message = cause instanceof Inspect.NotFound ?
       cause.what :
       cause instanceof Config.InvalidConfig ?
@@ -56,7 +55,7 @@ const check = Command.make(
   ({ config: configFile, format }) =>
     Effect.gen(function* () {
       const { config, workspace } = yield* Config.load(configFile)
-      const findings = yield* Check.run(config.checks).pipe(Effect.provide(workspace))
+      const findings = yield* Check.run(config.checks ?? []).pipe(Effect.provide(workspace))
       yield* Console.log(
         format === "json" ?
           JSON.stringify(findings, undefined, 2) :
@@ -68,14 +67,6 @@ const check = Command.make(
 ).pipe(Command.withDescription("Run whole-program checks and fail on findings"))
 
 type Answer = ReturnType<typeof Inspect.type> | typeof Inspect.map
-
-const isRecipe = (value: unknown): value is Recipe.Recipe<unknown> =>
-  Predicate.isObject(value) &&
-  "name" in value &&
-  "version" in value &&
-  "policies" in value &&
-  "run" in value &&
-  typeof value.run === "function"
 
 const listed = 10
 
@@ -94,27 +85,54 @@ const unresolvedLine = (
   return `  ${fileName}:${line}:${column} ${message}`
 }
 
+const diff = (file: FilePreview): string => {
+  const lines = (text: string): ReadonlyArray<string> =>
+    text === "" ? [] : text.replace(/\n$/, "").split("\n")
+  const before = file.before.exists ? lines(file.before.text) : []
+  const after = file.after.exists ? lines(file.after.text) : []
+  const range = (count: number) => `${count === 0 ? 0 : 1},${count}`
+  return [
+    `--- ${file.before.exists ? `a/${file.fileName}` : "/dev/null"}`,
+    `+++ ${file.after.exists ? `b/${file.fileName}` : "/dev/null"}`,
+    `@@ -${range(before.length)} +${range(after.length)} @@`,
+    ...before.map((line) => `-${line}`),
+    ...(file.before.exists && file.before.text !== "" && !file.before.text.endsWith("\n") ?
+      ["\\ No newline at end of file"] :
+      []),
+    ...after.map((line) => `+${line}`),
+    ...(file.after.exists && file.after.text !== "" && !file.after.text.endsWith("\n") ?
+      ["\\ No newline at end of file"] :
+      []),
+  ].join("\n")
+}
+
 const run = Command.make(
   "run",
   {
     config: configFlag,
     recipe: Argument.file("recipe"),
     input: Flag.string("input").pipe(
-      Flag.withDefault("null"),
+      Flag.optional,
       Flag.withDescription("The recipe's input as JSON"),
     ),
     apply: Flag.boolean("apply").pipe(
-      Flag.withDescription("Write the verified plan; without it nothing is written"),
+      Flag.withDescription("Write the verified migration; without it nothing is written"),
     ),
   },
   ({ config: configFile, recipe: recipeFile, input: inputJson, apply }) =>
     Effect.gen(function* () {
       const { workspace } = yield* Config.load(configFile)
-      const recipe = Object.values(yield* Config.importModule(recipeFile)).find(isRecipe)
-      if (recipe === undefined) {
-        return yield* new Config.InvalidConfig({ path: recipeFile, cause: "no export is a recipe" })
+      const { default: recipe } = yield* Config.importModule(recipeFile)
+      if (!Recipe.isRecipe(recipe)) {
+        return yield* new Config.InvalidConfig({
+          path: recipeFile,
+          cause:
+            "the default export must be a recipe with valid metadata, policies, schema, and run function",
+        })
       }
-      const json = yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(inputJson)
+      const json = Option.isNone(inputJson) ?
+        undefined :
+        yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(inputJson.value)
       const input = recipe.schema === undefined ?
         json :
         yield* Schema.decodeUnknownEffect(recipe.schema)(json)
@@ -134,7 +152,7 @@ const run = Command.make(
                 ).join("\n"),
               )
               yield* Console.log("nothing was written")
-              return yield* new PlanRejected()
+              return yield* new MigrationRejected()
             })),
         )
         yield* Console.log(
@@ -142,11 +160,12 @@ const run = Command.make(
             verified.preview.files.map((file) => `  ${actionOf(file).padEnd(6)} ${file.fileName}`),
           ).join("\n"),
         )
-        if (verified.plan.unsupported.length > 0) {
-          yield* Console.log(`left for you (${verified.plan.unsupported.length}):`)
+        for (const file of verified.preview.files) yield* Console.log(diff(file))
+        if (verified.unsupported.length > 0) {
+          yield* Console.log(`left for you (${verified.unsupported.length}):`)
           yield* Console.log(
             capped(
-              verified.plan.unsupported.map((finding) =>
+              verified.unsupported.map((finding) =>
                 unresolvedLine(verified.preview.sources, finding)
               ),
             ).join("\n"),
@@ -156,11 +175,11 @@ const run = Command.make(
           `verified: ${verified.diagnosticDiff.introduced.length} new diagnostic(s), ${verified.diagnosticDiff.resolved.length} resolved`,
         )
         if (!apply) return yield* Console.log("not written: pass --apply")
-        yield* applyVerifiedPlan(verified)
+        yield* verified.apply
         yield* Console.log(`applied to ${verified.preview.files.length} file(s)`)
       }).pipe(Effect.provide(workspace))
     }).pipe(Effect.catch((cause) => reportFailure(cause))),
-).pipe(Command.withDescription("Plan a recipe, verify it, and write it only with --apply"))
+).pipe(Command.withDescription("Propose a migration, verify it, and write it only with --apply"))
 
 const inspecting = (configFile: string, answer: Answer) =>
   Effect.gen(function* () {
@@ -171,18 +190,32 @@ const inspecting = (configFile: string, answer: Answer) =>
     yield* Console.log(lines.join("\n"))
   }).pipe(Effect.catch((cause) => reportFailure(cause)))
 
-const at = (name: string, description: string, answer: (position: string) => Answer) =>
+const projectFlag = Flag.string("project").pipe(
+  Flag.optional,
+  Flag.withDescription("Compiler project to use when a file belongs to multiple projects"),
+)
+
+const at = (
+  name: string,
+  description: string,
+  answer: (position: string, project?: string) => Answer,
+) =>
   Command.make(
     name,
-    { config: configFlag, position: Argument.string("path:line:column") },
-    ({ config, position }) => inspecting(config, answer(position)),
+    { config: configFlag, position: Argument.string("path:line:column"), project: projectFlag },
+    ({ config, position, project }) =>
+      inspecting(config, answer(position, Option.getOrUndefined(project))),
   ).pipe(Command.withDescription(description))
 
-const about = (name: string, description: string, answer: (path: string) => Answer) =>
+const about = (
+  name: string,
+  description: string,
+  answer: (path: string, project?: string) => Answer,
+) =>
   Command.make(
     name,
-    { config: configFlag, path: Argument.string("path") },
-    ({ config, path }) => inspecting(config, answer(path)),
+    { config: configFlag, path: Argument.string("path"), project: projectFlag },
+    ({ config, path, project }) => inspecting(config, answer(path, Option.getOrUndefined(project))),
   ).pipe(Command.withDescription(description))
 
 const map = Command.make(

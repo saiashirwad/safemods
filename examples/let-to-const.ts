@@ -5,6 +5,7 @@
  * assignment, `++`/`--`, or the target of a destructuring assignment. A `let` without an
  * initializer is left alone, since `const` requires one.
  */
+import { Proposal, Query, Recipe, type Workspace } from "safemods"
 import { Effect } from "effect"
 import {
   type BindingName,
@@ -28,10 +29,6 @@ import {
   isVariableDeclarationList,
 } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol } from "typescript/unstable/async"
-import * as Draft from "safemods/Draft"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { type ProjectSnapshot, WorkspaceSnapshot } from "safemods/Workspace"
 
 const isDestructuringTarget = (node: Node): boolean => {
   let target = node
@@ -62,13 +59,13 @@ const namesIn = (name: BindingName): ReadonlyArray<Node> =>
       isBindingElement(element) && element.name !== undefined ? namesIn(element.name) : []
     )
 
-const canonical = (project: ProjectSnapshot, node: Node) =>
+const canonical = (project: Workspace.ProjectSnapshot, node: Node) =>
   Effect.gen(function* () {
     const symbol = yield* project.symbolOf(node)
     return symbol === undefined ? undefined : yield* project.canonicalSymbol(symbol)
   })
 
-const writtenSymbols = (project: ProjectSnapshot) =>
+const writtenSymbols = (project: Workspace.ProjectSnapshot) =>
   Effect.gen(function* () {
     const writes = yield* Query.semanticReferences(project).pipe(
       Query.filter(({ value }) => value.role === "write" || isDestructuringTarget(value.node)),
@@ -80,7 +77,7 @@ const writtenSymbols = (project: ProjectSnapshot) =>
   })
 
 const neverWritten = (
-  project: ProjectSnapshot,
+  project: Workspace.ProjectSnapshot,
   written: ReadonlySet<NativeSymbol>,
   list: VariableDeclarationList,
 ) =>
@@ -96,23 +93,20 @@ const neverWritten = (
     return symbols.every((symbol) => symbol !== undefined && !written.has(symbol))
   })
 
-export const letToConst = Recipe.define("let-to-const", {
+export const letToConst = Recipe.perProject("let-to-const", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: () =>
+  run: (project) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
-      const drafts = yield* Effect.forEach(snapshot.projects, (project) =>
-        Effect.gen(function* () {
-          const written = yield* writtenSymbols(project)
-          const lists = yield* Query.nodes(project, isVariableDeclarationList).pipe(
-            Query.filter(({ value }) => (value.flags & NodeFlags.BlockScoped) === NodeFlags.Let),
-            Query.where(({ value }) => neverWritten(project, written, value)),
-          )
-          return Draft.concat(
-            ...lists.map((list) => Draft.replaceRange(list, { start: 0, end: 3 }, "const")),
-          )
-        }))
-      return Draft.concat(...drafts)
+      const written = yield* writtenSymbols(project)
+      const lists = yield* Query.nodes(project, isVariableDeclarationList).pipe(
+        Query.filter(({ value }) => (value.flags & NodeFlags.BlockScoped) === NodeFlags.Let),
+        Query.where(({ value }) => neverWritten(project, written, value)),
+      )
+      return Proposal.concat(
+        ...lists.map((list) => Proposal.replaceRange(list, { start: 0, end: 3 }, "const")),
+      )
     }),
 })
+
+export default letToConst

@@ -52,6 +52,37 @@ const awaited = P.node(isAwaitExpression, {
 })
 
 describe("patterns", () => {
+  effect(
+    "duplicate captures fail instead of overwriting matched values",
+    () =>
+      withProject({ "src/shapes.ts": SOURCE }, (project) =>
+        Effect.gen(function* () {
+          const [call] = yield* Query.calls(project).pipe(Query.within("src/shapes.ts"))
+          const duplicateFields = P.node(isCallExpression, {
+            expression: P.capture("same"),
+            arguments: [P.capture("same")],
+          })
+          const duplicateNested = P.node(isCallExpression, {
+            expression: P.bind("same", P.node(isIdentifier)),
+            arguments: [P.bind("same", P.node(isStringLiteral))],
+          })
+          const duplicateBind = P.bind(
+            "same",
+            P.node(isCallExpression, {
+              expression: P.capture("same"),
+            }),
+          )
+          for (const pattern of [duplicateFields, duplicateNested, duplicateBind]) {
+            expect(() => pattern.match(call!.value)).toThrow("Duplicate capture name: same")
+          }
+          const alternative = P.either(
+            P.node(isCallExpression, { expression: P.capture("same") }),
+            P.node(isCallExpression, { arguments: [P.capture("same")] }),
+          )
+          expect(alternative.match(call!.value)?.same).toBe(call!.value.expression)
+        })),
+  )
+
   effect("captures take the type of the field they sit in", () =>
     Effect.sync(() => {
       expectTypeOf(ifReturns.match).returns.toEqualTypeOf<

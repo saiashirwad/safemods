@@ -1,17 +1,21 @@
+import * as Fs from "node:fs/promises"
+import * as Path from "node:path"
 import { describe, effect, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
-import * as Draft from "../src/Draft.ts"
+import { NodeServices } from "@effect/platform-node"
+import { Effect, Layer } from "effect"
+import { textEdit } from "../src/Edit.ts"
+import * as Proposal from "../src/Proposal.ts"
 import * as Query from "../src/Query.ts"
 import * as Recipe from "../src/Recipe.ts"
 import {
   collectDiagnostics,
   type DiagnosticRecord,
   diffDiagnostics,
-} from "../src/Verification/Diagnostics.ts"
-import * as Verification from "../src/Verification/index.ts"
-import { Workspace } from "../src/Workspace/index.ts"
-import { workspacePath } from "./utils/domain.ts"
-import { fixtureProject, withFixture, write } from "./utils/fixture.ts"
+} from "../src/Migration/Diagnostics.ts"
+import * as Migration from "../src/Migration/index.ts"
+import { layer as workspaceLayer, Workspace, WorkspaceDefinition } from "../src/Workspace/index.ts"
+import { projectId, workspacePath } from "./utils/domain.ts"
+import { exists, read, withFixture, write } from "./utils/fixture.ts"
 
 const createFile = (
   name: string,
@@ -21,10 +25,11 @@ const createFile = (
   Recipe.define(name, {
     version: "1.0.0",
     policies,
-    run: () => Effect.succeed(Draft.createFile(workspacePath("src/created.ts"), content)),
+    run: () => Effect.succeed(Proposal.createFile(workspacePath("src/created.ts"), content)),
   })
 
 const diagnostic = (overrides: Partial<DiagnosticRecord>): DiagnosticRecord => ({
+  projectId: projectId("app"),
   code: 2304,
   message: "Cannot find name 'foo'",
   category: "error",
@@ -84,7 +89,137 @@ describe("diagnostic diffs", () => {
   })
 })
 
-describe("Verification.verify", () => {
+describe("Migration.verify", () => {
+  effect(
+    "does not let an existing shared-file error mask a new error in another project",
+    () =>
+      withFixture((root) =>
+        Effect.gen(function* () {
+          const definition = yield* WorkspaceDefinition.make({
+            projects: [
+              { id: "strict", config: "tsconfig.json" },
+              { id: "loose", config: "tsconfig.loose.json" },
+            ],
+          })
+          const sourceText = yield* read(root, "tsconfig.loose.json")
+          const recipe = Recipe.define("enable-strict-null-checks", {
+            version: "1.0.0",
+            run: () =>
+              Effect.succeed({
+                ...Proposal.empty,
+                edits: [textEdit({
+                  fileName: workspacePath("tsconfig.loose.json"),
+                  sourceText,
+                  start: 0,
+                  end: sourceText.length,
+                  newText: sourceText.replace("false", "true"),
+                })],
+              }),
+          })
+          const failure = yield* Effect.flip(Migration.verify(recipe, undefined)).pipe(
+            Effect.provide(
+              Layer.provideMerge(workspaceLayer(definition, root), NodeServices.layer),
+            ),
+          )
+          expect(failure).toMatchObject({
+            _tag: "VerificationFailure",
+            policy: "diagnostics",
+            diagnostics: [expect.objectContaining({ projectId: "loose", fileName: "shared.ts" })],
+          })
+        }), {
+        fixture: "empty",
+        files: {
+          "tsconfig.json": JSON.stringify({
+            compilerOptions: { strictNullChecks: true },
+            files: ["shared.ts"],
+          }),
+          "tsconfig.loose.json": JSON.stringify({
+            compilerOptions: { strictNullChecks: false },
+            files: ["shared.ts"],
+          }),
+          "shared.ts": "export const value: string = undefined\n",
+        },
+      }),
+  )
+
+  effect(
+    "keeps identical diagnostics from distinct files outside the workspace",
+    () =>
+      withFixture((root) =>
+        Effect.acquireUseRelease(
+          Effect.promise(() => Fs.mkdtemp(Path.join(Path.dirname(root), "safemods-diagnostics-"))),
+          (outside) =>
+            Effect.gen(function* () {
+              const paths = [Path.join(outside, "a.ts"), Path.join(outside, "b.ts")]
+              yield* Effect.promise(() =>
+                Promise.all(
+                  paths.map((path) => Fs.writeFile(path, "export const value = missingName\n")),
+                )
+              )
+              yield* write(
+                root,
+                "src/external.ts",
+                paths.map((path) => `import ${JSON.stringify(path)}\n`).join(""),
+              )
+              const workspace = yield* Workspace
+              const diagnostics = yield* workspace.withSnapshot(collectDiagnostics)
+              expect(
+                diagnostics.filter(({ code }) => code === 2304).map(({ fileName }) => fileName)
+                  .sort((left, right) => (left ?? "").localeCompare(right ?? "")),
+              ).toEqual(paths)
+            }),
+          (outside) => Effect.promise(() => Fs.rm(outside, { recursive: true, force: true })),
+        )
+      ),
+  )
+
+  effect(
+    "does not charge identity edits against the affected-files budget",
+    () =>
+      withFixture((_root, app) =>
+        Effect.gen(function* () {
+          const recipe = Recipe.define("identity", {
+            version: "1.0.0",
+            policies: { maxAffectedFiles: 0, idempotence: "required" },
+            run: (snapshot) =>
+              Effect.gen(function* () {
+                const project = yield* snapshot.project(app.id)
+                const file = (yield* project.file(workspacePath("src/library.ts")))!
+                return Proposal.replaceText(file, file.sourceFile.text)
+              }),
+          })
+          const migration = yield* Migration.verify(recipe, undefined)
+          expect(migration.preview.files).toEqual([])
+          expect(yield* migration.apply).toEqual({ written: [], removed: [] })
+        })
+      ),
+  )
+  effect(
+    "rejects deleting the configured tsconfig while creating ill-typed source",
+    () =>
+      withFixture(() =>
+        Effect.gen(function* () {
+          const recipe = Recipe.define("delete-config-and-add-error", {
+            version: "1.0.0",
+            run: () =>
+              Effect.succeed(Proposal.concat(
+                {
+                  ...Proposal.empty,
+                  fileOperations: [{ kind: "delete", fileName: workspacePath("tsconfig.json") }],
+                },
+                Proposal.createFile(
+                  workspacePath("src/created.ts"),
+                  'export const value: number = "wrong"\n',
+                ),
+              )),
+          })
+
+          const exit = yield* Effect.exit(Migration.verify(recipe, undefined))
+          expect(exit._tag).toBe("Failure")
+        })
+      ),
+  )
+
   effect(
     "rejects replacing one error with another even when the total is unchanged",
     () =>
@@ -93,17 +228,17 @@ describe("Verification.verify", () => {
           Effect.gen(function* () {
             const recipe = Recipe.define("swap-one-error-for-another", {
               version: "1.0.0",
-              run: () =>
+              run: (snapshot) =>
                 Effect.gen(function* () {
-                  const project = yield* fixtureProject(app)
+                  const project = yield* snapshot.project(app.id)
                   const swap = yield* project.file(workspacePath("src/swap.ts"))
-                  return Draft.concat(
-                    Draft.deleteFile(swap!),
-                    Draft.createFile(workspacePath("src/other.ts"), "missingName;\n"),
+                  return Proposal.concat(
+                    Proposal.deleteFile(swap!),
+                    Proposal.createFile(workspacePath("src/other.ts"), "missingName;\n"),
                   )
                 }),
             })
-            const failure = yield* Effect.flip(Verification.verify(recipe, undefined))
+            const failure = yield* Effect.flip(Migration.verify(recipe, undefined))
             expect(failure).toMatchObject({ _tag: "VerificationFailure", policy: "diagnostics" })
             expect(failure).toHaveProperty(
               "detail",
@@ -120,15 +255,15 @@ describe("Verification.verify", () => {
         Effect.gen(function* () {
           const recipe = Recipe.define("rename-unresolved", {
             version: "1.0.0",
-            run: () =>
+            run: (snapshot) =>
               Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
+                const project = yield* snapshot.project(app.id)
                 const source = (yield* project.file(workspacePath("src/message.ts")))!.sourceFile
-                return Draft.replace(project, source.statements[0]!, "after")
+                return Proposal.replace(project, source.statements[0]!, "after")
               }),
           })
 
-          const failure = yield* Effect.flip(Verification.verify(recipe, undefined))
+          const failure = yield* Effect.flip(Migration.verify(recipe, undefined))
           expect(failure).toMatchObject({
             _tag: "VerificationFailure",
             policy: "diagnostics",
@@ -148,14 +283,14 @@ describe("Verification.verify", () => {
         Effect.gen(function* () {
           const strict = createFile("strict", "export const broken = {\n")
           const failure = yield* Effect.flip(
-            Verification.verify(strict, undefined),
+            Migration.verify(strict, undefined),
           )
           expect(failure).toMatchObject({ _tag: "VerificationFailure", policy: "diagnostics" })
 
           const lenient = createFile("lenient", "export const broken = {\n", {
             diagnostics: "allow-new-errors",
           })
-          const verified = yield* Verification.verify(lenient, undefined)
+          const verified = yield* Migration.verify(lenient, undefined)
           expect(verified.diagnosticDiff.introduced.length).toBeGreaterThan(0)
         })
       ),
@@ -170,23 +305,25 @@ describe("Verification.verify", () => {
             policies: policies.maxFiles === undefined ?
               {} :
               { maxAffectedFiles: policies.maxFiles },
-            run: () =>
+            run: (snapshot) =>
               Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
+                const project = yield* snapshot.project(app.id)
                 const imports = yield* Query.imports(project)
-                return Draft.concat(
-                  ...imports.map(({ value }) => Draft.insertBefore(project, value, "/* seen */ ")),
+                return Proposal.concat(
+                  ...imports.map(({ value }) =>
+                    Proposal.insertBefore(project, value, "/* seen */ ")
+                  ),
                 )
               }),
           })
 
         const passing = commentImports("passing", {})
-        yield* Verification.verify(passing, undefined)
+        yield* Migration.verify(passing, undefined)
 
         const tooWide = commentImports("too-wide", { maxFiles: 1 })
         expect(
           yield* Effect.flip(
-            Verification.verify(tooWide, undefined),
+            Migration.verify(tooWide, undefined),
           ),
         ).toMatchObject({ _tag: "VerificationFailure", policy: "affected-files" })
       })
@@ -200,7 +337,7 @@ describe("Verification.verify", () => {
           const recipe = createFile("always-creates", "export {}\n", {
             idempotence: "required",
           })
-          expect(yield* Effect.flip(Verification.verify(recipe, undefined))).toMatchObject({
+          expect(yield* Effect.flip(Migration.verify(recipe, undefined))).toMatchObject({
             _tag: "VerificationFailure",
             policy: "idempotence",
           })
@@ -209,7 +346,7 @@ describe("Verification.verify", () => {
   )
 
   effect(
-    "rejects replay changes to files that appeared after the first run",
+    "rejects source membership changed while the recipe runs",
     () =>
       withFixture((root, app) =>
         Effect.gen(function* () {
@@ -217,23 +354,50 @@ describe("Verification.verify", () => {
           const recipe = Recipe.define("external-after-planning", {
             version: "1.0.0",
             policies: { idempotence: "required" },
-            run: () =>
+            run: (snapshot) =>
               Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
+                const project = yield* snapshot.project(app.id)
                 const file = yield* project.file(external)
                 return file === undefined ?
                   yield* Effect.as(
                     write(root, external, "export const external = true\n"),
-                    Draft.empty,
+                    Proposal.empty,
                   ) :
-                  Draft.insertBefore(project, file.sourceFile.statements[0]!, "// second run\n")
+                  Proposal.insertBefore(project, file.sourceFile.statements[0]!, "// second run\n")
               }),
           })
-          expect(yield* Effect.flip(Verification.verify(recipe, undefined))).toMatchObject({
+          expect(yield* Effect.flip(Migration.verify(recipe, undefined))).toMatchObject({
+            _tag: "StaleMigrationError",
+            path: "src",
+          })
+        })
+      ),
+  )
+
+  effect(
+    "idempotence counts deletion of a newly proposed empty file as a change",
+    () =>
+      withFixture((root, app) =>
+        Effect.gen(function* () {
+          const target = workspacePath("src/replayed-empty.ts")
+          const recipe = Recipe.define("empty-file-toggle", {
+            version: "1.0.0",
+            policies: { idempotence: "required" },
+            run: (snapshot) =>
+              Effect.gen(function* () {
+                const project = yield* snapshot.project(app.id)
+                const file = yield* project.file(target)
+                return file === undefined ?
+                  Proposal.createFile(target, "") :
+                  Proposal.deleteFile(file)
+              }),
+          })
+          expect(yield* Effect.flip(Migration.verify(recipe, undefined))).toMatchObject({
             _tag: "VerificationFailure",
             policy: "idempotence",
             detail: "Second run proposed 1 change(s)",
           })
+          expect(yield* exists(root, target)).toBe(false)
         })
       ),
   )
@@ -248,17 +412,17 @@ describe("Verification.verify", () => {
           const recipe = Recipe.define("move-and-edit", {
             version: "1.0.0",
             policies: { diagnostics: "allow-new-errors" },
-            run: () =>
+            run: (snapshot) =>
               Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
+                const project = yield* snapshot.project(app.id)
                 const library = (yield* project.file(from))!
-                return Draft.concat(
-                  Draft.moveFile(library, to),
-                  Draft.insertBefore(project, library.sourceFile.statements[0]!, "// moved\n"),
+                return Proposal.concat(
+                  Proposal.moveFile(library, to),
+                  Proposal.insertBefore(project, library.sourceFile.statements[0]!, "// moved\n"),
                 )
               }),
           })
-          const result = (yield* Verification.verify(recipe, undefined)).preview
+          const result = (yield* Migration.verify(recipe, undefined)).preview
           expect(result.files.map((file) => [file.fileName, file.after.exists])).toEqual([
             [from, false],
             [to, true],
@@ -277,14 +441,14 @@ describe("Verification.verify", () => {
           const to = workspacePath("src/moved/broken.ts")
           const recipe = Recipe.define("move-broken-file", {
             version: "1.0.0",
-            run: () =>
+            run: (snapshot) =>
               Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                return Draft.moveFile((yield* project.file(from))!, to)
+                const project = yield* snapshot.project(app.id)
+                return Proposal.moveFile((yield* project.file(from))!, to)
               }),
           })
 
-          const verified = yield* Verification.verify(recipe, undefined)
+          const verified = yield* Migration.verify(recipe, undefined)
           expect(verified.diagnosticDiff.introduced).toEqual([])
           expect(verified.diagnosticDiff.resolved).toEqual([])
           expect(
@@ -304,13 +468,13 @@ describe("Verification.verify", () => {
           const to = workspacePath("src/nested/a.ts")
           const recipe = Recipe.define("move-with-new-error", {
             version: "1.0.0",
-            run: () =>
+            run: (snapshot) =>
               Effect.gen(function* () {
-                const project = yield* fixtureProject(app)
-                return Draft.moveFile((yield* project.file(from))!, to)
+                const project = yield* snapshot.project(app.id)
+                return Proposal.moveFile((yield* project.file(from))!, to)
               }),
           })
-          const failure = yield* Effect.flip(Verification.verify(recipe, undefined))
+          const failure = yield* Effect.flip(Migration.verify(recipe, undefined))
           expect(failure).toMatchObject({
             _tag: "VerificationFailure",
             policy: "diagnostics",

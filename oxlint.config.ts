@@ -31,6 +31,7 @@ export default defineConfig({
       files: ["examples/**/*.ts", "safemods.config.ts", "test/**/*.ts"],
       rules: {
         "import/namespace": "off",
+        "no-restricted-imports": "off",
       },
     },
     {

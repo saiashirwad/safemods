@@ -2,7 +2,7 @@ import { Data, Effect, Order } from "effect"
 import * as Finding from "./Finding.ts"
 import type { Selection } from "./Query.ts"
 import type * as WorkspacePath from "./WorkspacePath.ts"
-import { type ProjectSnapshot, Workspace, WorkspaceSnapshot } from "./Workspace/index.ts"
+import { type ProjectSnapshot, Workspace, type WorkspaceSnapshot } from "./Workspace/index.ts"
 
 export const report = <A>(selection: Selection<A>, message: string): Finding.Finding => ({
   fileName: selection.fileName,
@@ -18,9 +18,9 @@ export const reportAt = (fileName: WorkspacePath.Type, message: string): Finding
   message,
 })
 
-export interface Check<E = never, R = WorkspaceSnapshot> {
+export interface Check<E = never, R = never> {
   readonly name: string
-  readonly run: Effect.Effect<ReadonlyArray<Finding.Finding>, E, R>
+  readonly run: (snapshot: WorkspaceSnapshot) => Effect.Effect<ReadonlyArray<Finding.Finding>, E, R>
 }
 
 export class CheckError extends Data.TaggedError("CheckError")<{
@@ -30,7 +30,7 @@ export class CheckError extends Data.TaggedError("CheckError")<{
 
 export const define = <E, R>(
   name: string,
-  run: Effect.Effect<ReadonlyArray<Finding.Finding>, E, R>,
+  run: (snapshot: WorkspaceSnapshot) => Effect.Effect<ReadonlyArray<Finding.Finding>, E, R>,
 ): Check<E, R> => ({ name, run })
 
 export const each = <A, E, R>(
@@ -43,10 +43,10 @@ export const each = <A, E, R>(
 export const perProject = <E, R>(
   name: string,
   reportsFor: (project: ProjectSnapshot) => Effect.Effect<ReadonlyArray<Finding.Finding>, E, R>,
-): Check<E, R | WorkspaceSnapshot> =>
+): Check<E, R> =>
   define(
     name,
-    WorkspaceSnapshot.use((snapshot) => each(snapshot.projects, reportsFor)),
+    (snapshot) => each(snapshot.projects, reportsFor),
   )
 
 export interface Result extends Finding.Located {
@@ -61,13 +61,12 @@ const byPosition = Order.Struct({
   message: Order.String,
 })
 
-const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
+const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) => (snapshot: WorkspaceSnapshot) =>
   Effect.gen(function* () {
-    const snapshot = yield* WorkspaceSnapshot
     const reported = yield* Effect.forEach(
       checks,
       (check) =>
-        check.run.pipe(
+        check.run(snapshot).pipe(
           Effect.map((reports) => reports.map((found) => ({ ...found, check: check.name }))),
           Effect.mapError((cause) => new CheckError({ check: check.name, cause })),
         ),
@@ -75,7 +74,7 @@ const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
     )
     const results = yield* Effect.forEach(reported.flat(), (found) =>
       Effect.gen(function* () {
-        const file = yield* snapshot.file(found.fileName)
+        const [file] = yield* snapshot.files(found.fileName)
         return Finding.locate(found, file?.sourceFile.text ?? "")
       }))
     const byFile = new Map<WorkspacePath.Type, Array<Result>>()
@@ -93,7 +92,7 @@ const collect = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
     return [...byFile.values()].flat().sort(byPosition)
   })
 
-export const run = <E>(checks: ReadonlyArray<Check<E>>) =>
+export const run = <E, R>(checks: ReadonlyArray<Check<E, R>>) =>
   Effect.flatMap(Workspace, (workspace) => workspace.withSnapshot(collect(checks)))
 
 export const format = ({ check, fileName, line, column, message }: Result): string =>

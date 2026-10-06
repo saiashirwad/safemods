@@ -1,9 +1,8 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Schema } from "effect"
-import * as Application from "../src/Application.ts"
-import * as Draft from "../src/Draft.ts"
+import * as Proposal from "../src/Proposal.ts"
 import * as Recipe from "../src/Recipe.ts"
-import { verify } from "../src/Verification/index.ts"
+import { verify } from "../src/Migration/index.ts"
 import { read, withFixture, write } from "./utils/fixture.ts"
 
 describe("recipe planning", () => {
@@ -16,10 +15,10 @@ describe("recipe planning", () => {
           const recipe = Recipe.define("schema-recipe", {
             version: "1.0.0",
             schema: Schema.Struct({ name: Schema.NonEmptyString, count: Schema.FiniteFromString }),
-            run: (input) =>
+            run: (_snapshot, input) =>
               Effect.sync(() => {
                 received.push(input)
-                return Draft.empty
+                return Proposal.empty
               }),
           })
 
@@ -33,7 +32,7 @@ describe("recipe planning", () => {
   )
 
   effect(
-    "plans against the bytes captured before the recipe ran",
+    "rejects a recipe that changes its captured inputs before verification finishes",
     () =>
       withFixture((root) =>
         Effect.gen(function* () {
@@ -42,18 +41,13 @@ describe("recipe planning", () => {
             run: () =>
               Effect.gen(function* () {
                 yield* write(root, "src/library.ts", "mutated during recipe\n")
-                return Draft.empty
+                return Proposal.empty
               }),
           })
 
-          const verified = yield* verify(recipe, undefined)
-          const source = verified.preview.sources.find((item) =>
-            item.fileName === "src/library.ts"
-          )!
-          expect(source.before.exists && source.before.text).not.toBe("mutated during recipe\n")
+          const stale = yield* Effect.flip(verify(recipe, undefined))
           expect(yield* read(root, "src/library.ts")).toBe("mutated during recipe\n")
-          const stale = yield* Effect.flip(Application.applyVerifiedPlan(verified))
-          expect(stale).toMatchObject({ _tag: "StalePlanError", fileName: "src/library.ts" })
+          expect(stale).toMatchObject({ _tag: "StaleMigrationError", path: "src/library.ts" })
         })
       ),
   )

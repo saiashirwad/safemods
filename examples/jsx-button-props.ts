@@ -3,6 +3,7 @@
  * and namespace JSX references are resolved by the checker. Ambiguous spreads
  * and duplicate target props are reported instead of being rewritten.
  */
+import { Proposal, Pattern as P, WorkspacePath, Query, Recipe } from "safemods"
 import { Effect } from "effect"
 import type { Identifier, JsxOpeningLikeElement, Node } from "typescript/unstable/ast"
 import {
@@ -12,12 +13,6 @@ import {
   isJsxSpreadAttribute,
   isPropertyAccessExpression,
 } from "typescript/unstable/ast/is"
-import { concat, empty, replace, unsupported, type Draft } from "safemods/Draft"
-import * as P from "safemods/Pattern"
-import * as WorkspacePath from "safemods/WorkspacePath"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { WorkspaceSnapshot } from "safemods/Workspace"
 
 const componentFile = WorkspacePath.schema.make("src/ui/button.tsx")
 
@@ -45,31 +40,34 @@ const tagIdentifier = (element: JsxOpeningLikeElement): Node =>
 const renameProp = (
   selection: Query.Selection<JsxOpeningLikeElement>,
   [from, to]: readonly [string, string],
-): Draft => {
+): Proposal.Proposal => {
   const element = selection.value
   const prop = propNamed(element, from)
-  if (prop === undefined) return empty
-  if (hasSpread(element)) return unsupported(selection, `${from}: JSX spread may contain ${to}`)
-  if (propNamed(element, to) !== undefined) {
-    return unsupported(selection, `${from}: duplicate ${to} prop`)
+  if (prop === undefined) return Proposal.empty
+  if (hasSpread(element)) {
+    return Proposal.unsupported(selection, `${from}: JSX spread may contain ${to}`)
   }
-  return replace(selection.project, prop, to)
+  if (propNamed(element, to) !== undefined) {
+    return Proposal.unsupported(selection, `${from}: duplicate ${to} prop`)
+  }
+  return Proposal.replace(selection.project, prop, to)
 }
 
 export const jsxButtonProps = Recipe.define("jsx-button-props", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: () =>
+  run: (snapshot) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
       const project = snapshot.projects[0]!
       const button = yield* project.symbolNamed("Button", { within: componentFile })
       const elements = yield* Query.nodes(project, isJsxOpeningLikeElement).pipe(
         Query.where(Query.resolvesTo(button, { location: tagIdentifier })),
       )
 
-      return concat(
+      return Proposal.concat(
         ...elements.flatMap((element) => renames.map((rename) => renameProp(element, rename))),
       )
     }),
 })
+
+export default jsxButtonProps

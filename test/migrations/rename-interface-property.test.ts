@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { renameInterfaceProperty } from "../../examples/rename-interface-property.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { withFixture, read } from "../utils/fixture.ts"
 
 describe("rename-interface-property", () => {
@@ -11,11 +11,11 @@ describe("rename-interface-property", () => {
       withFixture(
         (root) =>
           Effect.gen(function* () {
-            const { plan, verified } = yield* executeRecipe(renameInterfaceProperty, undefined)
+            const { verified } = yield* executeRecipe(renameInterfaceProperty, undefined)
 
             expect(verified.diagnosticDiff.introduced).toHaveLength(0)
-            expect(plan.unsupported).toHaveLength(1)
-            expect(plan.unsupported[0]?.message).toContain("Computed Account")
+            expect(verified.unsupported).toHaveLength(1)
+            expect(verified.unsupported[0]?.message).toContain("Computed Account")
             const account = yield* read(root, "src/account.ts")
             expect(account).toContain("readonly label: string")
             expect(account).toContain('{ label: displayName, id: "acc_1" }')
@@ -35,7 +35,7 @@ describe("rename-interface-property", () => {
             expect(consumer).toContain("headers.displayName")
             expect(consumer).toContain('["displayName"]')
 
-            const second = yield* draftOf(renameInterfaceProperty, undefined)
+            const second = yield* proposalOf(renameInterfaceProperty, undefined)
             expect(second.edits).toHaveLength(0)
             expect(second.unsupported).toHaveLength(0)
           }),

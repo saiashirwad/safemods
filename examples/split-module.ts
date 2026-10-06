@@ -4,6 +4,15 @@
  * partitioned by kind, the checker decides which types the service needs, and consumers are
  * found by where their specifiers resolve. Shapes the recipe cannot split are reported.
  */
+import {
+  Proposal,
+  ModuleSpecifier,
+  Pattern as P,
+  WorkspacePath,
+  Query,
+  Recipe,
+  type Workspace,
+} from "safemods"
 import { Effect } from "effect"
 import {
   type ClassDeclaration,
@@ -31,16 +40,9 @@ import {
   isTypeAliasDeclaration,
   isVariableStatement,
 } from "typescript/unstable/ast/is"
-import * as Draft from "safemods/Draft"
-import * as ModuleSpecifier from "safemods/ModuleSpecifier"
-import * as P from "safemods/Pattern"
-import * as WorkspacePath from "safemods/WorkspacePath"
-import * as Query from "safemods/Query"
-import * as Recipe from "safemods/Recipe"
-import { type ConfiguredProject, WorkspaceSnapshot } from "safemods/Workspace"
 
 export interface SplitModuleInput {
-  readonly project: ConfiguredProject.Type
+  readonly project: Workspace.ConfiguredProject.Type
 }
 
 const paths = {
@@ -114,14 +116,13 @@ const bindingText = (element: ImportSpecifier | ExportSpecifier): string =>
 export const splitModule = Recipe.define("split-module", {
   version: "1.0.0",
   policies: { idempotence: "required" },
-  run: (input: SplitModuleInput) =>
+  run: (snapshot, input: SplitModuleInput) =>
     Effect.gen(function* () {
-      const snapshot = yield* WorkspaceSnapshot
       const project = yield* snapshot.project(input.project.id)
       const source = yield* project.file(paths.source)
-      if (source === undefined) return Draft.empty
+      if (source === undefined) return Proposal.empty
       for (const target of [paths.model, paths.service, paths.index]) {
-        if ((yield* project.file(target)) !== undefined) return Draft.empty
+        if ((yield* project.file(target)) !== undefined) return Proposal.empty
       }
 
       const selectionOf = (statement: Statement): Query.Selection<Statement> => ({
@@ -134,9 +135,9 @@ export const splitModule = Recipe.define("split-module", {
       const statements = [...source.sourceFile.statements]
       const unsplittable = statements.filter((statement) => declaredIn(statement) === undefined)
       if (unsplittable.length > 0) {
-        return Draft.concat(
+        return Proposal.concat(
           ...unsplittable.map((statement) =>
-            Draft.unsupported(selectionOf(statement), "only named declarations can be split")
+            Proposal.unsupported(selectionOf(statement), "only named declarations can be split")
           ),
         )
       }
@@ -161,9 +162,9 @@ export const splitModule = Recipe.define("split-module", {
 
       const hidden = serviceNeeds.filter((declared) => !isExported(declared))
       if (hidden.length > 0) {
-        return Draft.concat(
+        return Proposal.concat(
           ...hidden.map(({ statement }) =>
-            Draft.unsupported(selectionOf(statement), "the service needs this unexported type")
+            Proposal.unsupported(selectionOf(statement), "the service needs this unexported type")
           ),
         )
       }
@@ -180,11 +181,11 @@ export const splitModule = Recipe.define("split-module", {
 
       const splitConsumer = (
         selection: Query.Selection<Query.ResolvedModuleReference>,
-      ): Draft.Draft => {
+      ): Proposal.Proposal => {
         const { specifier, typeOnly } = selection.value
         const matched = splittableConsumer(selection.value.node)
         if (matched === undefined) {
-          return Draft.unsupported(selection, "only named imports and re-exports can be split")
+          return Proposal.unsupported(selection, "only named imports and re-exports can be split")
         }
         const quote = specifier.getText().startsWith("'") ? "'" : '"'
         const semicolon = matched.node.getText().endsWith(";") ? ";" : ""
@@ -209,19 +210,21 @@ export const splitModule = Recipe.define("split-module", {
             undefined :
             line(fromService, typeOnly ? " type" : "", paths.service),
         ].filter((text) => text !== undefined)
-        return Draft.replace(project, matched.node, lines.join("\n"))
+        return Proposal.replace(project, matched.node, lines.join("\n"))
       }
 
       const consumers = yield* Query.resolvedModuleReferences(project).pipe(
         Query.filter(({ value }) => value.resolved?.fileName === paths.source),
       )
 
-      return Draft.concat(
-        Draft.deleteFile(source),
-        Draft.createFile(paths.model, `${textOf(types)}\n`),
-        Draft.createFile(paths.service, `${service}\n`),
-        Draft.createFile(paths.index, `${index}\n`),
+      return Proposal.concat(
+        Proposal.deleteFile(source),
+        Proposal.createFile(paths.model, `${textOf(types)}\n`),
+        Proposal.createFile(paths.service, `${service}\n`),
+        Proposal.createFile(paths.index, `${index}\n`),
         ...consumers.map(splitConsumer),
       )
     }),
 })
+
+export default splitModule

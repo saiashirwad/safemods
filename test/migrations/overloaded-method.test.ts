@@ -2,7 +2,7 @@ import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { overloadedMethod } from "../../examples/overloaded-method.ts"
 import { fixturePath, withFixture, read } from "../utils/fixture.ts"
-import { draftOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 
 const fixture = "migrations/overloaded-method"
 describe("overloaded-method", () => {
@@ -11,10 +11,10 @@ describe("overloaded-method", () => {
       (root, app) =>
         Effect.gen(function* () {
           const input = { project: app }
-          const { plan, verified } = yield* executeRecipe(overloadedMethod, input)
+          const { verified } = yield* executeRecipe(overloadedMethod, input)
           expect(verified.diagnosticDiff.introduced).toEqual([])
-          expect(plan.unsupported).toHaveLength(1)
-          expect(plan.unsupported[0]).toMatchObject({
+          expect(verified.unsupported).toHaveLength(1)
+          expect(verified.unsupported[0]).toMatchObject({
             fileName: "src/consumer.ts",
             message: "spread arguments prevent overload selection",
           })
@@ -43,7 +43,7 @@ describe("overloaded-method", () => {
             yield* read(fixturePath(fixture), "src/lookalike.ts"),
           )
 
-          const second = yield* draftOf(overloadedMethod, input)
+          const second = yield* proposalOf(overloadedMethod, input)
           expect(second.edits).toHaveLength(0)
           expect(second.unsupported).toHaveLength(1)
         }),
