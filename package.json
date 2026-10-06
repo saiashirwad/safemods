@@ -106,15 +106,15 @@
     "safemods": "node --conditions=source src/bin.ts"
   },
   "dependencies": {
-    "@effect/platform-node": "4.0.0-rc.109",
-    "@effect/platform-node-shared": "4.0.0-rc.109",
+    "@effect/platform-node": "4.0.0",
+    "@effect/platform-node-shared": "4.0.0",
     "diff": "9.0.0",
-    "effect": "4.0.0-rc.109",
+    "effect": "4.0.0",
     "typescript": "7.0.2"
   },
   "devDependencies": {
-    "@effect/tsgo": "^0.36.5",
-    "@effect/vitest": "4.0.0-rc.109",
+    "@effect/tsgo": "^0.48.0",
+    "@effect/vitest": "4.0.0",
     "@types/node": "26.2.0",
     "@vitest/coverage-v8": "4.1.10",
     "dprint": "^0.57.4",
