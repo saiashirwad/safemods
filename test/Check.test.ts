@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Check from "../src/Check.ts"
@@ -125,7 +125,9 @@ describe("checks", () => {
             "src/core.ts": 'import { app } from "./app.js"\nexport const core = app\n',
             "src/app.ts": "export const app = 1\n",
             "safemods.config.ts": [
-              `import { layers } from ${JSON.stringify(repoFile("src/Checks/Layers.ts"))}`,
+              `import { layers } from ${
+                JSON.stringify(pathToFileURL(repoFile("src/Checks/Layers.ts")).href)
+              }`,
               "export default {",
               '  projects: [{ id: "app", config: "tsconfig.json" }],',
               '  checks: [layers({ within: "src/**", order: [["src/core.ts", "src/extra.ts"], ["src/app.ts"]] })],',

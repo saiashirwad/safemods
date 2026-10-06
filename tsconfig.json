@@ -22,6 +22,7 @@
     "src/**/*.ts",
     "test/**/*.ts",
     "examples/**/*.ts",
+    "scripts/**/*.ts",
     "safemods.config.ts",
     "vitest.config.ts"
   ]

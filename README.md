@@ -300,6 +300,21 @@ pnpm example --help
 
 Requires Node 24+.
 
+## Verifying safemods itself
+
+CI runs on Ubuntu, macOS and Windows with Node 24.
+
+| Command         | What it proves                                                                                                   |
+| --------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `pnpm check`    | formatting, types, lint (oxlint, knip, and safemods on itself), the full suite, and a packed-package consumer    |
+| `pnpm coverage` | the suite covers the in-process source at or above a ratcheted threshold                                         |
+| `pnpm mutation` | injecting faults into core modules still fails the suite, so the tests observe behavior and are not tautological |
+| `pnpm verify`   | all three                                                                                                        |
+
+`pnpm check` is the whole local gate. Coverage excludes the surfaces that only run in a spawned `src/bin.ts` (`bin`, `Config`, `Inspect`, and the CLI example runner); their end-to-end CLI tests still run in `pnpm check`, but V8 reports only the parent process. Every mutant names the test that must kill it; a surviving mutant fails the run.
+
+`pnpm install` points this checkout's git hooks at `.githooks`, so a push runs `pnpm check:fast` (format, types, lint). Set `SKIP_SAFEMODS_HOOKS=1` to skip it.
+
 ```sh
 pnpm install
 pnpm check

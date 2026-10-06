@@ -8,6 +8,8 @@
  *   node examples/run.ts positional-to-options --out /tmp/session-rewrite
  */
 import { execFile } from "node:child_process"
+import { rmSync, writeFileSync } from "node:fs"
+import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
 import { promisify } from "node:util"
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
@@ -37,6 +39,12 @@ import { voidFloatingPromises } from "./void-floating-promises.ts"
 
 const repoRoot = NodePath.join(import.meta.dirname, "..")
 const fixturesRoot = NodePath.join(repoRoot, "fixtures")
+
+// An empty file isolates the disposable repositories from user and system git
+// config. os.devNull is not a readable path for git on Windows.
+const emptyGitConfig = NodePath.join(NodeOs.tmpdir(), `safemods-empty-gitconfig-${process.pid}`)
+writeFileSync(emptyGitConfig, "")
+process.on("exit", () => rmSync(emptyGitConfig, { force: true }))
 
 export class UnknownExample extends Data.TaggedError("UnknownExample")<{
   readonly id: string
@@ -261,8 +269,8 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
         encoding: "utf8",
         env: {
           ...process.env,
-          GIT_CONFIG_GLOBAL: "/dev/null",
-          GIT_CONFIG_SYSTEM: "/dev/null",
+          GIT_CONFIG_GLOBAL: emptyGitConfig,
+          GIT_CONFIG_SYSTEM: emptyGitConfig,
         },
       })
       return stdout

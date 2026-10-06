@@ -212,7 +212,7 @@ describe("workspace snapshots", () => {
           yield* Effect.promise(async () => {
             await Fs.mkdir(Path.join(root, "real"))
             await Fs.writeFile(Path.join(root, "real/linked.ts"), "export const linked = 1\n")
-            await Fs.symlink(Path.join(root, "real"), Path.join(root, "src/link"), "dir")
+            await Fs.symlink(Path.join(root, "real"), Path.join(root, "src/link"), "junction")
           })
           const workspace = yield* Workspace
           const fileNames = (snapshot: WorkspaceSnapshot) =>
