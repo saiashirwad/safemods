@@ -23,20 +23,27 @@ class CheckFailed extends Data.TaggedError("CheckFailed")<{ readonly message: st
 const check = (condition: boolean, message: string) =>
   condition ? Effect.void : Effect.fail(new CheckFailed({ message }))
 
+// Run the pnpm that started us. A `.js` CLI needs Node (Windows cannot spawn it
+// directly); a native pnpm runs as-is. A shell would concatenate arguments
+// without escaping, splitting any path that contains a space.
+const runPnpm = (args: ReadonlyArray<string>, cwd: string) => {
+  const entry = process.env.npm_execpath ?? "pnpm"
+  return /\.(c|m)?js$/.test(entry) ?
+    runCommand(process.execPath, [entry, ...args], cwd) :
+    runCommand(entry, args, cwd)
+}
+
 const program = Effect.scoped(
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const root = yield* path.fromFileUrl(new URL("..", import.meta.url))
-    // Run the pnpm that started us. A shell would concatenate arguments without
-    // escaping, splitting any path that contains a space.
-    const pnpm = process.env.npm_execpath ?? "pnpm"
 
     const temporary = yield* fs.makeTempDirectoryScoped({ prefix: "safemods-package-check-" })
     const consumer = path.join(temporary, "consumer")
     const packageRoot = path.join(consumer, "node_modules", "safemods")
 
-    yield* runCommand(pnpm, ["pack", "--pack-destination", temporary], root)
+    yield* runPnpm(["pack", "--pack-destination", temporary], root)
     const archive = (yield* fs.readDirectory(temporary)).find((name) => name.endsWith(".tgz"))
     if (archive === undefined) {
       return yield* new CheckFailed({ message: "pnpm pack did not produce a tarball" })
@@ -57,7 +64,7 @@ const program = Effect.scoped(
         },
       }),
     )
-    yield* runCommand(pnpm, ["install", "--ignore-scripts"], consumer)
+    yield* runPnpm(["install", "--ignore-scripts"], consumer)
 
     const manifest = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(PackedManifest))(
       yield* fs.readFileString(path.join(packageRoot, "package.json")),
