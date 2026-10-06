@@ -19,7 +19,10 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)))
 // Run the pnpm that started us. A shell would concatenate arguments without
 // escaping, splitting any path that contains a space.
 const pnpm = process.env.npm_execpath ?? "pnpm"
-const runPnpm = (args, options) => execFileSync(pnpm, args, options)
+const runPnpm = (
+  args: ReadonlyArray<string>,
+  options: { readonly cwd: string; readonly stdio: "pipe" },
+) => execFileSync(pnpm, args, options)
 const temporary = mkdtempSync(join(tmpdir(), "safemods-package-check-"))
 const consumer = join(temporary, "consumer")
 const packageRoot = join(consumer, "node_modules", "safemods")
@@ -47,9 +50,12 @@ try {
     stdio: "pipe",
   })
 
-  const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"))
+  const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
+    exports: Record<string, { default: string; types: string }>
+    bin: { safemods: string }
+  }
   for (const [name, entry] of Object.entries(manifest.exports)) {
-    for (const field of ["default", "types"]) {
+    for (const field of ["default", "types"] as const) {
       assert.ok(existsSync(join(packageRoot, entry[field])), `${name} is missing ${field}`)
     }
     const namespace = await import(pathToFileURL(join(packageRoot, entry.default)).href)
@@ -145,7 +151,7 @@ try {
     ].join("\n"),
   )
   writeFileSync(source, "export const value = 1; debugger;\n")
-  const runRecipe = (...args) =>
+  const runRecipe = (...args: ReadonlyArray<string>) =>
     spawnSync(process.execPath, [
       join(packageRoot, manifest.bin.safemods),
       "run",

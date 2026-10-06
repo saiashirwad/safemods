@@ -16,7 +16,15 @@ import { fileURLToPath } from "node:url"
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)))
 const vitest = fileURLToPath(new URL("../node_modules/vitest/vitest.mjs", import.meta.url))
 
-const mutants = [
+interface Mutant {
+  readonly name: string
+  readonly file: string
+  readonly find: string
+  readonly replace: string
+  readonly test: string
+}
+
+const mutants: ReadonlyArray<Mutant> = [
   {
     name: "Edit rejects an edit whose captured source text changed",
     file: "src/Edit.ts",
@@ -86,7 +94,7 @@ const mutants = [
   },
 ]
 
-let active = undefined
+let active: { readonly path: string; readonly original: string } | undefined
 const restore = () => {
   if (active !== undefined) {
     writeFileSync(active.path, active.original)
@@ -94,18 +102,18 @@ const restore = () => {
   }
 }
 process.on("exit", restore)
-const interrupted = (code) => () => {
+const interrupted = (code: number) => () => {
   restore()
   process.exit(code)
 }
 process.on("SIGINT", interrupted(130))
 process.on("SIGTERM", interrupted(143))
 
-const runTest = (test) =>
+const runTest = (test: string) =>
   spawnSync(process.execPath, [vitest, "run", test], { cwd: root, encoding: "utf8" })
 
-const verified = new Set()
-const survivors = []
+const verified = new Set<string>()
+const survivors: Array<Mutant> = []
 for (const mutant of mutants) {
   // A test that fails on its own would make every mutant on it look killed, so
   // prove it passes once before trusting a failure to mean the mutant died.
