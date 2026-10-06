@@ -42,5 +42,30 @@ export default defineConfig({
         "effecttsgo/unknown-in-effect-catch": "off",
       },
     },
+    {
+      files: ["scripts/**/*.ts"],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            paths: [
+              {
+                name: "safemods",
+                message: "Import the concrete source module inside the package.",
+              },
+              {
+                name: "node:child_process",
+                message: "Use ChildProcessSpawner from effect/unstable/process.",
+              },
+              { name: "node:fs", message: "Use FileSystem from effect." },
+              { name: "node:fs/promises", message: "Use FileSystem from effect." },
+              { name: "node:path", message: "Use Path from effect." },
+              { name: "node:url", message: "Use Path from effect." },
+              { name: "node:os", message: "Use FileSystem.makeTempDirectoryScoped." },
+            ],
+          },
+        ],
+      },
+    },
   ],
 })

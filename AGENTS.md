@@ -14,3 +14,4 @@ note: this is a GREENFIELD project. no one uses it. we can make breaking changes
 | Formatting                                                     | `pnpm fmt:check` (dprint)                       |
 | Types                                                          | `pnpm typecheck` (tsc)                          |
 | No unused code, exports or optional parameters                 | `pnpm lint` (oxlint, knip, safemods self-check) |
+| Scripts use Effect platform services, not raw `node:` I/O      | the `scripts` override in `oxlint.config.ts`    |
