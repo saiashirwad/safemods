@@ -88,7 +88,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "prepack": "pnpm build",
     "check": "pnpm fmt:check && pnpm typecheck && pnpm lint && pnpm test && pnpm package:check",
     "check:fast": "pnpm fmt:check && pnpm typecheck && pnpm lint",
@@ -96,9 +96,12 @@
     "fmt:check": "dprint check",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint && knip && pnpm safemods check",
-    "prepare": "effect-tsgo patch --no-typescript --oxlint",
+    "prepare": "effect-tsgo patch --no-typescript --oxlint && node scripts/install-hooks.mjs",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "mutation": "node scripts/mutation-check.mjs",
     "package:check": "node scripts/check-package.mjs",
+    "verify": "pnpm check && pnpm coverage && pnpm mutation",
     "example": "node --conditions=source examples/run.ts",
     "safemods": "node --conditions=source src/bin.ts"
   },
@@ -113,6 +116,7 @@
     "@effect/tsgo": "^0.36.5",
     "@effect/vitest": "4.0.0-rc.109",
     "@types/node": "26.2.0",
+    "@vitest/coverage-v8": "4.1.10",
     "dprint": "^0.57.4",
     "is-kit": "1.14.1",
     "knip": "^6.34.0",

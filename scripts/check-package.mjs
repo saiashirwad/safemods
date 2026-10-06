@@ -16,12 +16,15 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)))
+// Windows resolves pnpm to pnpm.cmd through a shell; other platforms exec it directly.
+const runPnpm = (args, options) =>
+  execFileSync("pnpm", args, { ...options, shell: process.platform === "win32" })
 const temporary = mkdtempSync(join(tmpdir(), "safemods-package-check-"))
 const consumer = join(temporary, "consumer")
 const packageRoot = join(consumer, "node_modules", "safemods")
 
 try {
-  execFileSync("pnpm", ["pack", "--pack-destination", temporary], { cwd: root, stdio: "pipe" })
+  runPnpm(["pack", "--pack-destination", temporary], { cwd: root, stdio: "pipe" })
   const archive = readdirSync(temporary).find((name) => name.endsWith(".tgz"))
   assert.ok(archive, "pnpm pack did not produce a tarball")
   mkdirSync(join(consumer, "src"), { recursive: true })
@@ -38,7 +41,7 @@ try {
       },
     }),
   )
-  execFileSync("pnpm", ["install", "--ignore-scripts"], {
+  runPnpm(["install", "--ignore-scripts"], {
     cwd: consumer,
     stdio: "pipe",
   })

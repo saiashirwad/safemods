@@ -224,6 +224,7 @@ describe("Migration.apply", () => {
         Effect.gen(function* () {
           const script = Path.join(root, "src/script.ts")
           yield* Effect.promise(() => Fs.chmod(script, 0o777))
+          const mode = (yield* Effect.promise(() => Fs.stat(script))).mode & 0o777
           const recipe = Recipe.define("edit-script", {
             version: "1.0.0",
             run: (snapshot) =>
@@ -237,7 +238,7 @@ describe("Migration.apply", () => {
 
           const bytes = yield* Effect.promise(() => Fs.readFile(script))
           expect(bytes.toString("utf8")).toBe("\uFEFFexport const script = 1\nexport {}\n")
-          expect((yield* Effect.promise(() => Fs.stat(script))).mode & 0o777).toBe(0o777)
+          expect((yield* Effect.promise(() => Fs.stat(script))).mode & 0o777).toBe(mode)
         }),
       { files: { "src/script.ts": "\uFEFFexport const script = 1\n" } },
     ))
@@ -248,6 +249,7 @@ describe("Migration.apply", () => {
         Effect.gen(function* () {
           const source = Path.join(root, "src/script.ts")
           yield* Effect.promise(() => Fs.chmod(source, 0o777))
+          const mode = (yield* Effect.promise(() => Fs.stat(source))).mode & 0o777
           const recipe = Recipe.define("move-script", {
             version: "1.0.0",
             policies: { diagnostics: "allow-new-errors" },
@@ -265,7 +267,7 @@ describe("Migration.apply", () => {
           expect((yield* Effect.promise(() => Fs.readFile(moved))).toString("utf8")).toBe(
             "\uFEFFexport const script = 1\n",
           )
-          expect((yield* Effect.promise(() => Fs.stat(moved))).mode & 0o777).toBe(0o777)
+          expect((yield* Effect.promise(() => Fs.stat(moved))).mode & 0o777).toBe(mode)
         }),
       { files: { "src/script.ts": "\uFEFFexport const script = 1\n" } },
     ))
@@ -278,7 +280,9 @@ describe("Migration.apply", () => {
           const outside = yield* Effect.promise(() =>
             Fs.mkdtemp(Path.join(Path.dirname(root), "safemods-outside-"))
           )
-          yield* Effect.promise(() => Fs.symlink(outside, Path.join(root, "src/escape"), "dir"))
+          yield* Effect.promise(() =>
+            Fs.symlink(outside, Path.join(root, "src/escape"), "junction")
+          )
 
           const plan = yield* verified(createFile("src/escape/outside.ts", "export {}\n"))
           const failure = yield* Effect.flip(plan.apply)

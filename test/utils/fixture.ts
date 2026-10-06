@@ -34,6 +34,7 @@ export const withFixture = <A, E, R>(
         await Fs.symlink(
           fileURLToPath(new URL("../../node_modules", import.meta.url)),
           Path.join(root, "node_modules"),
+          "junction",
         )
       }
       await Promise.all(
