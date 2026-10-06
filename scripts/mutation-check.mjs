@@ -94,13 +94,31 @@ const restore = () => {
   }
 }
 process.on("exit", restore)
-process.on("SIGINT", () => {
+const interrupted = (code) => () => {
   restore()
-  process.exit(130)
-})
+  process.exit(code)
+}
+process.on("SIGINT", interrupted(130))
+process.on("SIGTERM", interrupted(143))
 
+const runTest = (test) =>
+  spawnSync(process.execPath, [vitest, "run", test], { cwd: root, encoding: "utf8" })
+
+const verified = new Set()
 const survivors = []
 for (const mutant of mutants) {
+  // A test that fails on its own would make every mutant on it look killed, so
+  // prove it passes once before trusting a failure to mean the mutant died.
+  if (!verified.has(mutant.test)) {
+    const baseline = runTest(mutant.test)
+    assert.equal(
+      baseline.status,
+      0,
+      `${mutant.test} fails without a mutant:\n${baseline.stdout}\n${baseline.stderr}`,
+    )
+    verified.add(mutant.test)
+  }
+
   const path = resolve(root, mutant.file)
   const original = readFileSync(path, "utf8")
   const anchors = original.split(mutant.find).length - 1
@@ -109,10 +127,7 @@ for (const mutant of mutants) {
   active = { path, original }
   try {
     writeFileSync(path, original.replace(mutant.find, mutant.replace))
-    const run = spawnSync(process.execPath, [vitest, "run", mutant.test], {
-      cwd: root,
-      encoding: "utf8",
-    })
+    const run = runTest(mutant.test)
     if (run.status === null) {
       throw new Error(`${mutant.name}: vitest did not exit (${run.error?.message ?? "unknown"})`)
     }
