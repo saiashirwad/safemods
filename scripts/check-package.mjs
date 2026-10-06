@@ -16,9 +16,10 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)))
-// Windows resolves pnpm to pnpm.cmd through a shell; other platforms exec it directly.
-const runPnpm = (args, options) =>
-  execFileSync("pnpm", args, { ...options, shell: process.platform === "win32" })
+// Run the pnpm that started us. A shell would concatenate arguments without
+// escaping, splitting any path that contains a space.
+const pnpm = process.env.npm_execpath ?? "pnpm"
+const runPnpm = (args, options) => execFileSync(pnpm, args, options)
 const temporary = mkdtempSync(join(tmpdir(), "safemods-package-check-"))
 const consumer = join(temporary, "consumer")
 const packageRoot = join(consumer, "node_modules", "safemods")
