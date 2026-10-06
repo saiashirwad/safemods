@@ -69,7 +69,7 @@ try {
     [
       'import { Effect, Schema } from "effect"',
       'import { isDebuggerStatement } from "typescript/unstable/ast/is"',
-      'import { Check, Proposal, Query, Recipe, Migration, Workspace, WorkspacePath } from "safemods"',
+      'import { Check, Inspect, Proposal, Query, Recipe, Migration, Workspace, WorkspacePath } from "safemods"',
       'export const recipe = Recipe.perProject("remove-debugger", {',
       '  version: "1.0.0",',
       "  run: (project) => Effect.gen(function* () {",
@@ -84,6 +84,7 @@ try {
       "export const migrate = Migration.verify(input, 3).pipe(Effect.flatMap((verified) => verified.apply))",
       'export const check = Check.perProject("identifiers", (project) => Query.identifiers(project).pipe(Effect.map((found) => found.map((selection) => Check.report(selection, "identifier")))))',
       "export const program = Workspace.Workspace.use((workspace) => workspace.withSnapshot((snapshot) => recipe.run(snapshot, undefined)))",
+      "export const describeAt = (position: string) => Workspace.Workspace.use((workspace) => workspace.withSnapshot(Inspect.type(position)))",
     ].join("\n"),
   )
   writeFileSync(

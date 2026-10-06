@@ -196,6 +196,8 @@ safemods calls src/Query.ts:279:14   # every direct call, and whether other uses
 safemods type src/shared.ts:1:12 --project app
 ```
 
+The CLI wraps `safemods/Inspect`, which is importable for the same answers in code: `Inspect.type`, `refs`, `calls`, `exports`, `deps` and `map` each take a `WorkspaceSnapshot`.
+
 If a file belongs to more than one project, the inspection commands require `--project`. `map` labels each compiler context. Workspace snapshots return all contexts through `snapshot.files(path)`; semantic queries use an explicit project.
 
 `Query.resolvesToSignature` takes declaration selections, retaining their project context rather than accepting bare nodes. Foreign or expired selections are rejected before resolving the candidate call.

@@ -25,6 +25,11 @@
       "types": "./dist/src/Finding.d.ts",
       "default": "./dist/src/Finding.js"
     },
+    "./Inspect": {
+      "source": "./src/Inspect.ts",
+      "types": "./dist/src/Inspect.d.ts",
+      "default": "./dist/src/Inspect.js"
+    },
     "./ModuleSpecifier": {
       "source": "./src/ModuleSpecifier.ts",
       "types": "./dist/src/ModuleSpecifier.d.ts",
