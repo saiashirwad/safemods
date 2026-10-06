@@ -369,7 +369,7 @@ describe("queries", () => {
     () =>
       withProject(
         {
-          "src/question?.ts": "export const question = 1\n",
+          "src/question+.ts": "export const question = 1\n",
           "src/nested/deep.ts": "export const deep = 1\n",
         },
         (project) =>
@@ -382,10 +382,11 @@ describe("queries", () => {
 
             expect((yield* filesIn("src/**/*.ts")).has("src/nested/deep.ts")).toBe(true)
             expect((yield* filesIn("src/*.ts")).has("src/nested/deep.ts")).toBe(false)
-            expect((yield* filesIn("src/*.ts")).has("src/question?.ts")).toBe(true)
+            expect((yield* filesIn("src/*.ts")).has("src/question+.ts")).toBe(true)
             expect(yield* filesIn("src\\*.ts")).toEqual(yield* filesIn("src/*.ts"))
             expect(yield* filesIn("src/library.ts")).toEqual(new Set(["src/library.ts"]))
-            expect(yield* filesIn("src/question?.ts")).toEqual(new Set(["src/question?.ts"]))
+            expect(yield* filesIn("src/question+.ts")).toEqual(new Set(["src/question+.ts"]))
+            expect(yield* filesIn("src/question?.ts")).toEqual(new Set(["src/question+.ts"]))
             expect(yield* filesIn("library.ts")).toEqual(new Set())
           }),
       ),

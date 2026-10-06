@@ -166,7 +166,7 @@ describe("Migration.verify", () => {
               expect(
                 diagnostics.filter(({ code }) => code === 2304).map(({ fileName }) => fileName)
                   .sort((left, right) => (left ?? "").localeCompare(right ?? "")),
-              ).toEqual(paths)
+              ).toEqual(paths.map((path) => path.replaceAll("\\", "/")))
             }),
           (outside) => Effect.promise(() => Fs.rm(outside, { recursive: true, force: true })),
         )
