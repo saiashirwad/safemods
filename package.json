@@ -115,14 +115,14 @@
   "devDependencies": {
     "@effect/tsgo": "^0.36.5",
     "@effect/vitest": "4.0.0-rc.109",
-    "@types/node": "26.2.0",
-    "@vitest/coverage-v8": "4.1.10",
-    "dprint": "^0.57.4",
-    "is-kit": "1.14.1",
+    "@types/node": "26.6.4",
+    "@vitest/coverage-v8": "5.0.3",
+    "dprint": "^0.59.0",
+    "is-kit": "1.15.1",
     "knip": "^6.34.0",
     "oxlint": "^1.78.0",
     "oxlint-tsgolint": "^7.0.2001",
-    "vitest": "4.1.10"
+    "vitest": "5.0.3"
   },
   "packageManager": "pnpm@11.17.0",
   "engines": {
