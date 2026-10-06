@@ -16,6 +16,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli"
 import { Migration, type Recipe, WorkspacePath, Workspace } from "safemods"
 import { asAssertionToSatisfies } from "./as-assertion-to-satisfies.ts"
 import { concatToTemplate } from "./concat-to-template.ts"
+import { commonJsToEsm } from "./commonjs-to-esm.ts"
 import { defaultToNamed } from "./default-to-named.ts"
 import { enumToConstObject } from "./enum-to-const-object.ts"
 import { jsxButtonProps } from "./jsx-button-props.ts"
@@ -78,6 +79,12 @@ const defineExample = <Input, E, R>(example: {
 })
 
 const examples = [
+  defineExample({
+    id: "commonjs-to-esm",
+    fixture: "fixtures/migrations/commonjs-to-esm",
+    recipe: commonJsToEsm,
+    input: (project) => ({ project }),
+  }),
   defineExample({
     id: "as-assertion-to-satisfies",
     fixture: "fixtures/migrations/as-assertion-to-satisfies",

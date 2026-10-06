@@ -11,6 +11,7 @@ import {
   type NodeArray,
   type Statement,
   SyntaxKind,
+  NodeFlags,
 } from "typescript/unstable/ast"
 import {
   isBinaryExpression,
@@ -154,15 +155,36 @@ const bindingsOf = (elements: NodeArray<BindingElement>): string | undefined => 
   return bindings.join(", ")
 }
 
+const constBindings = (statements: ReadonlyArray<Statement>): ReadonlySet<string> =>
+  new Set(statements.flatMap((statement) => {
+    if (!isVariableStatement(statement)) return []
+    if (!(statement.declarationList.flags & NodeFlags.Const)) return []
+    return statement.declarationList.declarations.flatMap(({ name }) => {
+      if (isIdentifier(name)) return [name.text]
+      if (!isObjectBindingPattern(name)) return []
+      return name.elements.flatMap((element) => {
+        const binding = plainBinding.match(element)
+        return binding === undefined ? [] : [binding.local.text]
+      })
+    })
+  }))
+
 const replacementFor = (
-  statement: Statement,
+  matched: ReturnType<typeof statementOf>,
   globalRequires: ReadonlySet<Node>,
+  immutableBindings: ReadonlySet<string>,
+  occupiedBindings: ReadonlySet<string>,
 ): string | undefined => {
-  const matched = statementOf(statement)
   if (matched === undefined) return undefined
   if (matched._tag === "defaultExport") return `export default ${matched.captures.value.getText()}`
   if (matched._tag === "namedExport") {
     const { name, value } = matched.captures
+    if (isIdentifier(value)) {
+      return immutableBindings.has(value.text) ?
+        `export { ${renamed(value.text, name.text)} }` :
+        undefined
+    }
+    if (occupiedBindings.has(name.text)) return undefined
     return `export const ${name.text} = ${value.getText()}`
   }
   if (!globalRequires.has(matched.captures.call)) return undefined
@@ -211,9 +233,30 @@ export const commonJsToEsm = Recipe.define("commonjs-to-esm", {
       const files = yield* project.files
       const drafts: Array<Proposal.Proposal> = []
       for (const file of files) {
+        const immutableBindings = constBindings(file.sourceFile.statements)
+        const occupiedBindings = new Set<string>()
         for (const statement of file.sourceFile.statements) {
-          const replacement = replacementFor(statement, globalRequires)
+          const matched = statementOf(statement)
+          if (matched?._tag !== "namedExport") continue
+          const name = matched.captures.name.text
+          const occupied = yield* project.symbolNamed(name, { within: file.fileName }).pipe(
+            Effect.as(true),
+            Effect.catchTag("SymbolNotFound", () => Effect.succeed(false)),
+          )
+          if (occupied) occupiedBindings.add(name)
+        }
+        for (const statement of file.sourceFile.statements) {
+          const matched = statementOf(statement)
+          const replacement = replacementFor(
+            matched,
+            globalRequires,
+            immutableBindings,
+            occupiedBindings,
+          )
           if (replacement !== undefined) {
+            if (matched?._tag === "namedExport" && !isIdentifier(matched.captures.value)) {
+              occupiedBindings.add(matched.captures.name.text)
+            }
             drafts.push(Proposal.replace(project, statement, replacement))
             continue
           }

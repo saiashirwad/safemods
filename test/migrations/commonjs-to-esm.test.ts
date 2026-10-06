@@ -1,12 +1,62 @@
+import { spawnSync } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { commonJsToEsm } from "../../examples/commonjs-to-esm.ts"
+import { applyFileEdits } from "../../src/Edit.ts"
 import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
 import { fixturePath, withFixture, read } from "../utils/fixture.ts"
 
 describe("commonjs-to-esm", () => {
+  effect(
+    "preserves expression exports that collide with mutable, function, or import bindings",
+    () => {
+      const source = [
+        'import { readFile as imported } from "node:fs"',
+        "let total = 0",
+        "function calculate() { return 0 }",
+        "exports.total = 1 + 2",
+        "exports.calculate = () => 1",
+        "exports.imported = 3",
+        "exports.fresh = 4",
+        "exports.fresh = 5",
+        "",
+      ].join("\n")
+      return withFixture((root, project) =>
+        Effect.gen(function* () {
+          const proposal = yield* proposalOf(commonJsToEsm, { project })
+          const actual = yield* applyFileEdits(source, proposal.edits)
+          const syntax = spawnSync(process.execPath, ["--input-type=module", "--check"], {
+            input: actual,
+            encoding: "utf8",
+          })
+          expect(syntax.stderr).toBe("")
+          expect(syntax.status).toBe(0)
+          expect(actual).toBe(source.replace("exports.fresh = 4", "export const fresh = 4"))
+          const { verified } = yield* executeRecipe(commonJsToEsm, { project })
+          expect(yield* read(root, "src/collisions.js")).toBe(actual)
+          expect(verified.unsupported.map(({ start, end }) => source.slice(start, end))).toEqual([
+            "exports.total = 1 + 2",
+            "exports.calculate = () => 1",
+            "exports.imported = 3",
+            "exports.fresh = 5",
+          ])
+          expect((yield* proposalOf(commonJsToEsm, { project })).edits).toHaveLength(0)
+        }), {
+        fixture: "empty",
+        files: {
+          "src/collisions.js": source,
+          "package.json": '{"type":"module"}',
+          "tsconfig.json": JSON.stringify({
+            compilerOptions: { allowJs: true, checkJs: false, noEmit: true, module: "NodeNext" },
+            include: ["src/**/*.js"],
+          }),
+        },
+      })
+    },
+  )
+
   effect("converts project ambient global require but preserves lexical shadows", () =>
     withFixture(
       (root, project) =>
@@ -70,17 +120,29 @@ describe("commonjs-to-esm", () => {
           expect(verified.unsupported.map(({ start, end }) => original.slice(start, end))).toEqual([
             'const conditional = process.env.FEATURE && require("feature")',
             "exports[computedName] = conditional",
+            "exports.current = current",
+            "exports.missing = missing",
+            "exports.occupied = 1 + 2",
           ])
 
           const index = yield* Effect.tryPromise(() =>
             Fs.readFile(Path.join(root, "src/index.js"), "utf8")
           )
+          const syntax = spawnSync(process.execPath, ["--input-type=module", "--check"], {
+            input: index,
+            encoding: "utf8",
+          })
+          expect(syntax.stderr).toBe("")
+          expect(syntax.status).toBe(0)
           expect(index).toContain('import * as path from "node:path"')
           expect(index).toContain('import { readFile, writeFile as saveFile } from "node:fs"')
           expect(index).toContain('import { inspect } from "node:util"')
           expect(index).toContain('import "./register.js"')
-          expect(index).toContain("export const readFile = readFile")
-          expect(index).toContain("export const inspect = inspect")
+          expect(index).toContain("export { readFile }")
+          expect(index).toContain("export { inspect }")
+          expect(index).toContain("export { readFile as read }")
+          expect(index).toContain("export { answer }")
+          expect(index).toContain("export const total = 1 + 2")
           expect(index).toContain("export default { path, saveFile }")
 
           const unsupported = yield* Effect.tryPromise(() =>
@@ -97,7 +159,7 @@ describe("commonjs-to-esm", () => {
 
           const second = yield* proposalOf(commonJsToEsm, input)
           expect(second.edits).toHaveLength(0)
-          expect(second.unsupported).toHaveLength(2)
+          expect(second.unsupported).toHaveLength(5)
         }),
       { fixture: "migrations/commonjs-to-esm" },
     ))

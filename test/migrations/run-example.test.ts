@@ -10,6 +10,27 @@ const fixtureRoot = fileURLToPath(
 )
 
 describe("example runner", () => {
+  effect(
+    "runs the documented CommonJS example against a disposable copy",
+    () =>
+      Effect.gen(function* () {
+        const source = fileURLToPath(
+          new URL("../../fixtures/migrations/commonjs-to-esm/src/index.js", import.meta.url),
+        )
+        const original = yield* Effect.tryPromise(() => Fs.readFile(source, "utf8"))
+        const result = yield* runExample("commonjs-to-esm")
+        const rewritten = yield* Effect.tryPromise(() =>
+          Fs.readFile(Path.join(result.workspace, "src/index.js"), "utf8")
+        )
+        expect(result.applied).toBe(true)
+        expect(rewritten).toContain("export { readFile }")
+        expect(rewritten).toContain("export const total = 1 + 2")
+        expect(result.diff).toContain("+export { readFile }")
+        expect(yield* Effect.tryPromise(() => Fs.readFile(source, "utf8"))).toBe(original)
+        yield* Effect.tryPromise(() => Fs.rm(result.workspace, { recursive: true, force: true }))
+      }),
+  )
+
   effect("applies to a copy and leaves the fixture bytes unchanged", () =>
     Effect.gen(function* () {
       const relative = "src/http/gateway.ts"

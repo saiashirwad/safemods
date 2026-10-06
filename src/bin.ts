@@ -3,6 +3,7 @@ import { NodeServices } from "@effect/platform-node"
 import { NodeRuntime } from "@effect/platform-node-shared"
 import { Console, Data, Effect, Option, Runtime, Schema } from "effect"
 import { Argument, Command, Flag } from "effect/unstable/cli"
+import { createTwoFilesPatch, FILE_HEADERS_ONLY } from "diff"
 import * as Check from "./Check.ts"
 import * as Config from "./Config.ts"
 import * as Inspect from "./Inspect.ts"
@@ -85,26 +86,16 @@ const unresolvedLine = (
   return `  ${fileName}:${line}:${column} ${message}`
 }
 
-const diff = (file: FilePreview): string => {
-  const lines = (text: string): ReadonlyArray<string> =>
-    text === "" ? [] : text.replace(/\n$/, "").split("\n")
-  const before = file.before.exists ? lines(file.before.text) : []
-  const after = file.after.exists ? lines(file.after.text) : []
-  const range = (count: number) => `${count === 0 ? 0 : 1},${count}`
-  return [
-    `--- ${file.before.exists ? `a/${file.fileName}` : "/dev/null"}`,
-    `+++ ${file.after.exists ? `b/${file.fileName}` : "/dev/null"}`,
-    `@@ -${range(before.length)} +${range(after.length)} @@`,
-    ...before.map((line) => `-${line}`),
-    ...(file.before.exists && file.before.text !== "" && !file.before.text.endsWith("\n") ?
-      ["\\ No newline at end of file"] :
-      []),
-    ...after.map((line) => `+${line}`),
-    ...(file.after.exists && file.after.text !== "" && !file.after.text.endsWith("\n") ?
-      ["\\ No newline at end of file"] :
-      []),
-  ].join("\n")
-}
+const diff = (file: FilePreview): string =>
+  createTwoFilesPatch(
+    file.before.exists ? `a/${file.fileName}` : "/dev/null",
+    file.after.exists ? `b/${file.fileName}` : "/dev/null",
+    file.before.exists ? file.before.text : "",
+    file.after.exists ? file.after.text : "",
+    undefined,
+    undefined,
+    { context: 3, headerOptions: FILE_HEADERS_ONLY },
+  ).replace(/\n$/, "")
 
 const run = Command.make(
   "run",

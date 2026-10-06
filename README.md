@@ -2,12 +2,50 @@
 
 Type-directed codemods for TypeScript 7, built on Effect.
 
-Pre-alpha. Recipes and checks use scoped compiler snapshots:
+Pre-alpha. Recipes use the compiler to choose edits, then verify the proposal before applying it. Checks use the same scoped compiler snapshots to report findings.
 
-- **Recipes** query the checker and emit a proposal; verification previews it, refuses new diagnostics and can require idempotence. Only the verified result can be applied.
-- **Checks** query the checker and report findings. `safemods check` prints them as `path:line:column check message` and exits non-zero, so a coding agent gets a precise rejection without anyone spending tokens on it.
+## Rename the symbol, not every matching word
 
-Save a recipe in `recipes/remove-debugger.ts`:
+`examples/rename-through-barrel.ts` renames the accounts module's `loadAccount` to `findAccount`. It follows the symbol through barrels and import aliases. These excerpts come from its fixture:
+
+```diff
+ // src/accounts/store.ts
+-export function loadAccount(accountId: string): Account {
++export function findAccount(accountId: string): Account {
+
+ // src/accounts/index.ts
+-export { loadAccount as lookupAccount } from "./store.js"
++export { findAccount as lookupAccount } from "./store.js"
+
+ // src/billing/invoices.ts
+-import { /* billing still binds the public name */ loadAccount as fetchAccount } from '../accounts/store.js'
++import { /* billing still binds the public name */ findAccount as fetchAccount } from '../accounts/store.js'
+```
+
+Calls through the local `fetchAccount` alias and public `lookupAccount` alias stay unchanged. The unrelated `loadAccount` in `src/users/directory.ts` stays unchanged too. A text replacement cannot make that distinction.
+
+From a repository checkout, run `pnpm install`, then `pnpm example rename-through-barrel`. The runner copies the fixture and prints the applied diff; it never changes the original fixture.
+
+Not every mention is a compiler reference. The separate `examples/rename-symbol.ts` recipe reports plain-text mentions in edited files rather than guessing. Its CLI test renames the JSDoc link in `/** Use {@link area}. Example: area(2) */` but leaves `area(2)` for review:
+
+```text
+left for you (1):
+  packages/app/src/lib.ts:1:32 mentions area in a comment or string the compiler cannot resolve
+```
+
+The barrel recipe leaves comments and strings untouched without reporting them. Unsupported findings are information for the caller, not an automatic verification failure.
+
+## Use in your project
+
+Requires Node 24+. In an ESM project, install the tool and the dependencies imported by your recipe:
+
+```sh
+pnpm add -D safemods effect@4.0.0-rc.109 typescript@7.0.2
+```
+
+The package currently pins TypeScript `7.0.2` and Effect/platform packages `4.0.0-rc.109`. Recipes use TypeScript's unstable AST API and Effect 4 APIs. These are the tested versions, not a compatibility promise for other releases. The recipe's imports are authoring dependencies; safemods reads the target project's tsconfig using its own pinned compiler, not whichever compiler the target has installed.
+
+Save this small recipe in `recipes/remove-debugger.ts`:
 
 ```ts
 import { Effect } from "effect"
@@ -42,11 +80,21 @@ export default {
 Preview first, then apply:
 
 ```sh
-safemods run recipes/remove-debugger.ts
-safemods run recipes/remove-debugger.ts --apply
+pnpm exec safemods run recipes/remove-debugger.ts
+pnpm exec safemods run recipes/remove-debugger.ts --apply
 ```
 
-For recipes with an input schema, pass JSON with `--input`. Without `--apply`, verification writes nothing.
+Preview prints a contextual unified diff. Check it before passing `--apply`. For recipes with an input schema, pass JSON with `--input`. Without `--apply`, verification writes nothing.
+
+## What verification guarantees
+
+By default, verification rejects introduced compiler **errors**, not every diagnostic. A recipe can allow new errors with `diagnostics: "allow-new-errors"`. Compiler diagnostics depend on the configured projects and their options; JavaScript with `checkJs: false` does not receive the same checks as checked source.
+
+Recipes can set `maxAffectedFiles` to cap changed files and `idempotence: "required"` to reject changes proposed on a second run. There is no file limit by default, and idempotence is opt-in. Verification also validates proposals and checks captured inputs for staleness before returning and before application.
+
+Diagnostic matching compares project, filename, category, code, and message, but ignores position and accounts for file moves. Matching preserves error counts. An old error removed in one place can mask an identical error introduced elsewhere in the same file and project.
+
+These checks do not prove runtime equivalence. Review the diff and run the target project's tests. For example, CommonJS-to-ESM conversion can change import timing, live bindings, and `module.exports` overwrite behavior even when the result parses. The example exports existing top-level `const` bindings with export clauses and reports mutable or unresolved identifier exports as unsupported. It is not a general CommonJS compatibility transform.
 
 Cheap syntactic filters go first. `Query.where` asks the checker, and questions asked about many nodes at once are sent as one request per file.
 

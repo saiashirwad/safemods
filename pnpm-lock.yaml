@@ -17,6 +17,9 @@ importers:
       '@effect/platform-node-shared':
         specifier: 4.0.0-rc.109
         version: 4.0.0-rc.109(effect@4.0.0-rc.109)
+      diff:
+        specifier: 9.0.0
+        version: 9.0.0
       effect:
         specifier: 4.0.0-rc.109
         version: 4.0.0-rc.109
@@ -1102,6 +1105,10 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
+  diff@9.0.0:
+    resolution: {integrity: sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==}
+    engines: {node: '>=0.3.1'}
+
   dprint@0.57.4:
     resolution: {integrity: sha512-iiorgfJrrV7DDf7S9AB/d5ZB59Jn5idMDQoU7o6H9m6AvGVaLAPrGTAslmTwykkft9CYbWzqUrKjmKT80KWmAA==}
     hasBin: true
@@ -2120,6 +2127,8 @@ snapshots:
   convert-source-map@2.0.0: {}
 
   detect-libc@2.1.2: {}
+
+  diff@9.0.0: {}
 
   dprint@0.57.4:
     optionalDependencies:
