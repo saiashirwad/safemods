@@ -12,6 +12,20 @@ import {
   SyntaxKind,
 } from "typescript/unstable/ast"
 import {
+  isArrayLiteralExpression,
+  isObjectLiteralExpression,
+  isSpreadElement,
+  isSpreadAssignment,
+  isParenthesizedExpression,
+  isAsExpression,
+  isTypeAssertion,
+  isNonNullExpression,
+  isSatisfiesExpression,
+  isForInStatement,
+  isForOfStatement,
+  isExpressionWithTypeArguments,
+  isHeritageClause,
+  isInterfaceDeclaration,
   isArrowFunction,
   isCallExpression,
   isFunctionDeclaration,
@@ -283,11 +297,48 @@ export interface SemanticReference {
 }
 
 const hasTypeAncestor = (node: Node): boolean => {
-  let parent = node.parent
+  let child = node
   for (;;) {
-    if (isTypeNode(parent)) return true
+    const parent = child.parent
+    if (isExpressionWithTypeArguments(parent) && parent.expression === child) {
+      const heritage = parent.parent
+      if (
+        isHeritageClause(heritage) &&
+        (heritage.token === SyntaxKind.ImplementsKeyword || isInterfaceDeclaration(heritage.parent))
+      ) return true
+    } else if (isTypeNode(parent)) return true
     if (parent.getSourceFile() === parent) return false
-    parent = parent.parent
+    child = parent
+  }
+}
+
+const isWriteTarget = (node: Node): boolean => {
+  let target = node
+  for (;;) {
+    const parent = target.parent
+    if (isBinaryExpression(parent) && parent.left === target) {
+      const operator = parent.operatorToken.kind
+      return operator >= SyntaxKind.FirstAssignment && operator <= SyntaxKind.LastAssignment
+    }
+    if (isForOfStatement(parent) || isForInStatement(parent)) {
+      return parent.initializer === target
+    }
+    if (isPrefixUnaryExpression(parent) || isPostfixUnaryExpression(parent)) {
+      return parent.operator === SyntaxKind.PlusPlusToken ||
+        parent.operator === SyntaxKind.MinusMinusToken
+    }
+    if (
+      isArrayLiteralExpression(parent) ||
+      isObjectLiteralExpression(parent) ||
+      (isPropertyAssignment(parent) && parent.initializer === target) ||
+      (isShorthandPropertyAssignment(parent) && parent.name === target) ||
+      ((isSpreadElement(parent) || isSpreadAssignment(parent) ||
+        isParenthesizedExpression(parent) || isAsExpression(parent) ||
+        isTypeAssertion(parent) || isNonNullExpression(parent) ||
+        isSatisfiesExpression(parent)) && parent.expression === target)
+    ) {
+      target = parent
+    } else return false
   }
 }
 
@@ -302,7 +353,6 @@ const roleOf = (node: Identifier): ReferenceRole => {
     return "import"
   }
   if (isExportSpecifier(parent)) return "export"
-  if (isShorthandPropertyAssignment(parent)) return "shorthand"
   if (
     (isPropertyAccessExpression(parent) && parent.name === node) ||
     (isPropertyAssignment(parent) && parent.name === node)
@@ -310,18 +360,8 @@ const roleOf = (node: Identifier): ReferenceRole => {
     return "property-name"
   }
   if (hasTypeAncestor(node)) return "type"
-  if (isBinaryExpression(parent) && parent.left === node) {
-    const operator = parent.operatorToken.kind
-    if (operator >= SyntaxKind.FirstAssignment && operator <= SyntaxKind.LastAssignment) {
-      return "write"
-    }
-  }
-  if (
-    (isPrefixUnaryExpression(parent) || isPostfixUnaryExpression(parent)) &&
-    (parent.operator === SyntaxKind.PlusPlusToken || parent.operator === SyntaxKind.MinusMinusToken)
-  ) {
-    return "write"
-  }
+  if (isWriteTarget(node)) return "write"
+  if (isShorthandPropertyAssignment(parent) && parent.name === node) return "shorthand"
   const symbolParent = parent as Node & { readonly name?: Node }
   if (symbolParent.name === node && !isPropertyAssignment(parent)) return "declaration"
   return "read"

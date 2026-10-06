@@ -11,46 +11,16 @@ import {
   type BindingName,
   type Node,
   NodeFlags,
-  SyntaxKind,
   type VariableDeclarationList,
 } from "typescript/unstable/ast"
 import {
-  isArrayLiteralExpression,
-  isBinaryExpression,
   isBindingElement,
   isForInStatement,
   isForOfStatement,
   isIdentifier,
-  isObjectLiteralExpression,
-  isPropertyAssignment,
-  isShorthandPropertyAssignment,
-  isSpreadAssignment,
-  isSpreadElement,
   isVariableDeclarationList,
 } from "typescript/unstable/ast/is"
 import type { Symbol as NativeSymbol } from "typescript/unstable/async"
-
-const isDestructuringTarget = (node: Node): boolean => {
-  let target = node
-  while (
-    isArrayLiteralExpression(target.parent) ||
-    isObjectLiteralExpression(target.parent) ||
-    isPropertyAssignment(target.parent) ||
-    isShorthandPropertyAssignment(target.parent) ||
-    isSpreadElement(target.parent) ||
-    isSpreadAssignment(target.parent)
-  ) {
-    target = target.parent
-  }
-  if (target === node) return false
-  const parent = target.parent
-  return (
-    (isBinaryExpression(parent) &&
-      parent.left === target &&
-      parent.operatorToken.kind === SyntaxKind.EqualsToken) ||
-    ((isForOfStatement(parent) || isForInStatement(parent)) && parent.initializer === target)
-  )
-}
 
 const namesIn = (name: BindingName): ReadonlyArray<Node> =>
   isIdentifier(name) ?
@@ -68,7 +38,7 @@ const canonical = (project: Workspace.ProjectSnapshot, node: Node) =>
 const writtenSymbols = (project: Workspace.ProjectSnapshot) =>
   Effect.gen(function* () {
     const writes = yield* Query.semanticReferences(project).pipe(
-      Query.filter(({ value }) => value.role === "write" || isDestructuringTarget(value.node)),
+      Query.filter(({ value }) => value.role === "write"),
     )
     const symbols = yield* Effect.forEach(writes, ({ value }) => canonical(project, value.node), {
       concurrency: "unbounded",

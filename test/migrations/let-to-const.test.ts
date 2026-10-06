@@ -15,12 +15,15 @@ describe("let-to-const", () => {
           Effect.gen(function* () {
             const original = yield* read(fixturePath(fixture), "src/summary.ts")
             const { verified } = yield* executeRecipe(letToConst, undefined)
-            expect(verified.diagnosticDiff.introduced).toEqual([])
+            expect(verified.diagnosticDiff).toEqual({ introduced: [], unchanged: [], resolved: [] })
             expect(yield* read(root, "src/summary.ts")).toBe(
               original.replace("let count = values.length", "const count = values.length").replace(
                 "let [first, second] = values",
                 "const [first, second] = values",
-              ).replace("for (let name of list)", "for (const name of list)"),
+              ).replace("for (let name of list)", "for (const name of list)").replace(
+                "let fallback = 1",
+                "const fallback = 1",
+              ),
             )
             expect((yield* proposalOf(letToConst, undefined)).edits).toEqual([])
           }),

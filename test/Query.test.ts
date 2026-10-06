@@ -452,6 +452,38 @@ describe("queries", () => {
       ),
   )
 
+  effect(
+    "resolves shorthand reads and writes to the variable rather than the property",
+    () =>
+      withProject(
+        {
+          "src/shorthand.ts": [
+            "export let value = 0",
+            "const object = { value }",
+            ";({ value } = object)",
+            "for ({ value } of [object]) {}",
+            "object.value",
+            "function shadow() { let value = 1; return { value } }",
+          ].join("\n"),
+        },
+        (project) =>
+          Effect.gen(function* () {
+            const symbol = yield* project.symbolNamed("value", {
+              within: workspacePath("src/shorthand.ts"),
+            })
+            const references = yield* Query.identifiers(project).pipe(
+              Query.where(Query.resolvesTo(symbol)),
+            )
+            expect(references.map(({ value }) => value.parent.getText())).toEqual([
+              "value = 0",
+              "value",
+              "value",
+              "value",
+            ])
+          }),
+      ),
+  )
+
   effect("finds every supported module reference form", () =>
     withProject(
       {
@@ -531,6 +563,101 @@ describe("queries", () => {
           ])
         }),
     ))
+
+  effect(
+    "distinguishes assignment targets from property keys and runtime heritage from types",
+    () =>
+      withProject(
+        {
+          "src/target-roles.ts": [
+            "let target = 0",
+            "for (target of []) {}",
+            "for (target in {}) {}",
+            "for ([target] of []) {}",
+            "for ({ key: target } of []) {}",
+            "for ({ target } of []) {}",
+            "({ key: target = target, [target]: target, ...target } = {})",
+            ";[target, ...target] = []",
+            ";({ target = target } = {})",
+            ";(target)++",
+            ";(target as number) = 1",
+            ";(<number>target)++",
+            ";target! = 1",
+            ";(target satisfies number) = 1",
+            "const object = { target, key: target }",
+            "for (object.target of []) {}",
+            "for (object[target] of []) {}",
+            "class Base<T> {}",
+            "interface Shape {}",
+            "class Direct extends Base<Shape> implements Shape {}",
+            "interface Extended extends Shape {}",
+            "class Runtime extends (() => { target++; const update = () => { target = 1 }; update(); return Base<Shape> })() {}",
+            "type Alias = typeof target",
+            "const typed = target as typeof target",
+          ].join("\n"),
+        },
+        (project) =>
+          Effect.gen(function* () {
+            const references = yield* Query.semanticReferences(project).pipe(
+              Query.within("src/target-roles.ts"),
+            )
+            const roles = references.map(({ value }) => `${value.node.text}:${value.role}`)
+            expect(roles).toEqual([
+              "target:declaration",
+              "target:write",
+              "target:write",
+              "target:write",
+              "key:property-name",
+              "target:write",
+              "target:write",
+              "key:property-name",
+              "target:write",
+              "target:read",
+              "target:read",
+              "target:write",
+              "target:write",
+              "target:write",
+              "target:write",
+              "target:write",
+              "target:read",
+              "target:write",
+              "target:write",
+              "target:write",
+              "target:write",
+              "target:write",
+              "object:declaration",
+              "target:shorthand",
+              "key:property-name",
+              "target:read",
+              "object:read",
+              "target:property-name",
+              "object:read",
+              "target:read",
+              "Base:declaration",
+              "T:declaration",
+              "Shape:declaration",
+              "Direct:declaration",
+              "Base:read",
+              "Shape:type",
+              "Shape:type",
+              "Extended:declaration",
+              "Shape:type",
+              "Runtime:declaration",
+              "target:write",
+              "update:declaration",
+              "target:write",
+              "update:read",
+              "Base:read",
+              "Shape:type",
+              "Alias:declaration",
+              "target:type",
+              "typed:declaration",
+              "target:read",
+              "target:type",
+            ])
+          }),
+      ),
+  )
 
   effect("resolves module references through the compiler", () =>
     withProject(

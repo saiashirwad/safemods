@@ -10,6 +10,7 @@ import {
   Schema,
 } from "effect"
 import type { CallExpression, Expression, Node, SourceFile } from "typescript/unstable/ast"
+import { isIdentifier, isShorthandPropertyAssignment } from "typescript/unstable/ast/is"
 import {
   type IndexInfo,
   NodeBuilderFlags,
@@ -310,6 +311,11 @@ export const make = (options: {
       )
   }
 
+  const symbolAtLocation = perNode(
+    "getSymbolAtLocation",
+    (nodes) => checker.getSymbolAtLocation(nodes),
+  )
+
   const files = request("getSourceFileNames", () => program.getSourceFileNames()).pipe(
     Effect.flatMap((names) => Effect.forEach(names, ownedFile, { concurrency: 8 })),
     Effect.map((files) => files.filter((file) => file !== undefined)),
@@ -363,7 +369,15 @@ export const make = (options: {
         return [...entries].sort((left, right) => Order.String(left.name, right.name))
       }),
 
-    symbolOf: perNode("getSymbolAtLocation", (nodes) => checker.getSymbolAtLocation(nodes)),
+    symbolOf: (node) =>
+      isIdentifier(node) && isShorthandPropertyAssignment(node.parent) &&
+        node.parent.name === node ?
+        nodeRequest(
+          node,
+          "getShorthandAssignmentValueSymbol",
+          () => checker.getShorthandAssignmentValueSymbol(node.parent),
+        ) :
+        symbolAtLocation(node),
 
     canonicalSymbol: (symbol) => request("getCanonicalSymbol", () => canonicalSymbolOf(symbol)),
 
