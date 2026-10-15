@@ -9,6 +9,7 @@ import * as Config from "./Config.ts"
 import * as Inspect from "./Inspect.ts"
 import * as Finding from "./Finding.ts"
 import * as Recipe from "./Recipe.ts"
+import { reasonOf } from "./Reason.ts"
 import { actionOf, type FilePreview, verify } from "./Migration/index.ts"
 import * as Workspace from "./Workspace/index.ts"
 
@@ -30,13 +31,7 @@ class CommandFailed extends Data.TaggedError("CommandFailed")<{ readonly cause: 
 const reportFailure = (cause: unknown, format: "text" | "json" = "text") =>
   Effect.gen(function* () {
     if (cause instanceof FindingsReported || cause instanceof MigrationRejected) return yield* cause
-    const message = cause instanceof Inspect.NotFound ?
-      cause.what :
-      cause instanceof Config.InvalidConfig ?
-      `${cause.path}: ${cause.cause instanceof Error ? cause.cause.message : String(cause.cause)}` :
-      cause instanceof Error ?
-      cause.message :
-      String(cause)
+    const message = reasonOf(cause)
     if (format === "json") yield* Console.log(JSON.stringify({ error: message }))
     else yield* Console.error(message)
     return yield* new CommandFailed({ cause })
@@ -78,7 +73,7 @@ const capped = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
 
 const unresolvedLine = (
   sources: ReadonlyArray<FilePreview>,
-  finding: Finding.Finding,
+  finding: Finding.Issue,
 ): string => {
   const source = sources.find((file) => file.fileName === finding.fileName)
   if (source?.before.exists !== true) return `  ${finding.fileName}:? ${finding.message}`
@@ -133,7 +128,7 @@ const run = Command.make(
         const verified = yield* verify(recipe, input).pipe(
           Effect.catchTag("VerificationFailure", (failure) =>
             Effect.gen(function* () {
-              yield* Console.log(`rejected (${failure.policy}): ${failure.detail}`)
+              yield* Console.log(failure.message)
               yield* Console.log(
                 capped(
                   (failure.diagnostics ?? []).map(
@@ -175,9 +170,10 @@ const run = Command.make(
 const inspecting = (configFile: string, answer: Answer) =>
   Effect.gen(function* () {
     const { workspace } = yield* Config.load(configFile)
-    const lines = yield* Workspace.Workspace.use((service) => service.withSnapshot(answer)).pipe(
-      Effect.provide(workspace),
-    )
+    const lines = yield* Workspace.WorkspaceService.use((service) => service.withSnapshot(answer))
+      .pipe(
+        Effect.provide(workspace),
+      )
     yield* Console.log(lines.join("\n"))
   }).pipe(Effect.catch((cause) => reportFailure(cause)))
 

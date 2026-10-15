@@ -122,8 +122,8 @@ const failureOf = (project: Workspace.ProjectSnapshot, type: NativeType) =>
 
 export const noUnknownFailures = (options: { readonly within: string }) =>
   Check.perProject("no-unknown-failures", (project) =>
-    Query.calls(project).pipe(
-      Query.within(options.within),
+    Query.files(project, [options.within]).pipe(
+      Effect.flatMap(Query.calls),
       Query.typed,
       Effect.flatMap((calls) =>
         Check.each(calls, (call) =>
@@ -142,7 +142,7 @@ export const noUnknownFailures = (options: { readonly within: string }) =>
     ))
 ```
 
-List projects and checks in `safemods.config.ts`. Every path — a project config, a `within` glob, an edit, a finding — is relative to the directory holding that file. The rules that ship with the package come from `safemods/Checks`; a rule of your own is a file in your repository.
+List projects and checks in `safemods.config.ts`. Every path — a project config, a `within` glob, an edit, a finding — is relative to the directory holding that file. The rules that ship with the package are the `Checks` namespace of `safemods`; a rule of your own is a file in your repository.
 
 ```ts
 import { Config, Checks } from "safemods"
@@ -162,7 +162,7 @@ safemods check               # exit 1 on findings, 2 if the run failed
 safemods check --format json
 ```
 
-### Rules that ship in `safemods/Checks`
+### Rules that ship in `Checks`
 
 | Rule                       | Reports                                                                                                                                                |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -180,7 +180,7 @@ safemods check --format json
 | `anyInPublicApi`           | a public export whose type contains `any`, followed through namespace re-exports                                                                       |
 | `suppressions`             | `@ts-ignore`, `@ts-expect-error`, lint-disable comments and `!` assertions                                                                             |
 
-This repository enables some of these rules in `safemods.config.ts`; `pnpm lint` runs that config. `unjustifiedCasts` reports deliberate casts in `src/`. `anyInPublicApi` also remains off: its type walk reaches `any` inside Effect's declarations through otherwise typed public exports.
+This repository enables some of these rules in `safemods.config.ts`; `pnpm selfcheck` runs that config. It leaves `unjustifiedCasts` off because `src/` has deliberate casts, and `anyInPublicApi` off because its type walk reaches `any` inside Effect's declarations through otherwise typed public exports.
 
 ## Asking the compiler
 
@@ -188,11 +188,11 @@ The same config answers questions, for a person or an agent that would otherwise
 
 ```sh
 safemods map                         # every file: lines, exports, how many files import it
-safemods deps src/Query.ts           # what it imports and what imports it
-safemods exports src/Query.ts        # its exports with their types
-safemods type src/Query.ts:279:14    # the type and declaration of what is there
-safemods refs src/Query.ts:279:14    # every reference, through aliases and re-exports
-safemods calls src/Query.ts:279:14   # every direct call, and whether other uses exist
+safemods deps src/Query/index.ts     # what it imports and what imports it
+safemods exports src/Query/index.ts  # its exports with their types
+safemods type src/Query/nodes.ts:75:14    # the type and declaration of what is there
+safemods refs src/Query/nodes.ts:75:14    # every reference, through aliases and re-exports
+safemods calls src/Query/nodes.ts:75:14   # every direct call, and whether other uses exist
 safemods type src/shared.ts:1:12 --project app
 ```
 
@@ -204,35 +204,14 @@ Native type and signature objects still come from TypeScript. Their project owne
 
 ## Reading the code
 
-Read in this order; each step uses only what came before.
+The dependency order between modules is enforced by the `layers` check in `safemods.config.ts`; a module imports only from the layers before it. `safemods map` prints the live module graph with each file's exports and importer count.
 
-1. `src/Workspace/ProjectSnapshot.ts` — the interface at the top is every question you can ask the compiler. `perNode` is why asking about thousands of nodes costs one call per file.
-2. `src/Query.ts` — a query is an Effect returning `Selection`s (a node plus where it is) in file and position order. `where` filters with a compiler question.
-3. `src/Check.ts` — a check is a name and a snapshot callback returning findings; `run` locates each at `path:line:column`.
-4. `src/Checks/Layers.ts` — the smallest real rule, thirty lines. Then `WeakReturns.ts` for one that uses types.
-5. `src/bin.ts` — the command: load the config, run the checks, set the exit code.
-6. `src/Proposal.ts`, `src/Recipe.ts`, `src/Migration/` — the codemod half: propose, verify, then apply.
+Starting points that `map` does not explain:
 
-## Modules
-
-Each module depends only on the ones above it.
-
-| Module                                   | Responsibility                                                                        |
-| ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| `Sha256`, `ProjectId`, `WorkspacePath`   | branded value types                                                                   |
-| `Position`, `Finding`, `ModuleSpecifier` | line and column; a located message; parse, relate and emit specifiers                 |
-| `Edit`                                   | hash-guarded text edits and their application                                         |
-| `Workspace`                              | compiler snapshots; every snapshot is a fresh view of disk + overlay                  |
-| `Pattern`                                | syntax shapes with typed captures, combined into tagged matches                       |
-| `Query`, `Type`                          | selected syntax nodes in order; predicates and parsers over types                     |
-| `Proposal`                               | pure constructors for proposed edits, file operations and unsupported locations       |
-| `Check`                                  | checks and their results                                                              |
-| `Checks`                                 | the rules that ship with the package                                                  |
-| `Recipe`                                 | define a transformation: name, version, policies, input schema, run                   |
-| `Migration`                              | verify proposals and apply captured results, refusing stale files and symlink escapes |
-| `Config`                                 | load `safemods.config.ts` and the workspace it describes                              |
-| `Inspect`                                | answers for `map`, `deps`, `exports`, `type`, `refs` and `calls`                      |
-| `bin`                                    | the `safemods` command                                                                |
+- `src/Workspace/ProjectSnapshot.ts` — the interface at the top is every question you can ask the compiler. `perNode` is why asking about thousands of nodes costs one call per file.
+- `src/Query/` — a query is an Effect returning `Selection`s (a node plus where it is) in file and position order. `Query.files` scopes a walk to a glob; `where` filters with a compiler question.
+- `src/Checks/Layers.ts` — a short real rule. Then `WeakReturns.ts` for one that uses types.
+- `src/Migration/` — verify proposals and apply captured results, refusing stale files and symlink escapes.
 
 Verification uses one captured input base for planning, diagnostics and replay. It records compiler file reads, missing paths, directory listings and real paths, including dependencies outside the workspace. It rejects changed observations before returning a verified result and again before application. This is not an atomic filesystem snapshot.
 
@@ -268,7 +247,7 @@ export const main = Effect.gen(function* () {
 
 ## Examples
 
-Each recipe in `examples/` has a fixture under `fixtures/migrations/`, and every public export is used by `src/` or an example: `unusedCode` in `safemods.config.ts` counts nothing else as a use. The runner copies the fixture, applies the recipe to the copy, and prints `git diff HEAD`. The original fixture is not written.
+Every recipe in `examples/` except `rename-symbol` and `no-unknown-failures` has a fixture under `fixtures/migrations/<id>/` (`rename-symbol` is a CLI recipe tested in `test/bin.test.ts`; `no-unknown-failures` is a check), and every public export is used by `src/` or an example: `unusedCode` in `safemods.config.ts` counts nothing else as a use. The runner copies the fixture, applies the recipe to the copy, and prints `git diff HEAD`. The original fixture is not written. The fixture's `expected/` tree is the output its migration test asserts (`expectMigration` in `test/utils`); `UPDATE_FIXTURES=1 pnpm test` regenerates it.
 
 ```sh
 pnpm example rename-package-import
@@ -298,22 +277,28 @@ pnpm example --help
 | `object-as-const`           | `as const` on exported all-literal objects                |
 | `normalize-line-endings`    | CRLF → LF                                                 |
 
-Requires Node 24+.
+To add an example, write `examples/<id>.ts`, a fixture at `fixtures/migrations/<id>/` with its `expected/` tree, a test at `test/migrations/<id>.test.ts`, and an `entry(recipe, input)` line in the manifest in `examples/run.ts`. `test/examples-registry.test.ts` fails until all four exist.
 
 ## Verifying safemods itself
 
 CI runs on Ubuntu, macOS and Windows with Node 24.
 
-| Command         | What it proves                                                                                                   |
-| --------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `pnpm check`    | formatting, types, lint (oxlint, knip, and safemods on itself), the full suite, and a packed-package consumer    |
-| `pnpm coverage` | the suite covers the in-process source at or above a ratcheted threshold                                         |
-| `pnpm mutation` | injecting faults into core modules still fails the suite, so the tests observe behavior and are not tautological |
-| `pnpm verify`   | all three                                                                                                        |
+| Command                   | What it proves                                                                                                   |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `pnpm check:file <paths>` | oxlint and dprint on those files plus project-wide types, about 1.5s; use it after each edit                     |
+| `pnpm check:fast`         | formatting, types, oxlint, knip and `safemods check` on itself, all reported in one run, about 3s                |
+| `pnpm test:fast`          | the `fast` vitest project; `pnpm test:changed` runs only tests affected by uncommitted changes                   |
+| `pnpm check`              | `check:fast` plus the full suite; the local gate for most changes                                                |
+| `pnpm coverage`           | the suite covers the in-process source at or above a ratcheted threshold                                         |
+| `pnpm mutation`           | injecting faults into core modules still fails the suite, so the tests observe behavior and are not tautological |
+| `pnpm check:release`      | the package builds and a packed-package consumer imports it                                                      |
+| `pnpm verify`             | `check`, `coverage`, `mutation` and `check:release`; run it before a pull request                                |
 
-`pnpm check` is the whole local gate. Coverage excludes the surfaces that only run in a spawned `src/bin.ts` (`bin`, `Config`, `Inspect`, and the CLI example runner); their end-to-end CLI tests still run in `pnpm check`, but V8 reports only the parent process. Every mutant names the test that must kill it; a surviving mutant fails the run.
+CI runs `check`, `check:release`, `coverage` and `mutation`. Coverage excludes the surfaces that only run in a spawned `src/bin.ts` (`bin`, `Config`, `Inspect`, and the example runners `examples/run.ts` and `examples/rename-symbol.ts`); their end-to-end CLI tests still run in `pnpm check`, but V8 reports only the parent process. Every mutant is anchored by a `// mutant: <id>` comment above the line it changes and names the test that must kill it; a surviving mutant fails the run. `pnpm mutation --list` prints the mutants and `--only <id>` runs one.
 
-`pnpm install` points this checkout's git hooks at `.githooks`, so a push runs `pnpm check:fast` (format, types, lint). Set `SKIP_SAFEMODS_HOOKS=1` to skip it.
+`pnpm install` points this checkout's git hooks at `.githooks`, so a push runs `pnpm check:fast` and `pnpm test:fast`. Set `SKIP_SAFEMODS_HOOKS=1` to skip it.
+
+Tests mirror the source: `src/X.ts` is tested by `test/X.test.ts` and `src/Dir/Y.ts` by `test/Dir/Y.test.ts`. Cross-cutting tests sit beside them (`test/Pipeline.test.ts`, `test/ProposalSafety.test.ts`, `test/RecipeBoundary.test.ts`), and each example's test is `test/migrations/<id>.test.ts`.
 
 ```sh
 pnpm install

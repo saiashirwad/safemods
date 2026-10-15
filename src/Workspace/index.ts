@@ -11,5 +11,5 @@ export type {
   ProjectSnapshot,
   ProjectSnapshotError,
 } from "./ProjectSnapshot.ts"
-export { layer, ProjectNotInSnapshot, Workspace } from "./Workspace.ts"
-export type { WorkspaceSnapshot } from "./Workspace.ts"
+export { layer, ProjectNotInSnapshot, WorkspaceService } from "./WorkspaceService.ts"
+export type { WorkspaceSnapshot } from "./WorkspaceService.ts"

@@ -32,12 +32,20 @@ export const textEdit = (options: {
 export class InvalidEdit extends Data.TaggedError("InvalidEdit")<{
   readonly edit: TextEdit
   readonly reason: "range" | "source-mismatch"
-}> {}
+}> {
+  override readonly message =
+    `Edit of ${this.edit.fileName} at ${this.edit.start}-${this.edit.end} ${
+      this.reason === "range" ? "is outside the file" : "no longer matches the text it replaces"
+    }: build the edit again from the current source`
+}
 
 export class EditConflict extends Data.TaggedError("EditConflict")<{
   readonly left: TextEdit
   readonly right: TextEdit
-}> {}
+}> {
+  override readonly message =
+    `Edits of ${this.left.fileName} overlap at ${this.left.start}-${this.left.end} and ${this.right.start}-${this.right.end}: merge them into one edit`
+}
 
 export const compareEdits = (left: TextEdit, right: TextEdit): number =>
   Order.String(left.fileName, right.fileName) ||
@@ -54,6 +62,7 @@ const editsConflict = (left: TextEdit, right: TextEdit): boolean => {
   if (left.fileName !== right.fileName) return false
   if (left.start === left.end) return touches(left, right)
   if (right.start === right.end) return touches(right, left)
+  // mutant: edit-overlap
   return left.start < right.end && right.start < left.end
 }
 
@@ -91,6 +100,7 @@ export const applyFileEdits = (
       ) {
         return yield* new InvalidEdit({ edit, reason: "range" })
       }
+      // mutant: edit-source-mismatch
       if (Sha256.digest(sourceText.slice(edit.start, edit.end)) !== edit.expectedTextHash) {
         return yield* new InvalidEdit({ edit, reason: "source-mismatch" })
       }

@@ -39,7 +39,7 @@ const namedBindings = P.either(
 const entryPointOf = (element: ImportSpecifier | ExportSpecifier): string | undefined =>
   entryPointByExport.get(element.propertyName?.text ?? element.name.text)
 
-const split = (selection: Query.Selection<Query.ModuleReference>): Proposal.Proposal => {
+const split = (selection: Query.Selection<Query.ModuleReference>): Proposal.Plan => {
   const bound = namedBindings.match(selection.value.node)
   if (bound === undefined) {
     return Proposal.unsupported(selection, AMBIGUOUS)

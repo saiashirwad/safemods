@@ -12,7 +12,7 @@ import {
 } from "typescript/unstable/ast/is"
 import { expectTypeOf } from "vitest"
 import * as P from "../src/Pattern.ts"
-import * as Query from "../src/Query.ts"
+import * as Query from "../src/Query/index.ts"
 import { withProject } from "./utils/fixture.ts"
 
 const SOURCE = [
@@ -57,7 +57,7 @@ describe("patterns", () => {
     () =>
       withProject({ "src/shapes.ts": SOURCE }, (project) =>
         Effect.gen(function* () {
-          const [call] = yield* Query.calls(project).pipe(Query.within("src/shapes.ts"))
+          const [call] = yield* Query.calls(yield* Query.files(project, ["src/shapes.ts"]))
           const duplicateFields = P.node(isCallExpression, {
             expression: P.capture("same"),
             arguments: [P.capture("same")],
@@ -111,8 +111,7 @@ describe("patterns", () => {
     () =>
       withProject({ "src/shapes.ts": SOURCE }, (project) =>
         Effect.gen(function* () {
-          const found = yield* Query.calls(project).pipe(
-            Query.within("src/shapes.ts"),
+          const found = yield* Query.calls(yield* Query.files(project, ["src/shapes.ts"])).pipe(
             Query.shape({ expression: P.capture("callee"), arguments: [P.capture("only")] }),
           )
           expectTypeOf(found[0]!.value.captures).toEqualTypeOf<{
@@ -133,9 +132,10 @@ describe("patterns", () => {
     () =>
       withProject({ "src/shapes.ts": SOURCE }, (project) =>
         Effect.gen(function* () {
-          const found = yield* Query.match(project, { ifReturns, awaited }).pipe(
-            Query.within("src/shapes.ts"),
-          )
+          const found = yield* Query.match(yield* Query.files(project, ["src/shapes.ts"]), {
+            ifReturns,
+            awaited,
+          })
           expect(
             found.map(({ value }) =>
               value._tag === "ifReturns" ?
@@ -151,8 +151,9 @@ describe("patterns", () => {
     () =>
       withProject({ "src/shapes.ts": SOURCE }, (project) =>
         Effect.gen(function* () {
-          const found = yield* Query.match(project, { ifReturns }).pipe(
-            Query.within("src/shapes.ts"),
+          const found = yield* Query.match(yield* Query.files(project, ["src/shapes.ts"]), {
+            ifReturns,
+          }).pipe(
             Query.typedCaptures,
           )
           const string = yield* project.intrinsicType("string")

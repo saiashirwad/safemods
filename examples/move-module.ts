@@ -36,7 +36,7 @@ const sameExtensionAs = (path: string, specifier: string): string => {
 
 const rewrite =
   (input: MoveModuleInput) =>
-  (selection: Query.Selection<Query.ResolvedModuleReference>): ReadonlyArray<Proposal.Proposal> => {
+  (selection: Query.Selection<Query.ResolvedModuleReference>): ReadonlyArray<Proposal.Plan> => {
     const { project, fileName, value } = selection
     const specifier = value.specifier
     const insideMoved = fileName === input.from

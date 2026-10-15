@@ -231,7 +231,7 @@ export const commonJsToEsm = Recipe.define("commonjs-to-esm", {
         )).map(({ value }) => value.node),
       )
       const files = yield* project.files
-      const drafts: Array<Proposal.Proposal> = []
+      const drafts: Array<Proposal.Plan> = []
       for (const file of files) {
         const immutableBindings = constBindings(file.sourceFile.statements)
         const occupiedBindings = new Set<string>()
@@ -257,7 +257,7 @@ export const commonJsToEsm = Recipe.define("commonjs-to-esm", {
             if (matched?._tag === "namedExport" && !isIdentifier(matched.captures.value)) {
               occupiedBindings.add(matched.captures.name.text)
             }
-            drafts.push(Proposal.replace(project, statement, replacement))
+            drafts.push(Proposal.replaceNode(project, statement, replacement))
             continue
           }
           if (!isUnsupported(statement, globalRequires)) continue

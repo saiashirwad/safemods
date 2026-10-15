@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import * as Check from "../Check.ts"
-import * as Query from "../Query.ts"
+import * as Query from "../Query/index.ts"
 
 const linesOf = (text: string): number => text.split("\n").length
 
@@ -13,15 +13,13 @@ export const oversized = (options: {
   Check.perProject("oversized", (project) =>
     Effect.gen(function* () {
       const files = yield* Query.files(project, [options.within])
-      const functions = yield* Query.namedFunctions(project).pipe(
-        Query.within(options.within),
-      )
+      const functions = yield* Query.namedFunctions(files)
       return [
         ...files
           .filter((file) => linesOf(file.sourceFile.text) > options.fileLines)
           .map((file) =>
-            Check.reportAt(
-              file.fileName,
+            Check.report(
+              file,
               `${
                 linesOf(file.sourceFile.text)
               } lines, over the limit of ${options.fileLines}: split it by responsibility`,

@@ -181,7 +181,7 @@ export const splitModule = Recipe.define("split-module", {
 
       const splitConsumer = (
         selection: Query.Selection<Query.ResolvedModuleReference>,
-      ): Proposal.Proposal => {
+      ): Proposal.Plan => {
         const { specifier, typeOnly } = selection.value
         const matched = splittableConsumer(selection.value.node)
         if (matched === undefined) {
@@ -210,7 +210,7 @@ export const splitModule = Recipe.define("split-module", {
             undefined :
             line(fromService, typeOnly ? " type" : "", paths.service),
         ].filter((text) => text !== undefined)
-        return Proposal.replace(project, matched.node, lines.join("\n"))
+        return Proposal.replaceNode(project, matched.node, lines.join("\n"))
       }
 
       const consumers = yield* Query.resolvedModuleReferences(project).pipe(

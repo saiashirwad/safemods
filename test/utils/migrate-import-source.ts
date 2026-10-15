@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { isStringLiteral } from "typescript/unstable/ast/is"
 import * as Proposal from "../../src/Proposal.ts"
-import * as Query from "../../src/Query.ts"
+import * as Query from "../../src/Query/index.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import type { ConfiguredProject } from "../../src/Workspace/index.ts"
 
@@ -29,7 +29,7 @@ export const migrateImportSource = Recipe.define("migrate-import-source", {
         ...declarations.map(({ project, value }) => {
           const specifier = value.moduleSpecifier
           const quote = specifier.getText().startsWith("'") ? "'" : '"'
-          return Proposal.replace(project, specifier, `${quote}${input.to}${quote}`)
+          return Proposal.replaceNode(project, specifier, `${quote}${input.to}${quote}`)
         }),
       )
     }),

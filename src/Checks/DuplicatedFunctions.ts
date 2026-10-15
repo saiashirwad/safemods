@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import * as Check from "../Check.ts"
-import * as Query from "../Query.ts"
+import * as Query from "../Query/index.ts"
 
 const bodyOf = ({ value }: Query.Selection<Query.NamedFunction>): string => {
   const text = value.node.getText()
@@ -12,8 +12,8 @@ export const duplicatedFunctions = (options: {
   readonly minimumLength: number
 }) =>
   Check.perProject("duplicated-functions", (project) =>
-    Query.namedFunctions(project).pipe(
-      Query.within(options.within),
+    Query.files(project, [options.within]).pipe(
+      Effect.flatMap(Query.namedFunctions),
       Query.filter((selection) => bodyOf(selection).length >= options.minimumLength),
       Effect.map((functions) =>
         [...Map.groupBy(functions, bodyOf).values()].flatMap((copies) => {

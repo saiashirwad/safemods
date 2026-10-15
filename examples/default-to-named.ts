@@ -80,8 +80,10 @@ export const defaultToNamed = Recipe.define("default-to-named", {
         within: input.declarationFile,
       })
 
-      const defaultFunctions = yield* Query.nodes(project, isFunctionDeclaration).pipe(
-        Query.within(input.declarationFile),
+      const defaultFunctions = yield* Query.nodes(
+        yield* Query.files(project, [input.declarationFile]),
+        isFunctionDeclaration,
+      ).pipe(
         Query.filter(({ value }) => value.name?.text === input.exportName && exportsDefault(value)),
       )
 
@@ -104,7 +106,11 @@ export const defaultToNamed = Recipe.define("default-to-named", {
       const importEdits = defaultImports.map(({ project, value }) => {
         const clause = value.importClause
         const binding = namedBinding(clause.name.text, input.exportName)
-        return Proposal.replace(project, clause, importClauseText(binding, clause.namedBindings))
+        return Proposal.replaceNode(
+          project,
+          clause,
+          importClauseText(binding, clause.namedBindings),
+        )
       })
 
       const reexportEdits = reexports.flatMap(({ project, value }) => {
@@ -112,13 +118,15 @@ export const defaultToNamed = Recipe.define("default-to-named", {
         if (clause === undefined) return []
         return clause.elements.flatMap((element) => {
           const binding = rebinding(element, input.exportName)
-          return binding === undefined ? [] : [Proposal.replace(project, element, binding)]
+          return binding === undefined ? [] : [Proposal.replaceNode(project, element, binding)]
         })
       })
 
       return Proposal.concat(
-        Proposal.replaceEach(defaultFunctions, ({ value }) =>
-          value.getText().replace(/^export\s+default\s+/, "export ")),
+        Proposal.replaceEach(
+          defaultFunctions,
+          ({ value }) => value.getText().replace(/^export\s+default\s+/, "export "),
+        ),
         ...importEdits,
         ...reexportEdits,
       )

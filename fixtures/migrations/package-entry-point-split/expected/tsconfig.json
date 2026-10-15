@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@acme/sdk": ["./src/acme-sdk.ts"],
+      "@acme/sdk/auth": ["./src/acme-sdk.ts"],
+      "@acme/sdk/billing": ["./src/acme-sdk.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

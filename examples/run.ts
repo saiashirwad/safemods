@@ -69,159 +69,57 @@ export interface ExampleResult {
   readonly diff: string
 }
 
-const defineExample = <Input, E, R>(example: {
-  readonly id: string
-  readonly fixture: string
-  readonly recipe: Recipe.Recipe<Input, E, R>
-  readonly input: (project: Workspace.ConfiguredProject.Type) => Input
-}) => ({
-  id: example.id,
-  fixture: example.fixture,
-  execute: (project: Workspace.ConfiguredProject.Type) => {
-    const input = example.input(project)
-    return Effect.gen(function* () {
-      const verified = yield* Migration.verify(example.recipe, input)
-      return { verified }
-    })
-  },
+/**
+ * Pairs a recipe with the input it runs on. Each entry's `input` is checked against its own
+ * recipe, and the entry's error type is that recipe's.
+ */
+const entry = <Input, E>(
+  recipe: Recipe.Definition<Input, E>,
+  input: (project: Workspace.ConfiguredProject.Type) => Input,
+) => ({
+  verify: (project: Workspace.ConfiguredProject.Type) => Migration.verify(recipe, input(project)),
 })
 
-const examples = [
-  defineExample({
-    id: "commonjs-to-esm",
-    fixture: "fixtures/migrations/commonjs-to-esm",
-    recipe: commonJsToEsm,
-    input: (project) => ({ project }),
-  }),
-  defineExample({
-    id: "as-assertion-to-satisfies",
-    fixture: "fixtures/migrations/as-assertion-to-satisfies",
-    recipe: asAssertionToSatisfies,
-    input: () => undefined,
-  }),
-  defineExample({
-    id: "rename-package-import",
-    fixture: "fixtures/migrations/rename-package-import",
-    recipe: renamePackageImport,
-    input: () => undefined,
-  }),
-  defineExample({
-    id: "package-entry-point-split",
-    fixture: "fixtures/migrations/package-entry-point-split",
-    recipe: packageEntryPointSplit,
-    input: () => undefined,
-  }),
-  defineExample({
-    id: "positional-to-options",
-    fixture: "fixtures/migrations/positional-to-options",
-    recipe: positionalToOptions,
-    input: (project) => ({ project }),
-  }),
-  defineExample({
-    id: "overloaded-method",
-    fixture: "fixtures/migrations/overloaded-method",
-    recipe: overloadedMethod,
-    input: (project) => ({ project }),
-  }),
-  defineExample({
-    id: "jsx-button-props",
-    fixture: "fixtures/migrations/jsx-button-props",
-    recipe: jsxButtonProps,
-    input: () => undefined,
-  }),
-  defineExample({
-    id: "rename-interface-property",
-    fixture: "fixtures/migrations/rename-interface-property",
-    recipe: renameInterfaceProperty,
-    input: () => undefined,
-  }),
-  defineExample({
-    id: "rename-through-barrel",
-    fixture: "fixtures/migrations/rename-through-barrel",
-    recipe: renameThroughBarrel,
-    input: () => undefined,
-  }),
-  defineExample({
-    id: "move-module",
-    fixture: "fixtures/migrations/move-module",
-    recipe: moveModule,
-    input: (project) => ({
-      project,
-      from: WorkspacePath.schema.make("src/users/account.ts"),
-      to: WorkspacePath.schema.make("src/identity/account.ts"),
-    }),
-  }),
-  defineExample({
-    id: "split-module",
-    fixture: "fixtures/migrations/split-module",
-    recipe: splitModule,
-    input: (project) => ({ project }),
-  }),
-  defineExample({
-    id: "default-to-named",
-    fixture: "fixtures/migrations/default-to-named",
-    recipe: defaultToNamed,
-    input: (project) => ({
-      project,
-      declarationFile: WorkspacePath.schema.make("src/auth/authenticate.ts"),
-      exportName: "authenticate",
-    }),
-  }),
-  defineExample({
-    id: "enum-to-const-object",
-    fixture: "fixtures/migrations/enum-to-const-object",
-    recipe: enumToConstObject,
-    input: (project) => ({
-      project,
-      declarationFile: WorkspacePath.schema.make("src/status.ts"),
-      enumName: "Status",
-    }),
-  }),
-  defineExample({
-    id: "relative-js-extensions",
-    fixture: "fixtures/migrations/relative-js-extensions",
-    recipe: relativeJsExtensions,
-    input: () => undefined,
-  }),
-  defineExample({
-    id: "remove-debugger",
-    fixture: "fixtures/migrations/remove-debugger",
-    recipe: removeDebugger,
-    input: () => undefined,
-  }),
-  defineExample({
-    id: "let-to-const",
-    fixture: "fixtures/migrations/let-to-const",
-    recipe: letToConst,
-    input: () => undefined,
-  }),
-  defineExample({
-    id: "void-floating-promises",
-    fixture: "fixtures/migrations/void-floating-promises",
-    recipe: voidFloatingPromises,
-    input: () => undefined,
-  }),
-  defineExample({
-    id: "concat-to-template",
-    fixture: "fixtures/migrations/concat-to-template",
-    recipe: concatToTemplate,
-    input: () => undefined,
-  }),
-  defineExample({
-    id: "object-as-const",
-    fixture: "fixtures/migrations/object-as-const",
-    recipe: objectAsConst,
-    input: () => undefined,
-  }),
-  defineExample({
-    id: "normalize-line-endings",
-    fixture: "fixtures/migrations/normalize-line-endings",
-    recipe: normalizeLineEndings,
-    input: () => undefined,
-  }),
-]
+/**
+ * One entry per migration example, keyed by id. The fixture is `fixtures/migrations/<id>/`
+ * (test/examples-registry.test.ts checks that every recipe has an entry, a fixture and a test).
+ */
+const manifest = Object.entries({
+  "commonjs-to-esm": entry(commonJsToEsm, (project) => ({ project })),
+  "as-assertion-to-satisfies": entry(asAssertionToSatisfies, () => undefined),
+  "rename-package-import": entry(renamePackageImport, () => undefined),
+  "package-entry-point-split": entry(packageEntryPointSplit, () => undefined),
+  "positional-to-options": entry(positionalToOptions, (project) => ({ project })),
+  "overloaded-method": entry(overloadedMethod, (project) => ({ project })),
+  "jsx-button-props": entry(jsxButtonProps, () => undefined),
+  "rename-interface-property": entry(renameInterfaceProperty, () => undefined),
+  "rename-through-barrel": entry(renameThroughBarrel, () => undefined),
+  "move-module": entry(moveModule, (project) => ({
+    project,
+    from: WorkspacePath.schema.make("src/users/account.ts"),
+    to: WorkspacePath.schema.make("src/identity/account.ts"),
+  })),
+  "split-module": entry(splitModule, (project) => ({ project })),
+  "default-to-named": entry(defaultToNamed, (project) => ({
+    project,
+    declarationFile: WorkspacePath.schema.make("src/auth/authenticate.ts"),
+    exportName: "authenticate",
+  })),
+  "enum-to-const-object": entry(enumToConstObject, (project) => ({
+    project,
+    declarationFile: WorkspacePath.schema.make("src/status.ts"),
+    enumName: "Status",
+  })),
+  "relative-js-extensions": entry(relativeJsExtensions, () => undefined),
+  "remove-debugger": entry(removeDebugger, () => undefined),
+  "let-to-const": entry(letToConst, () => undefined),
+  "void-floating-promises": entry(voidFloatingPromises, () => undefined),
+  "concat-to-template": entry(concatToTemplate, () => undefined),
+  "object-as-const": entry(objectAsConst, () => undefined),
+  "normalize-line-endings": entry(normalizeLineEndings, () => undefined),
+})
 
-export const exampleIds = examples.map((example) => example.id)
+export const exampleIds = manifest.map(([id]) => id)
 
 const isInside = (root: string, candidate: string, path: Path.Path): boolean => {
   const relative = path.relative(root, candidate)
@@ -234,7 +132,7 @@ const copyFixture = Effect.fn("copyFixture")(function* (
 ) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const source = path.resolve(repoRoot, fixture)
+  const source = path.resolve(fixture)
   const workspace = destination === undefined ?
     yield* fs.makeTempDirectory({ prefix: `safemods-${path.basename(fixture)}-` }) :
     path.resolve(destination)
@@ -243,6 +141,8 @@ const copyFixture = Effect.fn("copyFixture")(function* (
   }
   yield* fs.makeDirectory(workspace, { recursive: true })
   yield* fs.copy(source, workspace, { overwrite: true })
+  // expected/ is the fixture's reference output tree, not part of the project being migrated.
+  yield* fs.remove(path.join(workspace, "expected"), { recursive: true, force: true })
   yield* git(workspace, ["init", "--quiet"])
   yield* git(workspace, ["add", "-A"])
   yield* git(workspace, [
@@ -283,27 +183,28 @@ export const runExample = Effect.fn("runExample")(function* (
   destination?: string,
   preview = false,
 ) {
-  const example = examples.find((candidate) => candidate.id === id)
+  const example = manifest.find(([key]) => key === id)?.[1]
   if (example === undefined) {
     return yield* new UnknownExample({ id })
   }
-  const workspace = yield* copyFixture(example.fixture, destination)
+  const fixture = NodePath.join(fixturesRoot, "migrations", id)
+  const workspace = yield* copyFixture(fixture, destination)
   const definition = yield* Workspace.WorkspaceDefinition.make({
     projects: [{ id: "app", config: "tsconfig.json" }],
   })
   const [project] = definition.projects
-  const { verified } = yield* Effect.gen(function* () {
-    const executed = yield* example.execute(project)
+  const verified = yield* Effect.gen(function* () {
+    const verified = yield* example.verify(project)
     if (!preview) {
-      yield* executed.verified.apply
+      yield* verified.apply
     }
-    return executed
+    return verified
   }).pipe(Effect.provide(Workspace.layer(definition, workspace)))
   yield* git(workspace, ["add", "-A"])
   const diff = yield* git(workspace, ["--no-pager", "diff", "--no-color", "HEAD"])
   return {
-    id: example.id,
-    fixture: NodePath.resolve(repoRoot, example.fixture),
+    id,
+    fixture,
     workspace,
     applied: !preview,
     files: verified.preview.files.map((file) => ({

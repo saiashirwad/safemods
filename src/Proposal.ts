@@ -1,8 +1,8 @@
 import type { Node, StringLiteral } from "typescript/unstable/ast"
 import { textEdit, type TextEdit } from "./Edit.ts"
-import type { Finding } from "./Finding.ts"
+import type { Issue } from "./Finding.ts"
 import type * as WorkspacePath from "./WorkspacePath.ts"
-import type { Selection } from "./Query.ts"
+import type { Selection } from "./Query/index.ts"
 import type { ProjectFile, ProjectSnapshot } from "./Workspace/index.ts"
 
 export type { TextEdit } from "./Edit.ts"
@@ -22,15 +22,15 @@ export interface Policies {
   readonly idempotence: "required" | "not-promised"
 }
 
-export interface Proposal {
+export interface Plan {
   readonly edits: ReadonlyArray<TextEdit>
   readonly fileOperations: ReadonlyArray<FileOperation>
-  readonly unsupported: ReadonlyArray<Finding>
+  readonly unsupported: ReadonlyArray<Issue>
 }
 
-export const empty: Proposal = { edits: [], fileOperations: [], unsupported: [] }
+export const empty: Plan = { edits: [], fileOperations: [], unsupported: [] }
 
-export const concat = (...drafts: ReadonlyArray<Proposal>): Proposal => ({
+export const concat = (...drafts: ReadonlyArray<Plan>): Plan => ({
   edits: drafts.flatMap((draft) => draft.edits),
   fileOperations: drafts.flatMap((draft) => draft.fileOperations),
   unsupported: drafts.flatMap((draft) => draft.unsupported),
@@ -56,14 +56,14 @@ const editBetween = (
   })
 }
 
-const oneEdit = (edit: TextEdit): Proposal => ({ ...empty, edits: [edit] })
+const oneEdit = (edit: TextEdit): Plan => ({ ...empty, edits: [edit] })
 
-const oneOperation = (operation: FileOperation): Proposal => ({
+const oneOperation = (operation: FileOperation): Plan => ({
   ...empty,
   fileOperations: [operation],
 })
 
-export const unsupported = <A>(selection: Selection<A>, message: string): Proposal => ({
+export const unsupported = <A>(selection: Selection<A>, message: string): Plan => ({
   ...empty,
   unsupported: [
     {
@@ -75,17 +75,17 @@ export const unsupported = <A>(selection: Selection<A>, message: string): Propos
   ],
 })
 
-export const replace = (project: ProjectSnapshot, node: Node, newText: string): Proposal =>
+export const replaceNode = (project: ProjectSnapshot, node: Node, newText: string): Plan =>
   oneEdit(editBetween(project, node, "node", newText))
 
 export const replaceStringLiteral = (
   project: ProjectSnapshot,
   literal: StringLiteral,
   text: string,
-): Proposal => {
+): Plan => {
   const quote = literal.getText().startsWith("'") ? "'" : '"'
   const escaped = JSON.stringify(text).slice(1, -1)
-  return replace(
+  return replaceNode(
     project,
     literal,
     quote === "'" ? `'${escaped.replace(/'/g, "\\'")}'` : `"${escaped}"`,
@@ -95,7 +95,7 @@ export const replaceStringLiteral = (
 export const replaceSelection = <A extends Node>(
   selection: Selection<A>,
   newText: string,
-): Proposal =>
+): Plan =>
   oneEdit(
     textEdit({
       fileName: selection.fileName,
@@ -106,11 +106,11 @@ export const replaceSelection = <A extends Node>(
     }),
   )
 
-export const replaceRange = <A extends Node>(
+export const replaceWithinSelection = <A extends Node>(
   selection: Selection<A>,
   range: { readonly start: number; readonly end: number },
   newText: string,
-): Proposal => {
+): Plan => {
   if (range.start < 0 || range.end < range.start || selection.start + range.end > selection.end) {
     throw new Error("Range is outside selection")
   }
@@ -125,15 +125,15 @@ export const replaceRange = <A extends Node>(
   )
 }
 
-export const remove = (project: ProjectSnapshot, node: Node): Proposal => replace(project, node, "")
+export const remove = (project: ProjectSnapshot, node: Node): Plan => replaceNode(project, node, "")
 
-export const insertBefore = (project: ProjectSnapshot, node: Node, text: string): Proposal =>
+export const insertBefore = (project: ProjectSnapshot, node: Node, text: string): Plan =>
   oneEdit(editBetween(project, node, "before", text))
 
-export const insertAfter = (project: ProjectSnapshot, node: Node, text: string): Proposal =>
+export const insertAfter = (project: ProjectSnapshot, node: Node, text: string): Plan =>
   oneEdit(editBetween(project, node, "after", text))
 
-export const replaceText = (file: ProjectFile, newText: string): Proposal =>
+export const replaceFile = (file: ProjectFile, newText: string): Plan =>
   oneEdit(
     textEdit({
       fileName: file.fileName,
@@ -144,14 +144,14 @@ export const replaceText = (file: ProjectFile, newText: string): Proposal =>
     }),
   )
 
-export const createFile = (fileName: WorkspacePath.Type, content: string): Proposal =>
+export const createFile = (fileName: WorkspacePath.Type, content: string): Plan =>
   oneOperation({
     kind: "create",
     fileName,
     content,
   })
 
-export const deleteFile = (file: ProjectFile): Proposal =>
+export const deleteFile = (file: ProjectFile): Plan =>
   oneOperation({
     kind: "delete",
     fileName: file.fileName,
@@ -160,7 +160,7 @@ export const deleteFile = (file: ProjectFile): Proposal =>
 export const moveFile = (
   file: ProjectFile,
   toFileName: WorkspacePath.Type,
-): Proposal =>
+): Plan =>
   oneOperation({
     kind: "move",
     fileName: file.fileName,
@@ -170,5 +170,5 @@ export const moveFile = (
 export const replaceEach = <A extends Node>(
   selections: ReadonlyArray<Selection<A>>,
   replacement: (selection: Selection<A>) => string,
-): Proposal =>
+): Plan =>
   concat(...selections.map((selection) => replaceSelection(selection, replacement(selection))))

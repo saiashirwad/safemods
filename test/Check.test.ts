@@ -3,7 +3,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import * as Check from "../src/Check.ts"
-import * as Query from "../src/Query.ts"
+import * as Query from "../src/Query/index.ts"
 import { findingsOf } from "./utils/check.ts"
 import { workspacePath } from "./utils/domain.ts"
 import { withFixture } from "./utils/fixture.ts"
@@ -45,12 +45,12 @@ describe("checks", () => {
         Effect.gen(function* () {
           const at = workspacePath("src/lib.ts")
           const results = yield* Check.run([
-            Check.define("a b", () => Effect.succeed([Check.reportAt(at, "c")])),
+            Check.define("a b", () => Effect.succeed([Check.report({ fileName: at }, "c")])),
             Check.define(
               "a",
               () =>
                 Effect.succeed([
-                  Check.reportAt(at, "b c"),
+                  Check.report({ fileName: at }, "b c"),
                   { fileName: at, start: 0, end: 1, message: "b c" },
                 ]),
             ),
@@ -67,7 +67,6 @@ describe("checks", () => {
           ])
         }),
       {
-        fixture: "empty",
         files: {
           "tsconfig.json": JSON.stringify({ include: ["src/**/*.ts"] }),
           "src/lib.ts": "export const value = 1\n",
@@ -108,7 +107,8 @@ describe("checks", () => {
                 end: 30,
                 line: 1,
                 column: 1,
-                message: "imports src/app.ts, which is listed below it",
+                message:
+                  "imports src/app.ts, which the layers check in safemods.config.ts lists below this file: move the import, or move the module to a higher layer",
               },
             ])
 
@@ -116,7 +116,6 @@ describe("checks", () => {
             expect(broken.code).toBe(2)
           }),
         {
-          fixture: "empty",
           files: {
             "tsconfig.json": JSON.stringify({
               compilerOptions: { module: "NodeNext", moduleResolution: "NodeNext", noEmit: true },

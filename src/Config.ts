@@ -1,16 +1,19 @@
 import { Data, Effect, type Layer, Path, Predicate, Schema } from "effect"
+import { reasonOf } from "./Reason.ts"
 import type * as Check from "./Check.ts"
 import * as Workspace from "./Workspace/index.ts"
 
 export interface Config {
   readonly projects: ReadonlyArray<{ readonly id: string; readonly config: string }>
-  readonly checks?: ReadonlyArray<Check.Check<unknown>>
+  readonly checks?: ReadonlyArray<Check.Definition<unknown>>
 }
 
 export class InvalidConfig extends Data.TaggedError("InvalidConfig")<{
   readonly path: string
   readonly cause: unknown
-}> {}
+}> {
+  override readonly message = `${this.path}: ${reasonOf(this.cause)}`
+}
 
 export const importModule = (file: string) =>
   Effect.gen(function* () {
@@ -36,7 +39,7 @@ const isConfig = (value: unknown): value is Config =>
 
 export interface Loaded {
   readonly config: Config
-  readonly workspace: Layer.Layer<Workspace.Workspace, never, Path.Path>
+  readonly workspace: Layer.Layer<Workspace.WorkspaceService, never, Path.Path>
 }
 
 export const load = (file: string) =>

@@ -74,7 +74,9 @@ export const letToConst = Recipe.perProject("let-to-const", {
         Query.where(({ value }) => neverWritten(project, written, value)),
       )
       return Proposal.concat(
-        ...lists.map((list) => Proposal.replaceRange(list, { start: 0, end: 3 }, "const")),
+        ...lists.map((list) =>
+          Proposal.replaceWithinSelection(list, { start: 0, end: 3 }, "const")
+        ),
       )
     }),
 })

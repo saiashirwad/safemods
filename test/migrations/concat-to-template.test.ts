@@ -1,33 +1,21 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { concatToTemplate } from "../../examples/concat-to-template.ts"
-import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
-import { fixturePath, read, withFixture } from "../utils/fixture.ts"
-
-const fixture = "migrations/concat-to-template"
+import { expectMigration } from "../utils/expect-migration.ts"
 
 describe("concat-to-template", () => {
   effect(
     "rewrites one + between strings and numbers, and reports chains",
     () =>
-      withFixture(
-        (root) =>
-          Effect.gen(function* () {
-            const original = yield* read(fixturePath(fixture), "src/greeting.ts")
-            const { verified } = yield* executeRecipe(concatToTemplate, undefined)
-            expect(verified.diagnosticDiff.introduced).toEqual([])
-            expect(verified.unsupported.map(({ message }) => message)).toEqual([
-              "a chain of + needs rewriting by hand",
-            ])
-            expect(yield* read(root, "src/greeting.ts")).toBe(
-              original.replace('"Hello " + name', "`Hello ${name}`").replace(
-                'age + " years"',
-                "`${age} years`",
-              ).replace('"`" + name', "`\\`${name}`"),
-            )
-            expect((yield* proposalOf(concatToTemplate, undefined)).edits).toEqual([])
-          }),
-        { fixture },
-      ),
+      Effect.gen(function* () {
+        const { verified } = yield* expectMigration(
+          concatToTemplate,
+          "migrations/concat-to-template",
+        )
+        expect(verified.diagnosticDiff.introduced).toEqual([])
+        expect(verified.unsupported.map(({ message }) => message)).toEqual([
+          "a chain of + needs rewriting by hand",
+        ])
+      }),
   )
 })

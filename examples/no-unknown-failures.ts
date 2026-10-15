@@ -19,8 +19,8 @@ const failureOf = (project: Workspace.ProjectSnapshot, type: NativeType) =>
 
 export const noUnknownFailures = (options: { readonly within: string }) =>
   Check.perProject("no-unknown-failures", (project) =>
-    Query.calls(project).pipe(
-      Query.within(options.within),
+    Query.files(project, [options.within]).pipe(
+      Effect.flatMap(Query.calls),
       Query.typed,
       Effect.flatMap((calls) =>
         Check.each(calls, (call) =>

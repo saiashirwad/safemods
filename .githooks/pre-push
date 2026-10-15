@@ -3,4 +3,4 @@
 if [ "$SKIP_SAFEMODS_HOOKS" = "1" ]; then
   exit 0
 fi
-exec pnpm check:fast
+pnpm check:fast && pnpm test:fast

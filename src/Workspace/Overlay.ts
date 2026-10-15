@@ -26,6 +26,7 @@ export const fileSystem = (overlay: Overlay, base: CompilerFileSystem): Compiler
   return {
     readFile: (fileName) => {
       const resolved = Path.resolve(fileName)
+      // mutant: overlay-deleted-file
       return deleted.has(resolved) ? null : files.get(resolved) ?? base.readFile(resolved)
     },
     fileExists: (fileName) => {

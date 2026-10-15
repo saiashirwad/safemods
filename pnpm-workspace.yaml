@@ -1,5 +1,8 @@
 packages: []
 
+# Never reinstall node_modules mid-run; concurrent `pnpm <script>` calls raced on it.
+verifyDepsBeforeRun: false
+
 # platform-node's ^rc dependency also accepts stable shared, which cannot run with effect@rc.
 overrides:
   '@effect/platform-node-shared': 4.0.0-rc.109

@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import * as Check from "../Check.ts"
 import type * as WorkspacePath from "../WorkspacePath.ts"
-import * as Query from "../Query.ts"
+import * as Query from "../Query/index.ts"
 
 export const restrictedReferences = (options: {
   readonly name: string
@@ -10,8 +10,9 @@ export const restrictedReferences = (options: {
 }) =>
   Check.perProject(`restricted-references:${options.name}`, (project) =>
     Effect.gen(function* () {
-      const declarations = yield* Query.identifiers(project).pipe(
-        Query.within(options.declaredIn),
+      const declarations = yield* Query.identifiers(
+        yield* Query.files(project, [options.declaredIn]),
+      ).pipe(
         Query.filter(({ value }) =>
           value.text === options.name && Query.nameOf(value.parent) === value
         ),
@@ -32,7 +33,9 @@ export const restrictedReferences = (options: {
       return [...outside.values()].map((reference) =>
         Check.report(
           reference,
-          `${options.name} may only be used within ${options.allowedWithin.join(", ")}`,
+          `${options.name} may only be used within ${
+            options.allowedWithin.join(", ")
+          }: move this use there, or go through code that lives there`,
         )
       )
     }))

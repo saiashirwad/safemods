@@ -1,11 +1,11 @@
 import { Effect } from "effect"
 import * as Check from "../Check.ts"
-import * as Query from "../Query.ts"
+import * as Query from "../Query/index.ts"
 
 export const importCycles = (options: { readonly within: string; readonly typeImports: boolean }) =>
   Check.perProject("import-cycles", (project) =>
-    Query.resolvedModuleReferences(project).pipe(
-      Query.within(options.within),
+    Query.files(project, [options.within]).pipe(
+      Effect.flatMap(Query.resolvedModuleReferences),
       Query.filter(
         ({ value }) => (options.typeImports || !value.typeOnly) && value.resolved !== undefined,
       ),
