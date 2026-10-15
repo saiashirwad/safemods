@@ -2,14 +2,14 @@ import { Effect } from "effect"
 import { isExpressionStatement } from "typescript/unstable/ast/is"
 import { TypeFlags } from "typescript/unstable/async"
 import * as Check from "../Check.ts"
-import * as Query from "../Query.ts"
+import * as Query from "../Query/index.ts"
 
 const nothing = TypeFlags.Void | TypeFlags.Undefined | TypeFlags.Never
 
 export const ignoredReturns = (options: { readonly within: string }) =>
   Check.perProject("ignored-returns", (project) =>
-    Query.namedFunctions(project).pipe(
-      Query.within(options.within),
+    Query.files(project, [options.within]).pipe(
+      Effect.flatMap(Query.namedFunctions),
       Effect.flatMap((functions) =>
         Check.each(functions, (selection) =>
           Effect.gen(function* () {

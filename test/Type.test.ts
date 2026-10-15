@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect, Option } from "effect"
 import type { Type as NativeType } from "typescript/unstable/async"
-import * as Query from "../src/Query.ts"
+import * as Query from "../src/Query/index.ts"
 import * as Type from "../src/Type.ts"
 import { collectDiagnostics } from "../src/Migration/Diagnostics.ts"
 import type { ProjectSnapshot, ProjectSnapshotError } from "../src/Workspace/index.ts"
@@ -30,10 +30,10 @@ const SOURCE = [
 
 const typeNamed = (project: ProjectSnapshot, name: string) =>
   Effect.gen(function* () {
-    const [declaration] = yield* Query.identifiers(project).pipe(
-      Query.within("src/effects.ts"),
-      Query.filter(({ value }) => value.text === name),
-    )
+    const [declaration] = yield* Query.identifiers(yield* Query.files(project, ["src/effects.ts"]))
+      .pipe(
+        Query.filter(({ value }) => value.text === name),
+      )
     return (yield* project.typeOf(declaration!.value))!
   })
 
@@ -186,10 +186,10 @@ const mentionsProject = <A, E, R>(use: (project: ProjectSnapshot) => Effect.Effe
 
 const declaredType = (project: ProjectSnapshot, name: string) =>
   Effect.gen(function* () {
-    const [declaration] = yield* Query.identifiers(project).pipe(
-      Query.within("src/mentions.ts"),
-      Query.filter(({ value }) => value.text === name),
-    )
+    const [declaration] = yield* Query.identifiers(yield* Query.files(project, ["src/mentions.ts"]))
+      .pipe(
+        Query.filter(({ value }) => value.text === name),
+      )
     return (yield* project.typeOf(declaration!.value))!
   })
 

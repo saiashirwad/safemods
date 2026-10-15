@@ -1,8 +1,9 @@
 import { Data, Effect, Predicate, Schema } from "effect"
+import { reasonOf } from "./Reason.ts"
 import * as Proposal from "./Proposal.ts"
 import type { ProjectSnapshot, WorkspaceSnapshot } from "./Workspace/index.ts"
 
-export interface Recipe<Input = undefined, E = never, R = never> {
+export interface Definition<Input = undefined, E = never, R = never> {
   readonly name: string
   readonly version: string
   readonly policies: Proposal.Policies
@@ -10,13 +11,15 @@ export interface Recipe<Input = undefined, E = never, R = never> {
   readonly run: (
     snapshot: WorkspaceSnapshot,
     input: Input,
-  ) => Effect.Effect<Proposal.Proposal, E, R>
+  ) => Effect.Effect<Proposal.Plan, E, R>
 }
 
 export class RecipeInputError extends Data.TaggedError("RecipeInputError")<{
   readonly recipe: string
   readonly cause: unknown
-}> {}
+}> {
+  override readonly message = `Recipe ${this.recipe} cannot run: ${reasonOf(this.cause)}`
+}
 
 export const define = <Input = undefined, E = never, R = never>(
   name: string,
@@ -27,9 +30,9 @@ export const define = <Input = undefined, E = never, R = never>(
     readonly run: (
       snapshot: WorkspaceSnapshot,
       input: Input,
-    ) => Effect.Effect<Proposal.Proposal, E, R>
+    ) => Effect.Effect<Proposal.Plan, E, R>
   },
-): Recipe<Input, E, R> => ({
+): Definition<Input, E, R> => ({
   name,
   version: definition.version,
   schema: definition.schema,
@@ -47,9 +50,9 @@ export const perProject = <Input = undefined, E = never, R = never>(
     readonly version: string
     readonly schema?: Schema.Codec<Input, unknown>
     readonly policies?: Partial<Proposal.Policies>
-    readonly run: (project: ProjectSnapshot, input: Input) => Effect.Effect<Proposal.Proposal, E, R>
+    readonly run: (project: ProjectSnapshot, input: Input) => Effect.Effect<Proposal.Plan, E, R>
   },
-): Recipe<Input, E, R> =>
+): Definition<Input, E, R> =>
   define(name, {
     ...definition,
     run: (snapshot, input) =>
@@ -61,7 +64,7 @@ export const perProject = <Input = undefined, E = never, R = never>(
       ),
   })
 
-export const isRecipe = (value: unknown): value is Recipe<unknown> => {
+export const isRecipe = (value: unknown): value is Definition<unknown> => {
   if (!Predicate.isObject(value)) return false
   const { name, version, policies, schema, run } = value
   if (
@@ -79,13 +82,14 @@ export const isRecipe = (value: unknown): value is Recipe<unknown> => {
 }
 
 export const checkInput = <Input, E, R>(
-  recipe: Recipe<Input, E, R>,
+  recipe: Definition<Input, E, R>,
   input: Input,
 ): Effect.Effect<void, RecipeInputError> => {
   if (!isRecipe(recipe)) {
     return new RecipeInputError({
       recipe: recipe.name,
-      cause: "Invalid recipe metadata, policies, schema, or run callback",
+      cause:
+        "its metadata, policies, schema or run callback is invalid: build it with Recipe.define",
     })
   }
   return recipe.schema === undefined ?

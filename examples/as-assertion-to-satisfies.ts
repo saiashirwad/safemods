@@ -41,10 +41,10 @@ const operatorRange = (node: AsExpression): { readonly start: number; readonly e
   return { start, end: start + keyword[0].length }
 }
 
-const draftFor = (selection: Query.Selection<AsExpression>): Proposal.Proposal => {
+const draftFor = (selection: Query.Selection<AsExpression>): Proposal.Plan => {
   const review = needsReview(selection.value)
   return review === undefined ?
-    Proposal.replaceRange(selection, operatorRange(selection.value), "satisfies") :
+    Proposal.replaceWithinSelection(selection, operatorRange(selection.value), "satisfies") :
     Proposal.unsupported(selection, review._tag)
 }
 

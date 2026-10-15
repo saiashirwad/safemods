@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { isAsExpression } from "typescript/unstable/ast/is"
 import type { Type as NativeType } from "typescript/unstable/async"
 import * as Check from "../Check.ts"
-import * as Query from "../Query.ts"
+import * as Query from "../Query/index.ts"
 import * as Type from "../Type.ts"
 
 const brief = (printed: string): string =>
@@ -12,8 +12,8 @@ const isUntyped = (type: NativeType): boolean => Type.isAny(type) || Type.isUnkn
 
 export const unjustifiedCasts = (options: { readonly within: string }) =>
   Check.perProject("unjustified-casts", (project) =>
-    Query.nodes(project, isAsExpression).pipe(
-      Query.within(options.within),
+    Query.files(project, [options.within]).pipe(
+      Effect.flatMap((files) => Query.nodes(files, isAsExpression)),
       Query.filter(({ value }) => value.type.getText() !== "const"),
       Effect.flatMap((casts) =>
         Check.each(casts, (cast) =>

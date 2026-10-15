@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect"
 import type { Type as NativeType } from "typescript/unstable/async"
 import * as Check from "../Check.ts"
-import * as Query from "../Query.ts"
+import * as Query from "../Query/index.ts"
 import * as Type from "../Type.ts"
 import type {
   DeclarationSite,
@@ -76,10 +76,9 @@ const reportsIn = (project: ProjectSnapshot, file: ProjectFile, place: Place) =>
           )
           if (Option.isNone(leaked)) return []
           return Option.toArray(yield* place(leaked.value)).map((found) => {
-            const message = `exports ${name} with a type mentioning ${found}`
-            return at === undefined ?
-              Check.reportAt(file.fileName, message) :
-              Check.report(at, message)
+            const message =
+              `exports ${name} with a type mentioning ${found}: export a type of your own and keep that one internal`
+            return Check.report(at ?? file, message)
           })
         }),
       8,

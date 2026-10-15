@@ -27,16 +27,25 @@ import * as WorkspacePath from "../WorkspacePath.ts"
 import type * as ConfiguredProject from "./ConfiguredProject.ts"
 import { nativeRequest, type WorkspaceCompilerError } from "./NativeRequest.ts"
 
-export class SnapshotExpired extends Data.TaggedError("SnapshotExpired")<{}> {}
+export class SnapshotExpired extends Data.TaggedError("SnapshotExpired")<{}> {
+  override readonly message =
+    "The workspace snapshot is no longer active: use snapshot values only inside the callback that received them"
+}
 
 export class SymbolNotFound extends Data.TaggedError("SymbolNotFound")<{
   readonly name: string
   readonly fileName: WorkspacePath.Type
-}> {}
+}> {
+  override readonly message =
+    `No symbol named ${this.name} in ${this.fileName}: check the name and the file`
+}
 
 export class NodeNotOwned extends Data.TaggedError("NodeNotOwned")<{
   readonly fileName: string
-}> {}
+}> {
+  override readonly message =
+    `A node from ${this.fileName} does not belong to this project: use nodes only with the project that produced them`
+}
 
 export type ProjectSnapshotError = WorkspaceCompilerError | SnapshotExpired | NodeNotOwned
 

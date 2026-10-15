@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { isStringLiteral } from "typescript/unstable/ast/is"
 import * as Proposal from "../src/Proposal.ts"
 import { applyFileEdits } from "../src/Edit.ts"
-import * as Query from "../src/Query.ts"
+import * as Query from "../src/Query/index.ts"
 import { workspacePath } from "./utils/domain.ts"
 import { withProject } from "./utils/fixture.ts"
 
@@ -22,8 +22,9 @@ describe("proposals", () => {
       }, (project) =>
         Effect.gen(function* () {
           const value = "a'\"\\\n\r\t\0end"
-          const literals = yield* Query.nodes(project, isStringLiteral).pipe(
-            Query.within("src/literal.ts"),
+          const literals = yield* Query.nodes(
+            yield* Query.files(project, ["src/literal.ts"]),
+            isStringLiteral,
           )
           const file = (yield* project.file(workspacePath("src/literal.ts")))!
           const proposal = Proposal.concat(
@@ -40,16 +41,14 @@ describe("proposals", () => {
         })),
   )
   effect(
-    "replace, insert, and remove produce hash-guarded edits at the node's range",
+    "replaceNode, insert, and remove produce hash-guarded edits at the node's range",
     () =>
       withProject({ "src/arguments.ts": ARGUMENTS_SOURCE }, (project) =>
         Effect.gen(function* () {
-          const [call] = yield* Query.calls(project).pipe(
-            Query.within("src/arguments.ts"),
-          )
+          const [call] = yield* Query.calls(yield* Query.files(project, ["src/arguments.ts"]))
           const [first, second, third] = call!.value.arguments
           const draft = Proposal.concat(
-            Proposal.replace(project, first!, "10"),
+            Proposal.replaceNode(project, first!, "10"),
             Proposal.insertBefore(project, second!, "/* before */ "),
             Proposal.insertAfter(project, second!, " /* after */"),
             Proposal.remove(project, third!),
@@ -65,11 +64,9 @@ describe("proposals", () => {
     () =>
       withProject({ "src/arguments.ts": ARGUMENTS_SOURCE }, (project) =>
         Effect.gen(function* () {
-          const [call] = yield* Query.calls(project).pipe(
-            Query.within("src/arguments.ts"),
-          )
+          const [call] = yield* Query.calls(yield* Query.files(project, ["src/arguments.ts"]))
           const text = call!.value.getText()
-          const draft = Proposal.replaceRange(
+          const draft = Proposal.replaceWithinSelection(
             call!,
             { start: text.indexOf("1, 2, 3"), end: text.indexOf("1, 2, 3") + 7 },
             "options",
@@ -83,9 +80,7 @@ describe("proposals", () => {
     () =>
       withProject({ "src/arguments.ts": ARGUMENTS_SOURCE }, (project) =>
         Effect.gen(function* () {
-          const calls = yield* Query.calls(project).pipe(
-            Query.within("src/arguments.ts"),
-          )
+          const calls = yield* Query.calls(yield* Query.files(project, ["src/arguments.ts"]))
           const draft = Proposal.replaceEach(calls, () => "run()")
           expect(draft.edits).toHaveLength(1)
           expect(yield* applyFileEdits(ARGUMENTS_SOURCE, draft.edits)).toContain("result = run()")
@@ -103,7 +98,7 @@ describe("proposals", () => {
           expect(
             yield* applyFileEdits(
               library.sourceFile.text,
-              Proposal.replaceText(library, "new").edits,
+              Proposal.replaceFile(library, "new").edits,
             ),
           ).toBe("new")
 
@@ -127,6 +122,6 @@ describe("proposals", () => {
               content: "export {}\n",
             },
           ])
-        })),
+        }), { fixture: "recipe" }),
   )
 })

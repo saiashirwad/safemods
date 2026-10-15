@@ -9,10 +9,11 @@ import {
   Path,
   type PlatformError,
 } from "effect"
+import { reasonOf } from "../Reason.ts"
 import * as Sha256 from "../Sha256.ts"
 import type { FilePreview, FileState, MigrationPreview } from "./Preview.ts"
 import { StaleMigrationError } from "./Errors.ts"
-import { Workspace } from "../Workspace/index.ts"
+import { WorkspaceService } from "../Workspace/index.ts"
 
 export interface ApplicationOperationFailure {
   readonly phase: "commit" | "rollback" | "cleanup"
@@ -21,11 +22,31 @@ export interface ApplicationOperationFailure {
   readonly cause: Cause.Cause<PlatformError.PlatformError | RecoveryConflict>
 }
 
+const failureMessage = (
+  { reason, cause, failures = [] }: Pick<ApplicationFailure, "reason" | "cause" | "failures">,
+): string => {
+  const paths = failures.map(({ path }) => path).join(", ")
+  switch (reason) {
+    case "path-escape":
+      return "A migration target is outside the workspace: nothing was written; make the recipe edit only files inside it"
+    case "filesystem":
+      return `Writing the migration failed: ${
+        reasonOf(cause)
+      }; check the file permissions and retry`
+    case "recovery":
+      return `Writing the migration failed and could not be rolled back (${paths}): restore those files from version control`
+    case "committed":
+      return `The migration was written but cleanup failed (${paths}): delete the leftover temporary files`
+  }
+}
+
 export class ApplicationFailure extends Data.TaggedError("ApplicationFailure")<{
   readonly reason: "path-escape" | "filesystem" | "recovery" | "committed"
   readonly cause?: unknown
   readonly failures?: ReadonlyArray<ApplicationOperationFailure>
-}> {}
+}> {
+  override readonly message = failureMessage(this)
+}
 
 export interface ApplicationReceipt {
   readonly written: ReadonlyArray<FilePreview>
@@ -60,8 +81,8 @@ const nearestExisting = (
     return exists ? target : yield* nearestExisting(path.dirname(target))
   })
 
-const confine = Effect.fn("Application.confine")(function* (file: FilePreview) {
-  const workspace = yield* Workspace
+const confine = Effect.fn("Apply.confine")(function* (file: FilePreview) {
+  const workspace = yield* WorkspaceService
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const target = workspace.absolutePath(file.fileName)
@@ -69,6 +90,7 @@ const confine = Effect.fn("Application.confine")(function* (file: FilePreview) {
   const realAnchor = yield* fs.realPath(yield* nearestExisting(target)).pipe(
     Effect.mapError(failed),
   )
+  // mutant: apply-path-escape
   const relative = path.relative(realWorkspace, realAnchor)
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     return yield* new ApplicationFailure({ reason: "path-escape" })
@@ -76,7 +98,7 @@ const confine = Effect.fn("Application.confine")(function* (file: FilePreview) {
   return target
 })
 
-const requireState = Effect.fn("Application.requireState")(function* (
+const requireState = Effect.fn("Apply.requireState")(function* (
   file: FilePreview,
   target: string,
   expected: FileState,
@@ -87,10 +109,11 @@ const requireState = Effect.fn("Application.requireState")(function* (
   if (exists !== expected.exists) return yield* stale
   if (!expected.exists) return
   const bytes = yield* fs.readFile(target).pipe(Effect.mapError(failed))
+  // mutant: apply-stale-file
   if (Sha256.digest(bytes) !== Sha256.digest(expected.bytes)) return yield* stale
 })
 
-const preflight = Effect.fn("Application.preflight")(function* (preview: MigrationPreview) {
+const preflight = Effect.fn("Apply.preflight")(function* (preview: MigrationPreview) {
   const fs = yield* FileSystem.FileSystem
   const sources = new Map<string, string>()
   for (const source of preview.sources) {
@@ -120,7 +143,7 @@ const uniqueName = (target: string, suffix: string) =>
     (id) => `${target}.safemods-${id}.${suffix}`,
   ).pipe(Effect.mapError(failed))
 
-const moveAside = Effect.fn("Application.moveAside")(function* (target: Target, journal: Journal) {
+const moveAside = Effect.fn("Apply.moveAside")(function* (target: Target, journal: Journal) {
   const fs = yield* FileSystem.FileSystem
   yield* requireState(target.file, target.path, target.file.before)
   if (!target.file.before.exists) return
@@ -130,7 +153,7 @@ const moveAside = Effect.fn("Application.moveAside")(function* (target: Target, 
   yield* fs.rename(target.path, backup).pipe(Effect.mapError(failed))
 })
 
-const write = Effect.fn("Application.write")(function* (target: Target, journal: Journal) {
+const write = Effect.fn("Apply.write")(function* (target: Target, journal: Journal) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   yield* requireState(target.file, target.path, { exists: false })
@@ -162,7 +185,7 @@ const attempt = (
       Exit.isSuccess(exit) ? [] : [{ phase, operation, path, cause: exit.cause }],
   )
 
-const rollback = Effect.fn("Application.rollback")(function* (
+const rollback = Effect.fn("Apply.rollback")(function* (
   journal: Journal,
   cause: Cause.Cause<ApplicationFailure | StaleMigrationError>,
 ): Effect.fn.Return<never, ApplicationFailure | StaleMigrationError, FileSystem.FileSystem> {
@@ -226,7 +249,7 @@ const rollback = Effect.fn("Application.rollback")(function* (
   return yield* Effect.failCause(cause)
 })
 
-const cleanup = Effect.fn("Application.cleanup")(function* (journal: Journal) {
+const cleanup = Effect.fn("Apply.cleanup")(function* (journal: Journal) {
   const fs = yield* FileSystem.FileSystem
   const failures = [
     ...(yield* Effect.forEach(
@@ -245,7 +268,7 @@ const cleanup = Effect.fn("Application.cleanup")(function* (journal: Journal) {
   }
 })
 
-export const apply = Effect.fn("Application.apply")(function* (
+export const apply = Effect.fn("Apply.apply")(function* (
   preview: MigrationPreview,
 ) {
   const targets = yield* preflight(preview)

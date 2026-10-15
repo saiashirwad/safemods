@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { isObjectLiteralExpression } from "typescript/unstable/ast/is"
 import * as Proposal from "../../src/Proposal.ts"
 import type * as WorkspacePath from "../../src/WorkspacePath.ts"
-import * as Query from "../../src/Query.ts"
+import * as Query from "../../src/Query/index.ts"
 import * as Recipe from "../../src/Recipe.ts"
 import type { ConfiguredProject } from "../../src/Workspace/index.ts"
 
@@ -32,7 +32,11 @@ export const wrapTargetInput = Recipe.define("wrap-target-input", {
       return Proposal.concat(
         ...matches.map(({ project, value: call }) => {
           const argument = call.arguments[0]!
-          return Proposal.replace(project, argument, `{ ${input.property}: ${argument.getText()} }`)
+          return Proposal.replaceNode(
+            project,
+            argument,
+            `{ ${input.property}: ${argument.getText()} }`,
+          )
         }),
       )
     }),

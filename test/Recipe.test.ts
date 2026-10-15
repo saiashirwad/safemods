@@ -48,7 +48,6 @@ describe("recipe planning", () => {
           const stale = yield* Effect.flip(verify(recipe, undefined))
           expect(yield* read(root, "src/library.ts")).toBe("mutated during recipe\n")
           expect(stale).toMatchObject({ _tag: "StaleMigrationError", path: "src/library.ts" })
-        })
-      ),
+        }), { fixture: "recipe" }),
   )
 })

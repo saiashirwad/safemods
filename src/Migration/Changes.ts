@@ -2,13 +2,15 @@ import { Data, Effect } from "effect"
 import { firstConflict } from "../Edit.ts"
 import type * as WorkspacePath from "../WorkspacePath.ts"
 
-import type { FileOperation, Proposal } from "../Proposal.ts"
+import type { FileOperation, Plan } from "../Proposal.ts"
 
 export type Contents = ReadonlyMap<WorkspacePath.Type, Uint8Array | undefined>
 
 export class InvalidProposal
   extends Data.TaggedError("InvalidProposal")<{ readonly detail: string }>
-{}
+{
+  override readonly message = `Invalid proposal: ${this.detail}`
+}
 
 export const targetOf = (operation: FileOperation): WorkspacePath.Type =>
   operation.kind === "move" ? operation.toFileName : operation.fileName
@@ -34,7 +36,7 @@ const sameOperation = (left: FileOperation, right: FileOperation): boolean => {
   return true
 }
 
-export const distinct = (plan: Proposal): Proposal => ({
+export const distinct = (plan: Plan): Plan => ({
   edits: distinctBy(
     plan.edits,
     (left, right) =>
@@ -49,7 +51,7 @@ export const distinct = (plan: Proposal): Proposal => ({
   ),
 })
 
-const problem = (plan: Proposal, before: Contents): string | undefined => {
+const problem = (plan: Plan, before: Contents): string | undefined => {
   const stateOf = (fileName: WorkspacePath.Type): "file" | "missing" | undefined =>
     !before.has(fileName) ? undefined : before.get(fileName) === undefined ? "missing" : "file"
 
@@ -93,7 +95,7 @@ const problem = (plan: Proposal, before: Contents): string | undefined => {
 }
 
 export const validate = (
-  plan: Proposal,
+  plan: Plan,
   before: Contents,
 ): Effect.Effect<void, InvalidProposal> => {
   const detail = problem(plan, before)

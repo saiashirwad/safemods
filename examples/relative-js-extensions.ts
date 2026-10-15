@@ -23,7 +23,7 @@ const needsRewrite = ({ value }: Query.Selection<Query.ResolvedModuleReference>)
 
 const rewrite =
   (files: ReadonlySet<string>) =>
-  (selection: Query.Selection<Query.ResolvedModuleReference>): Proposal.Proposal => {
+  (selection: Query.Selection<Query.ResolvedModuleReference>): Proposal.Plan => {
     const { specifier, resolved } = selection.value
     const from = selection.fileName
     const target = resolved?.fileName ?? ModuleSpecifier.fileNamedBy(files, from, specifier.text)

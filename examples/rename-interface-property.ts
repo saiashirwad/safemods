@@ -38,8 +38,9 @@ export const renameInterfaceProperty = Recipe.define("rename-interface-property"
       const project = snapshot.projects[0]
       if (project === undefined) return Proposal.empty
 
-      const [declaration] = yield* Query.identifiers(project).pipe(
-        Query.within(DECLARATION_FILE),
+      const [declaration] = yield* Query.identifiers(
+        yield* Query.files(project, [DECLARATION_FILE]),
+      ).pipe(
         Query.filter(
           ({ value }) => value.text === OLD_NAME && isPropertySignatureDeclaration(value.parent),
         ),
@@ -54,8 +55,10 @@ export const renameInterfaceProperty = Recipe.define("rename-interface-property"
       const computed = yield* Query.match(project, { computedAccess })
 
       return Proposal.concat(
-        Proposal.replaceEach(references, ({ value }) =>
-          keepsLocalBinding(value) ? `${NEW_NAME}: ${OLD_NAME}` : NEW_NAME),
+        Proposal.replaceEach(
+          references,
+          ({ value }) => keepsLocalBinding(value) ? `${NEW_NAME}: ${OLD_NAME}` : NEW_NAME,
+        ),
         ...computed.map((selection) =>
           Proposal.unsupported(
             selection,

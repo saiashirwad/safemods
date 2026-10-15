@@ -1,11 +1,17 @@
 import { Data, Effect } from "effect"
 import type { Node } from "typescript/unstable/ast"
 import * as Position from "./Position.ts"
-import * as Query from "./Query.ts"
+import * as Query from "./Query/index.ts"
 import * as Type from "./Type.ts"
-import { type ProjectSnapshot, Workspace, type WorkspaceSnapshot } from "./Workspace/index.ts"
+import {
+  type ProjectSnapshot,
+  WorkspaceService,
+  type WorkspaceSnapshot,
+} from "./Workspace/index.ts"
 
-export class NotFound extends Data.TaggedError("NotFound")<{ readonly what: string }> {}
+export class NotFound extends Data.TaggedError("NotFound")<{ readonly what: string }> {
+  override readonly message = this.what
+}
 
 const lineText = (node: Node): string => {
   const file = node.getSourceFile()
@@ -36,7 +42,7 @@ const innermost = (node: Node, offset: number): Node => {
 
 const fileNamed = (snapshot: WorkspaceSnapshot, named: string, projectId?: string) =>
   Effect.gen(function* () {
-    const fileName = (yield* Workspace).relativePath(named)
+    const fileName = (yield* WorkspaceService).relativePath(named)
     const project = projectId === undefined ?
       undefined :
       snapshot.projects.find((candidate) => candidate.project.id === projectId)

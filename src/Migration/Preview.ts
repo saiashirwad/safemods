@@ -1,7 +1,7 @@
 import { Effect, Order } from "effect"
 import { applyFileEdits } from "../Edit.ts"
 import { type Contents, InvalidProposal } from "./Changes.ts"
-import type { Proposal } from "../Proposal.ts"
+import type { Plan } from "../Proposal.ts"
 import type * as WorkspacePath from "../WorkspacePath.ts"
 
 export type FileState =
@@ -30,7 +30,7 @@ const stateOf = (bytes: Uint8Array | undefined): FileState =>
   bytes === undefined ? { exists: false } : { exists: true, text: decoder.decode(bytes), bytes }
 
 export const previewOf = (
-  plan: Proposal,
+  plan: Plan,
   contents: Contents,
 ): Effect.Effect<MigrationPreview, InvalidProposal> =>
   Effect.gen(function* () {

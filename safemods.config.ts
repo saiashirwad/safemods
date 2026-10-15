@@ -1,26 +1,13 @@
-import type * as Config from "safemods/Config"
-import * as WorkspacePath from "safemods/WorkspacePath"
-import {
-  duplicatedFunctions,
-  ignoredReturns,
-  layers,
-  restrictedReferences,
-  typeBoundaries,
-  unusedCode,
-  unusedOptionalParameters,
-  weakReturns,
-} from "safemods/Checks"
+import { Checks, type Config, WorkspacePath } from "safemods"
 import { noUnknownFailures } from "./examples/no-unknown-failures.ts"
 
-const publicApi = [
-  "src/{Check,Config,Proposal,Finding,Inspect,ModuleSpecifier,Pattern,ProjectId,WorkspacePath,Query,Recipe,Type,bin,index}.ts",
-  "src/{Checks,Migration,Workspace}/index.ts",
-]
+// The package's public surface: src/index.ts and every namespace it re-exports.
+const publicApi = ["src/index.ts"]
 
 export default {
   projects: [{ id: "safemods", config: "tsconfig.json" }],
   checks: [
-    layers({
+    Checks.layers({
       within: "src/**",
       order: [
         [
@@ -30,11 +17,12 @@ export default {
           "src/Position.ts",
           "src/Finding.ts",
           "src/ModuleSpecifier.ts",
+          "src/Reason.ts",
         ],
         ["src/Edit.ts"],
         ["src/Workspace/"],
         ["src/Pattern.ts"],
-        ["src/Query.ts", "src/Type.ts"],
+        ["src/Query/", "src/Type.ts"],
         ["src/Proposal.ts", "src/Check.ts", "src/Inspect.ts"],
         ["src/Checks/"],
         ["src/Recipe.ts"],
@@ -43,17 +31,17 @@ export default {
         ["src/bin.ts", "src/index.ts"],
       ],
     }),
-    weakReturns({ within: "{src,examples}/**" }),
-    typeBoundaries({
+    Checks.weakReturns({ within: "{src,examples}/**" }),
+    Checks.typeBoundaries({
       within: "src/{Sha256,ProjectId,WorkspacePath,Edit}.ts",
       forbidden: { packages: ["typescript"] },
     }),
-    unusedCode({ within: "src/**", tests: "test/**", publicApi: [] }),
+    Checks.unusedCode({ within: "src/**", tests: "test/**", publicApi }),
     noUnknownFailures({ within: "src/**" }),
-    unusedOptionalParameters({ within: "{src,examples}/**", publicApi }),
-    ignoredReturns({ within: "{src,examples}/**" }),
-    duplicatedFunctions({ within: "{src,examples,test}/**", minimumLength: 60 }),
-    restrictedReferences({
+    Checks.unusedOptionalParameters({ within: "{src,examples}/**", publicApi }),
+    Checks.ignoredReturns({ within: "{src,examples}/**" }),
+    Checks.duplicatedFunctions({ within: "{src,examples,test}/**", minimumLength: 60 }),
+    Checks.restrictedReferences({
       name: "unsafeNative",
       declaredIn: WorkspacePath.schema.make("src/Workspace/ProjectSnapshot.ts"),
       allowedWithin: ["src/Workspace/**", "src/Migration/Diagnostics.ts", "test/**"],

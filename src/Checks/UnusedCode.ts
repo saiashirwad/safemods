@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect"
 import type { Node } from "typescript/unstable/ast"
 import * as Check from "../Check.ts"
-import * as Query from "../Query.ts"
+import * as Query from "../Query/index.ts"
 
 export const unusedCode = (options: {
   readonly within: string

@@ -60,8 +60,10 @@ export const enumToConstObject = Recipe.define("enum-to-const-object", {
   run: (snapshot, input: EnumToConstObjectInput) =>
     Effect.gen(function* () {
       const project = yield* snapshot.project(input.project.id)
-      const [target] = yield* Query.nodes(project, isEnumDeclaration).pipe(
-        Query.within(input.declarationFile),
+      const [target] = yield* Query.nodes(
+        yield* Query.files(project, [input.declarationFile]),
+        isEnumDeclaration,
+      ).pipe(
         Query.filter(({ value }) => value.name.text === input.enumName),
       )
       if (target === undefined) return Proposal.empty

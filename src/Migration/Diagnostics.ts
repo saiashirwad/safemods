@@ -4,7 +4,7 @@ import type * as Finding from "../Finding.ts"
 import * as Position from "../Position.ts"
 import type * as ProjectId from "../ProjectId.ts"
 import { nativeRequest } from "../Workspace/NativeRequest.ts"
-import { Workspace, type WorkspaceSnapshot } from "../Workspace/index.ts"
+import { WorkspaceService, type WorkspaceSnapshot } from "../Workspace/index.ts"
 
 export interface DiagnosticRecord extends Omit<Finding.Located, "fileName"> {
   readonly projectId: ProjectId.Type
@@ -54,6 +54,7 @@ const diagnosticKinds = [
 const sameDiagnostic = (left: DiagnosticRecord, right: DiagnosticRecord): boolean =>
   left.projectId === right.projectId && left.fileName === right.fileName &&
   left.category === right.category &&
+  // mutant: diagnostics-message
   left.code === right.code && left.message === right.message
 
 const locationKey = (diagnostic: DiagnosticRecord): string =>
@@ -62,7 +63,7 @@ const locationKey = (diagnostic: DiagnosticRecord): string =>
 export const collectDiagnostics = (snapshot: WorkspaceSnapshot) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
-    const workspace = yield* Workspace
+    const workspace = yield* WorkspaceService
     const diagnostics: Array<DiagnosticRecord> = []
     for (const project of snapshot.projects) {
       const texts = new Map(

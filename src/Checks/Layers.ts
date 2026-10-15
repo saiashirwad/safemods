@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import * as Check from "../Check.ts"
-import * as Query from "../Query.ts"
+import * as Query from "../Query/index.ts"
 
 export const layers = (options: {
   readonly within: string
@@ -14,16 +14,22 @@ export const layers = (options: {
   }
 
   return Check.perProject("layers", (project) =>
-    Query.resolvedModuleReferences(project).pipe(
-      Query.within(options.within),
+    Query.files(project, [options.within]).pipe(
+      Effect.flatMap(Query.resolvedModuleReferences),
       Effect.map((references) =>
         references.flatMap((reference) => {
           const target = reference.value.resolved?.fileName
           const from = rowOf(reference.fileName)
           const to = target === undefined ? undefined : rowOf(target)
+          // mutant: layers-same-layer
           return from === undefined || to === undefined || to <= from ?
             [] :
-            [Check.report(reference, `imports ${target}, which is listed below it`)]
+            [
+              Check.report(
+                reference,
+                `imports ${target}, which the layers check in safemods.config.ts lists below this file: move the import, or move the module to a higher layer`,
+              ),
+            ]
         })
       ),
     ))

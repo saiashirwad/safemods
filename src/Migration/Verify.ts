@@ -1,11 +1,15 @@
-import type { Proposal } from "../Proposal.ts"
-import type { Finding } from "../Finding.ts"
+import type { Plan } from "../Proposal.ts"
+import type { Issue } from "../Finding.ts"
 import { apply, type ApplicationReceipt, type ApplicationFailure } from "./Apply.ts"
 import { Crypto, Effect, FileSystem, Path, type PlatformError } from "effect"
 import { type Contents, distinct, type InvalidProposal, targetOf, validate } from "./Changes.ts"
-import { checkInput, type Recipe, type RecipeInputError } from "../Recipe.ts"
+import * as Recipe from "../Recipe.ts"
 import type { Overlay } from "../Workspace/Overlay.ts"
-import { type ProjectSnapshotError, Workspace, type WorkspaceSnapshot } from "../Workspace/index.ts"
+import {
+  type ProjectSnapshotError,
+  WorkspaceService,
+  type WorkspaceSnapshot,
+} from "../Workspace/index.ts"
 import { InputSnapshot } from "../Workspace/InputSnapshot.ts"
 import { WorkspaceCompilerError } from "../Workspace/NativeRequest.ts"
 import type * as WorkspacePath from "../WorkspacePath.ts"
@@ -15,14 +19,14 @@ import { type FilePreview, type MigrationPreview, previewOf } from "./Preview.ts
 
 export interface VerifiedMigration {
   readonly preview: MigrationPreview
-  readonly unsupported: ReadonlyArray<Finding>
+  readonly unsupported: ReadonlyArray<Issue>
   readonly diagnosticDiff: DiagnosticDiff
   readonly apply: Effect.Effect<ApplicationReceipt, ApplicationFailure | StaleMigrationError>
 }
 
-const withTargets = (captured: Contents, plan: Proposal, inputs: InputSnapshot) =>
+const withTargets = (captured: Contents, plan: Plan, inputs: InputSnapshot) =>
   Effect.gen(function* () {
-    const workspace = yield* Workspace
+    const workspace = yield* WorkspaceService
     const contents = new Map(captured)
     for (const operation of plan.fileOperations) {
       const target = targetOf(operation)
@@ -38,7 +42,7 @@ const withTargets = (captured: Contents, plan: Proposal, inputs: InputSnapshot) 
   })
 
 const overlayOf = (
-  workspace: Workspace["Service"],
+  workspace: WorkspaceService["Service"],
   files: ReadonlyArray<FilePreview>,
 ): Overlay => {
   const overlay = { files: new Map<string, string>(), deleted: new Set<string>() }
@@ -52,7 +56,7 @@ const overlayOf = (
 }
 
 const replayedChanges = <Input, E, R>(
-  recipe: Recipe<Input, E, R>,
+  recipe: Recipe.Definition<Input, E, R>,
   input: Input,
   preview: MigrationPreview,
   snapshot: WorkspaceSnapshot,
@@ -74,7 +78,7 @@ const replayedChanges = <Input, E, R>(
   })
 
 const policyFailure = <Input, E, R>(
-  recipe: Recipe<Input, E, R>,
+  recipe: Recipe.Definition<Input, E, R>,
   preview: MigrationPreview,
   diff: DiagnosticDiff,
   replayed: number,
@@ -104,22 +108,22 @@ const policyFailure = <Input, E, R>(
 }
 
 export const verify = <Input, E, R>(
-  recipe: Recipe<Input, E, R>,
+  recipe: Recipe.Definition<Input, E, R>,
   input: Input,
 ): Effect.Effect<
   VerifiedMigration,
   | E
   | InvalidProposal
-  | RecipeInputError
+  | Recipe.RecipeInputError
   | PlatformError.PlatformError
   | VerificationFailure
   | StaleMigrationError
   | ProjectSnapshotError,
-  Workspace | FileSystem.FileSystem | Path.Path | Crypto.Crypto | R
+  WorkspaceService | FileSystem.FileSystem | Path.Path | Crypto.Crypto | R
 > =>
   Effect.gen(function* () {
-    yield* checkInput(recipe, input)
-    const workspace = yield* Workspace
+    yield* Recipe.checkInput(recipe, input)
+    const workspace = yield* WorkspaceService
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const crypto = yield* Crypto.Crypto
@@ -169,7 +173,7 @@ export const verify = <Input, E, R>(
     yield* fresh
     const capturedApply = Effect.andThen(fresh, apply(preview)).pipe(
       Effect.map((receipt) => structuredClone(receipt)),
-      Effect.provideService(Workspace, workspace),
+      Effect.provideService(WorkspaceService, workspace),
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.provideService(Path.Path, path),
       Effect.provideService(Crypto.Crypto, crypto),

@@ -13,7 +13,7 @@ export const normalizeLineEndings = Recipe.perProject("normalize-line-endings", 
       return Proposal.concat(
         ...files
           .filter((file) => file.sourceFile.text.includes("\r\n"))
-          .map((file) => Proposal.replaceText(file, file.sourceFile.text.replaceAll("\r\n", "\n"))),
+          .map((file) => Proposal.replaceFile(file, file.sourceFile.text.replaceAll("\r\n", "\n"))),
       )
     }),
 })

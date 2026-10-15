@@ -6,7 +6,8 @@ import {
   enumToConstObject,
   type EnumToConstObjectInput,
 } from "../../examples/enum-to-const-object.ts"
-import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
+import { proposalOf } from "../utils/execute-recipe.ts"
+import { expectMigration } from "../utils/expect-migration.ts"
 import { withFixture } from "../utils/fixture.ts"
 import { workspacePath } from "../utils/domain.ts"
 
@@ -20,40 +21,20 @@ const inputFor = (project: EnumToConstObjectInput["project"]): EnumToConstObject
 
 describe("enum-to-const-object", () => {
   effect("preserves string enum type and value uses", () =>
-    withFixture(
-      (root, app) =>
-        Effect.gen(function* () {
-          const input = inputFor(app)
-          const { verified } = yield* executeRecipe(enumToConstObject, input)
-
-          expect(verified.diagnosticDiff.introduced).toHaveLength(0)
-          const text = yield* Effect.tryPromise(() =>
-            Fs.readFile(Path.join(root, "src/status.ts"), "utf8")
-          )
-          expect(text).toContain("export const Status = {")
-          expect(text).toContain('Pending: "pending"')
-          expect(text).toContain("export type Status = (typeof Status)[keyof typeof Status]")
-          expect(text).toContain("The request has not started")
-          expect(text).toContain("Kept stable for persisted records")
-          expect((yield* proposalOf(enumToConstObject, input)).edits).toHaveLength(0)
-        }),
-      { fixture },
-    ))
+    Effect.gen(function* () {
+      const { verified } = yield* expectMigration(enumToConstObject, fixture, inputFor)
+      expect(verified.diagnosticDiff.introduced).toHaveLength(0)
+    }))
 
   effect("ignores a same-named enum that is a different symbol", () =>
-    withFixture(
-      (root, app) =>
-        Effect.gen(function* () {
-          const { verified } = yield* executeRecipe(enumToConstObject, inputFor(app))
-          expect(verified.preview.files.map((file) => file.fileName)).toEqual(["src/status.ts"])
-          expect(
-            yield* Effect.tryPromise(() =>
-              Fs.readFile(Path.join(root, "src/other/status.ts"), "utf8")
-            ),
-          ).toBe('export enum Status {\n  On = "on",\n}\n')
-        }),
-      { fixture, files: { "src/other/status.ts": 'export enum Status {\n  On = "on",\n}\n' } },
-    ))
+    Effect.gen(function* () {
+      const { verified } = yield* expectMigration(
+        enumToConstObject,
+        "migration-cases/enum-to-const-object-same-name",
+        inputFor,
+      )
+      expect(verified.preview.files.map((file) => file.fileName)).toEqual(["src/status.ts"])
+    }))
 
   effect("rejects numeric, computed, and merged enums", () =>
     withFixture(

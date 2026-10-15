@@ -43,7 +43,6 @@ describe("inspect commands", () => {
           expect(mapped.stdout).toContain("shared.ts [strict]")
           expect(mapped.stdout).toContain("shared.ts [loose]")
         }), {
-        fixture: "empty",
         files: {
           "tsconfig.json": JSON.stringify({
             compilerOptions: { strictNullChecks: true },
@@ -98,7 +97,6 @@ describe("inspect commands", () => {
             ])
           }),
         {
-          fixture: "empty",
           files: {
             "tsconfig.json": JSON.stringify({
               compilerOptions: {
@@ -149,7 +147,6 @@ describe("inspect commands", () => {
             expect(missing.stderr.trim()).toBe("src/lib.ts is not path:line:column")
           }),
         {
-          fixture: "empty",
           files: {
             "tsconfig.json": JSON.stringify({ include: ["src/**/*.ts"] }),
             "safemods.config.ts":
@@ -171,6 +168,5 @@ describe("inspect commands", () => {
           })
           expect(result.stderr).toBe("")
         }),
-      { fixture: "empty" },
     ))
 })

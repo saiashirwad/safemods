@@ -1,7 +1,7 @@
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import type { CallExpression } from "typescript/unstable/ast"
-import type * as Query from "../src/Query.ts"
+import type * as Query from "../src/Query/index.ts"
 import { workspacePath } from "./utils/domain.ts"
 import { proposalOf, executeRecipe } from "./utils/execute-recipe.ts"
 import { read, withFixture } from "./utils/fixture.ts"
@@ -58,8 +58,7 @@ describe("run → verify → apply", () => {
 
           const second = yield* proposalOf(wrapTargetInput, input)
           expect(second.edits).toEqual([])
-        })
-      ),
+        }), { fixture: "recipe" }),
   )
 
   effect("migrates an import source, preserving quote style and trivia", () =>

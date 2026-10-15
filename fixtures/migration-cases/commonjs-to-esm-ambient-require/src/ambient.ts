@@ -1,0 +1,2 @@
+require("./register.js")
+export {}

@@ -8,10 +8,22 @@ import {
   type ConfiguredProject,
   layer as workspaceLayer,
   type ProjectSnapshot,
-  Workspace,
+  WorkspaceService,
   WorkspaceDefinition,
   type WorkspaceSnapshot,
 } from "../../src/Workspace/index.ts"
+
+const TSCONFIG = JSON.stringify({
+  compilerOptions: {
+    strict: true,
+    target: "ES2024",
+    module: "NodeNext",
+    moduleResolution: "NodeNext",
+    noEmit: true,
+    skipLibCheck: true,
+  },
+  include: ["src/**/*.ts"],
+})
 
 export const fixturePath = (name: string): string =>
   fileURLToPath(new URL(`../../fixtures/${name}/`, import.meta.url))
@@ -23,12 +35,18 @@ export const withFixture = <A, E, R>(
     readonly files?: Record<string, string>
     readonly dependencies?: boolean
   } = {},
-): Effect.Effect<A, unknown, Exclude<R, Workspace | NodeServices.NodeServices>> =>
+): Effect.Effect<A, unknown, Exclude<R, WorkspaceService | NodeServices.NodeServices>> =>
   Effect.acquireUseRelease(
     Effect.tryPromise(async () => {
       const root = await Fs.mkdtemp(Path.join(Os.tmpdir(), "safemods-test-"))
-      if (options.fixture !== "empty") {
-        await Fs.cp(fixturePath(options.fixture ?? "recipe"), root, { recursive: true })
+      if (options.fixture === undefined) {
+        await Fs.writeFile(Path.join(root, "tsconfig.json"), TSCONFIG)
+      } else {
+        const source = fixturePath(options.fixture)
+        await Fs.cp(source, root, {
+          recursive: true,
+          filter: (file) => Path.relative(source, file).split(Path.sep)[0] !== "expected",
+        })
       }
       if (options.dependencies === true) {
         await Fs.symlink(
@@ -60,11 +78,11 @@ export const withFixture = <A, E, R>(
 export const withProject = <A, E, R>(
   files: Record<string, string>,
   use: (project: ProjectSnapshot, snapshot: WorkspaceSnapshot) => Effect.Effect<A, E, R>,
-  options: { readonly dependencies?: boolean } = {},
+  options: { readonly fixture?: string; readonly dependencies?: boolean } = {},
 ) =>
   withFixture(
     (_, app) =>
-      Workspace.use((workspace) =>
+      WorkspaceService.use((workspace) =>
         workspace.withSnapshot((snapshot) =>
           Effect.flatMap(snapshot.project(app.id), (project) => use(project, snapshot))
         )

@@ -40,7 +40,7 @@ const tagIdentifier = (element: JsxOpeningLikeElement): Node =>
 const renameProp = (
   selection: Query.Selection<JsxOpeningLikeElement>,
   [from, to]: readonly [string, string],
-): Proposal.Proposal => {
+): Proposal.Plan => {
   const element = selection.value
   const prop = propNamed(element, from)
   if (prop === undefined) return Proposal.empty
@@ -50,7 +50,7 @@ const renameProp = (
   if (propNamed(element, to) !== undefined) {
     return Proposal.unsupported(selection, `${from}: duplicate ${to} prop`)
   }
-  return Proposal.replace(selection.project, prop, to)
+  return Proposal.replaceNode(selection.project, prop, to)
 }
 
 export const jsxButtonProps = Recipe.define("jsx-button-props", {

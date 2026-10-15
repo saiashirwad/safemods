@@ -50,8 +50,10 @@ export const overloadedMethod = Recipe.define("overloaded-method", {
   run: (snapshot, input: OverloadedMethodInput) =>
     Effect.gen(function* () {
       const project = yield* snapshot.project(input.project.id)
-      const callbackOverloads = yield* Query.nodes(project, isFunctionDeclaration).pipe(
-        Query.within("src/legacy-client.ts"),
+      const callbackOverloads = yield* Query.nodes(
+        yield* Query.files(project, ["src/legacy-client.ts"]),
+        isFunctionDeclaration,
+      ).pipe(
         Query.filter(({ value }) => value.name?.text === "lookup" && value.body === undefined),
         Query.where(takesCallbackLast),
       )

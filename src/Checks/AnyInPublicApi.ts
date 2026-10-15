@@ -2,7 +2,7 @@ import { Effect, Option } from "effect"
 import { SymbolFlags } from "typescript/unstable/async"
 import * as Check from "../Check.ts"
 import * as Type from "../Type.ts"
-import * as Query from "../Query.ts"
+import * as Query from "../Query/index.ts"
 
 export const anyInPublicApi = (options: { readonly publicApi: ReadonlyArray<string> }) =>
   Check.perProject("any-in-public-api", (project) =>

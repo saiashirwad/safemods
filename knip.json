@@ -1,5 +1,15 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
-  "project": ["src/**/*.ts"],
-  "ignoreExportsUsedInFile": true
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "scripts/*.ts",
+    "examples/*.ts",
+    "test/**/*.test.ts",
+    "safemods.config.ts"
+  ],
+  "project": ["src/**/*.ts", "scripts/**/*.ts", "examples/**/*.ts", "test/**/*.ts"],
+  "ignoreExportsUsedInFile": true,
+  "ignoreDependencies": ["@effect/tsgo"],
+  "rules": {
+    "duplicates": "off"
+  }
 }

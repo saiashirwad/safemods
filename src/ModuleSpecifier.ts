@@ -31,6 +31,7 @@ const split = <E extends string>(
 }
 
 export const parse = (text: string): Written => {
+  // mutant: specifier-parent-relative
   if (!/^\.\.?(?:\/|$)/.test(text)) return { _tag: "Package", name: text }
   const source = split(text, sourceExtensions)
   if (source !== undefined) return { _tag: "Source", ...source }

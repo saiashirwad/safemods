@@ -1,109 +1,39 @@
-import * as Fs from "node:fs/promises"
-import * as Path from "node:path"
 import { describe, effect, expect } from "@effect/vitest"
 import { Effect } from "effect"
 import { defaultToNamed, type DefaultToNamedInput } from "../../examples/default-to-named.ts"
-import { proposalOf, executeRecipe } from "../utils/execute-recipe.ts"
-import { fixturePath as fixtureDirectory, withFixture } from "../utils/fixture.ts"
+import { expectMigration } from "../utils/expect-migration.ts"
 import { workspacePath } from "../utils/domain.ts"
 
-const fixture = "migrations/default-to-named"
-const fixturePath = fixtureDirectory(fixture)
+const inputFor = (project: DefaultToNamedInput["project"]): DefaultToNamedInput => ({
+  project,
+  declarationFile: workspacePath("src/auth/authenticate.ts"),
+  exportName: "authenticate",
+})
 
 describe("default-to-named", () => {
   effect(
     "rewrites re-exports by where they resolve, not by how the specifier is spelled",
     () =>
-      withFixture(
-        (root, app) =>
-          Effect.gen(function* () {
-            const input: DefaultToNamedInput = {
-              project: app,
-              declarationFile: workspacePath("src/auth/authenticate.ts"),
-              exportName: "authenticate",
-            }
-            const { verified } = yield* executeRecipe(defaultToNamed, input)
-            expect(verified.diagnosticDiff.introduced).toHaveLength(0)
-
-            const read = (relative: string) =>
-              Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
-            expect(yield* read("src/auth/aliased.ts")).toBe(
-              'export { authenticate as signIn } from "./authenticate.js"\n',
-            )
-            expect(yield* read("src/legacy/index.ts")).toBe(
-              'export { default as authenticate } from "./authenticate.js"\n',
-            )
-          }),
-        {
-          fixture,
-          files: {
-            "src/auth/aliased.ts": 'export { default as signIn } from "./authenticate.js"\n',
-            "src/legacy/authenticate.ts":
-              'export default function legacy(): string {\n  return "legacy"\n}\n',
-            "src/legacy/index.ts": 'export { default as authenticate } from "./authenticate.js"\n',
-          },
-        },
-      ),
+      Effect.gen(function* () {
+        const { verified } = yield* expectMigration(
+          defaultToNamed,
+          "migration-cases/default-to-named-reexports",
+          inputFor,
+        )
+        expect(verified.diagnosticDiff.introduced).toHaveLength(0)
+      }),
   )
 
-  effect("converts authenticate from a default export to a named export", () =>
-    withFixture(
-      (root, app) =>
-        Effect.gen(function* () {
-          const input: DefaultToNamedInput = {
-            project: app,
-            declarationFile: workspacePath("src/auth/authenticate.ts"),
-            exportName: "authenticate",
-          }
-
-          const { verified } = yield* executeRecipe(defaultToNamed, input)
-
-          expect(verified.diagnosticDiff.introduced).toHaveLength(0)
-
-          const read = (relative: string) =>
-            Effect.tryPromise(() => Fs.readFile(Path.join(root, relative), "utf8"))
-          const original = (relative: string) =>
-            Effect.tryPromise(() => Fs.readFile(Path.join(fixturePath, relative), "utf8"))
-
-          const authenticate = yield* read("src/auth/authenticate.ts")
-          expect(authenticate).toContain("export function authenticate")
-          expect(authenticate).not.toContain("export default function authenticate")
-          expect(authenticate).toContain("Keep this JSDoc attached to the export.")
-
-          const barrel = yield* read("src/auth/index.ts")
-          expect(barrel).toContain('export { authenticate } from "./authenticate.js"')
-          expect(barrel).not.toContain("default as authenticate")
-
-          const account = yield* read("src/users/account.ts")
-          expect(account).toContain(
-            'import { authenticate, AUTH_SCHEME } from "../auth/authenticate.js"',
-          )
-          expect(account).not.toContain("import authenticate,")
-
-          const router = yield* read("src/http/router.ts")
-          expect(router).toContain(
-            "import /* keep this comment */ { authenticate as signIn } from '../auth/authenticate.js'",
-          )
-          expect(router).toContain(
-            'import renderInvoice, { type Invoice } from "../billing/invoice.js"',
-          )
-          expect(router).toContain("const session  = signIn(credentials)")
-
-          expect(yield* read("src/auth/session.ts")).toBe(yield* original("src/auth/session.ts"))
-          expect(yield* read("src/billing/invoice.ts")).toBe(
-            yield* original("src/billing/invoice.ts"),
-          )
-          expect(yield* read("src/http/middleware.ts")).toBe(
-            yield* original("src/http/middleware.ts"),
-          )
-          expect(yield* read("src/config.ts")).toBe(yield* original("src/config.ts"))
-          expect(yield* read("src/diagnostics.ts")).toBe(yield* original("src/diagnostics.ts"))
-          expect(yield* read("src/diagnostics.ts")).toContain(
-            "export const servicePort: string = 8080",
-          )
-          const second = yield* proposalOf(defaultToNamed, input)
-          expect(second.edits).toHaveLength(0)
-        }),
-      { fixture },
-    ))
+  effect(
+    "converts authenticate from a default export to a named export",
+    () =>
+      Effect.gen(function* () {
+        const { verified } = yield* expectMigration(
+          defaultToNamed,
+          "migrations/default-to-named",
+          inputFor,
+        )
+        expect(verified.diagnosticDiff.introduced).toHaveLength(0)
+      }),
+  )
 })
